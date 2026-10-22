@@ -30,10 +30,11 @@ xcodebuild build \
 
 IDENTITY="${SIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ]; then
-  # No -v: a self-signed certificate is untrusted, and -v hides untrusted identities.
-  if security find-identity -p codesigning ${KEYCHAIN:+"$KEYCHAIN"} | grep -q "$SIGN_IDENTITY_NAME"; then
-    IDENTITY="$SIGN_IDENTITY_NAME"
-  else
+  # Resolve the certificate to its SHA-1 hash. codesign then finds it regardless of trust
+  # settings or duplicate names. No -v: a self-signed certificate is untrusted, and -v hides it.
+  IDENTITY="$(security find-identity -p codesigning ${KEYCHAIN:+"$KEYCHAIN"} \
+    | awk -v name="\"$SIGN_IDENTITY_NAME\"" 'index($0, name) { print $2; exit }')"
+  if [ -z "$IDENTITY" ]; then
     IDENTITY="-"
     log "warning: no \"$SIGN_IDENTITY_NAME\" certificate found. Signing ad-hoc."
   fi

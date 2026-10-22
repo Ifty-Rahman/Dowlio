@@ -38,6 +38,8 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           rm "$RUNNER_TEMP/cert.p12"
+          # codesign only finds identities in keychains on the search list.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Build and sign
