@@ -1,0 +1,43 @@
+name: Dowlio
+options:
+  bundleIdPrefix: io.github.ifty-rahman
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Manual
+packages:
+  DowlioKit:
+    path: Packages/DowlioKit
+targets:
+  Dowlio:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: DowlioKit
+        product: DowlioCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleName: Dowlio
+        CFBundleDisplayName: Dowlio
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.utilities
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: Copyright © 2026 Dowlio contributors.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio
+        PRODUCT_NAME: Dowlio
+        GENERATE_INFOPLIST_FILE: NO
+        # Scripts sign the app, so Xcode doesn't.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO

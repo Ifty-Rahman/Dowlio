@@ -1,0 +1,25 @@
+# Reference apps and third-party source used for research. Never commit them.
+apps/
+
+# Private research notes and the Flow design reference. Kept on this Mac only.
+docs/research.md
+docs/flow-ui-reference/
+
+# macOS
+.DS_Store
+
+# Generated and build output
+Dowlio.xcodeproj/
+build/
+DerivedData/
+.build/
+*.xcuserstate
+xcuserdata/
+
+# Release artifacts and secrets
+*.p12
+*.cer
+*.key
+dist/
+
+dist-secrets/

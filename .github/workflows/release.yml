@@ -1,0 +1,58 @@
+name: Release
+
+# Push a tag like v0.1.0 to publish a release. The tag must match MARKETING_VERSION in project.yml.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test
+        run: ./scripts/test.sh
+
+      - name: Import the signing certificate
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_CERT_P12" ]; then
+            echo "::error::SIGNING_CERT_P12 is not set. Run scripts/make-signing-cert.sh and store the secrets. An ad-hoc build must never be published, because it changes the app's identity."
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/dowlio.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Build and sign
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/build-release.sh
+
+      - name: Package
+        run: ./scripts/package.sh
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Dowlio ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --prerelease
