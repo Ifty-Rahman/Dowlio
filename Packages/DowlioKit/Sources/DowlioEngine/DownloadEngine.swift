@@ -219,7 +219,10 @@ public actor DownloadEngine {
 
     private func update(_ id: DownloadID, _ change: @Sendable (inout DownloadSnapshot) -> Void) {
         guard var record = entries[id] else { return }
+        let before = record.snapshot
         change(&record.snapshot)
+        // A change that leaves the snapshot as it was sends nothing (story 26).
+        guard record.snapshot != before else { return }
         let snapshot = record.snapshot
         for observer in record.observers.values {
             observer.yield(snapshot)
