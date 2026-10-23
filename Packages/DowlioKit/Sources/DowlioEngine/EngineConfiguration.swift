@@ -10,6 +10,8 @@ struct EngineConfiguration: Sendable {
     var now: @Sendable () -> Date = { Date() }
     /// A random number in the range, for jitter.
     var random: @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }
+    /// The connection limits learned per host, shared by every download of the engine.
+    var hostLimits: any HostLimitStore = InMemoryHostLimitStore()
 }
 
 /// When to try a failed connection again (spec, retry policy).
@@ -39,6 +41,9 @@ struct RetryPolicy: Sendable {
 struct RetryableFailure: Error {
     /// The wait the server asked for with `Retry-After`, if any.
     var retryAfter: Duration?
+    /// The server refused the connection with 429 or 503, or reset it, so the host gets one
+    /// connection fewer.
+    var isRefusal = false
 }
 
 enum RetryAfter {

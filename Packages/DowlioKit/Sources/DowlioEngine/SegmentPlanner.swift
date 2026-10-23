@@ -6,11 +6,11 @@ enum SegmentPlanner {
     static let maximumConnections = 16
 
     /// Contiguous segments that cover `size` bytes exactly. Their count is the smallest of the
-    /// connection setting (clamped to 1...16) and the number of 1 MiB segments the file can
-    /// hold, and never below 1.
-    static func plan(size: Int64, connections: Int) -> [ByteRange] {
+    /// connection setting (clamped to 1...16), the host's learned limit, and the number of 1 MiB
+    /// segments the file can hold, and never below 1.
+    static func plan(size: Int64, connections: Int, hostLimit: Int? = nil) -> [ByteRange] {
         guard size > 0 else { return [] }
-        let allowed = Int64(min(max(connections, 1), maximumConnections))
+        let allowed = Int64(min(max(min(connections, hostLimit ?? .max), 1), maximumConnections))
         let count = max(1, min(allowed, size / minimumSegmentSize))
         return (0..<count).map { index in
             ByteRange(start: size * index / count, end: size * (index + 1) / count - 1)
@@ -43,5 +43,11 @@ enum SegmentPlanner {
             kept: ByteRange(start: range.start, end: range.start + keptLength - 1),
             taken: ByteRange(start: range.start + keptLength, end: range.end)
         )
+    }
+
+    /// A host's connection limit after it refused a connection with 429, 503 or a reset: one
+    /// fewer, never below 1.
+    static func lowered(_ limit: Int) -> Int {
+        max(1, limit - 1)
     }
 }

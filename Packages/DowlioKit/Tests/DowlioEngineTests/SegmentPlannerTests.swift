@@ -139,3 +139,25 @@ struct SegmentStealTests {
         #expect(remaining.compactMap { $0 }.map(\.length).reduce(0, +) == 8 * Self.mebibyte)
     }
 }
+
+/// Seam 2: lowering a host's connection limit after a refusal (spec, retry policy). Each refusal
+/// lowers it by one, never below 1.
+struct HostLimitRuleTests {
+    @Test(arguments: [(8, 7), (16, 15), (2, 1), (1, 1)])
+    func aRefusalLowersTheLimitByOneNeverBelowOne(limit: Int, lowered: Int) {
+        #expect(SegmentPlanner.lowered(limit) == lowered)
+    }
+
+    @Test(arguments: [
+        // A learned limit below the setting wins.
+        (8, 3 as Int?, 3),
+        // A learned limit above the setting doesn't raise it.
+        (4, 10 as Int?, 4),
+        // No learned limit: the setting alone.
+        (8, nil as Int?, 8),
+    ])
+    func theSegmentCountRespectsTheHostsLearnedLimit(connections: Int, hostLimit: Int?, segments: Int) {
+        let plan = SegmentPlanner.plan(size: 64 * 1_048_576, connections: connections, hostLimit: hostLimit)
+        #expect(plan.count == segments)
+    }
+}

@@ -22,6 +22,8 @@ struct DownloadRun: Sendable {
     /// What the first run learned and wrote, kept for Retry.
     private let state = RunState()
     private let retries = RetryTracker()
+    /// How many connections may be open at once. Refusals lower it.
+    private let gate = ConnectionGate()
 
     init(
         id: DownloadID,
@@ -67,8 +69,18 @@ struct DownloadRun: Sendable {
                 } catch is FileChangedOnServer {
                     guard !startedOverForChange else { throw DownloadError.serverChangedFile }
                     startedOverForChange = true
-                    let probed = try await withRetries(.probe) { try await probe(url) }
+                    let probed = try await withRetries(.probe, host: url) { try await probe(url) }
                     prepared = try await startOver(attempt, with: probed)
+                    current = prepared
+                    saveManifest(prepared)
+                } catch is RangesUnusable {
+                    // The server's range replies can't be trusted, so one connection fetches the
+                    // whole file. Starting over empties the partial file, so no byte of a bad
+                    // reply stays in it.
+                    let whole = try await withRetries(.whole, host: attempt.finalURL) {
+                        try await openWholeFile(at: attempt.finalURL)
+                    }
+                    prepared = try await startOver(attempt, with: whole)
                     current = prepared
                     saveManifest(prepared)
                 }
@@ -158,7 +170,7 @@ struct DownloadRun: Sendable {
             return prepared
         }
 
-        let probed = try await withRetries(.probe) { try await probe(url) }
+        let probed = try await withRetries(.probe, host: url) { try await probe(url) }
         let fileName = FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
         await changeSnapshot {
             $0.state = .downloading
@@ -211,10 +223,10 @@ struct DownloadRun: Sendable {
     /// may still work for a while. If both are gone, the link has expired.
     private func probeForResume(_ prepared: Prepared) async throws -> Probed {
         do {
-            return try await withRetries(.probe) { try await probe(url) }
+            return try await withRetries(.probe, host: url) { try await probe(url) }
         } catch let error as DownloadError where Self.meansLinkGone(error) {
             do {
-                return try await withRetries(.probe) { try await probe(prepared.finalURL) }
+                return try await withRetries(.probe, host: prepared.finalURL) { try await probe(prepared.finalURL) }
             } catch let error as DownloadError where Self.meansLinkGone(error) {
                 throw DownloadError.linkExpired
             }
@@ -240,7 +252,9 @@ struct DownloadRun: Sendable {
             )
             state.store(prepared, probeConnection: connection)
         case .ranges(let total, let validator):
-            let segments = SegmentPlanner.plan(size: total, connections: options.connections)
+            let hostLimit = probed.finalURL.hostLimitKey.flatMap(configuration.hostLimits.limit(for:))
+            gate.setLimit(min(options.connections, hostLimit ?? .max))
+            let segments = SegmentPlanner.plan(size: total, connections: options.connections, hostLimit: hostLimit)
             prepared = Prepared(
                 fileName: fileName, finalURL: probed.finalURL, totalBytes: total,
                 layout: .ranges(validator: validator), segments: segments, partial: partial,
@@ -258,7 +272,7 @@ struct DownloadRun: Sendable {
     private func receiveWhole(_ prepared: Prepared) async throws {
         let board = prepared.board
         let segmented = !prepared.segments.isEmpty
-        try await withRetries(.whole) {
+        try await withRetries(.whole, host: prepared.finalURL) {
             let connection: Connection
             if let probeConnection = state.takeProbeConnection() {
                 connection = probeConnection
@@ -315,10 +329,20 @@ struct DownloadRun: Sendable {
                     // part and keeps going, until nothing is left to steal.
                     var current = index
                     while true {
-                        try await withRetries(.segment(current)) {
-                            try await receive(
-                                segment: current, of: prepared, total: total, validator: validator, onData: onData
-                            )
+                        try await withRetries(.segment(current), host: prepared.finalURL) {
+                            // A connection opens only while the download is under its limit. A
+                            // refused one lowers the limit as it gives back its place, in one
+                            // step, so a waiting connection can't take the place in between.
+                            try await gate.acquire()
+                            do {
+                                try await receive(
+                                    segment: current, of: prepared, total: total, validator: validator, onData: onData
+                                )
+                            } catch {
+                                gate.release(lowering: Self.retryable(error)?.isRefusal == true)
+                                throw error
+                            }
+                            gate.release()
                         }
                         guard let stolen = board.steal() else { return }
                         current = stolen
@@ -333,7 +357,10 @@ struct DownloadRun: Sendable {
             for index in unfinished.dropFirst() where !Task.isCancelled {
                 fetch(index)
             }
-            try await group.waitForAll()
+            // The first connection that fails for good stops every other one. `waitForAll` would
+            // wait for the others to finish before rethrowing, and doesn't cancel them; leaving the
+            // group by throwing does.
+            for try await _ in group {}
         }
     }
 
@@ -358,17 +385,24 @@ struct DownloadRun: Sendable {
         board.setActive(true, segment: index)
         defer { board.setActive(false, segment: index) }
 
-        let response = try await connection.firstResponse()
+        let response: HTTPURLResponse
+        do {
+            response = try await connection.firstResponse()
+        } catch let error as URLError where error.code == .cannotDecodeRawData || error.code == .cannotDecodeContentData {
+            // The reply came encoded although the request asked for identity, and URLSession
+            // failed to decode it before handing over the response.
+            throw RangesUnusable()
+        }
         guard response.statusCode == 206 else {
             connection.cancel()
             guard response.statusCode == 200 else { throw failure(for: response) }
             // A 200 to a request with If-Range means the validator no longer matches: the file
             // changed on the server. Without a validator, the server just ignored the range.
-            throw validator == nil ? DownloadError.rangeNotSupported : FileChangedOnServer()
+            throw validator == nil ? RangesUnusable() : FileChangedOnServer()
         }
-        guard ContentRange(response) == ContentRange(range: missing, total: total) else {
+        guard Self.isUsableRangeReply(response), ContentRange(response) == ContentRange(range: missing, total: total) else {
             connection.cancel()
-            throw DownloadError.rangeNotSupported
+            throw RangesUnusable()
         }
         var offset = missing.start
         for try await event in connection.events {
@@ -403,7 +437,7 @@ struct DownloadRun: Sendable {
     /// Runs `work`, and runs it again after a wait while it fails in a way worth retrying. The
     /// download shows Retrying while it waits. After the policy's maximum failures in a row it
     /// throws `DownloadError.tooManyRetries`.
-    private func withRetries<T: Sendable>(_ key: RetryKey, _ work: () async throws -> T) async throws -> T {
+    private func withRetries<T: Sendable>(_ key: RetryKey, host: URL, _ work: () async throws -> T) async throws -> T {
         let policy = configuration.retry
         var failures = 0
         while true {
@@ -412,6 +446,7 @@ struct DownloadRun: Sendable {
             } catch {
                 if Task.isCancelled { throw CancellationError() }
                 guard let retryable = Self.retryable(error) else { throw error }
+                if retryable.isRefusal { lowerLimit(of: host) }
                 failures += 1
                 guard failures < policy.maximumFailures else { throw DownloadError.tooManyRetries }
 
@@ -432,8 +467,19 @@ struct DownloadRun: Sendable {
 
     private static func retryable(_ error: Error) -> RetryableFailure? {
         if let retryable = error as? RetryableFailure { return retryable }
-        if let error = error as? URLError, error.code.isRetryable { return RetryableFailure() }
+        if let error = error as? URLError, error.code.isRetryable {
+            // A reset connection counts as a refusal (spec, retry policy).
+            return RetryableFailure(isRefusal: error.code == .networkConnectionLost)
+        }
         return nil
+    }
+
+    /// After a refusal, every later download from `host` gets one connection fewer. A refused
+    /// segment connection has already lowered this download's own limit.
+    private func lowerLimit(of host: URL) {
+        guard let key = host.hostLimitKey else { return }
+        let connections = options.connections
+        configuration.hostLimits.updateLimit(for: key) { SegmentPlanner.lowered($0 ?? connections) }
     }
 
     /// Shows Retrying while any connection waits, and Downloading again once none does.
@@ -457,7 +503,8 @@ struct DownloadRun: Sendable {
         case 404, 410: DownloadError.notFound
         case 408, 429, 500...599:
             RetryableFailure(
-                retryAfter: RetryAfter.parse(response.value(forHTTPHeaderField: "Retry-After"), now: configuration.now())
+                retryAfter: RetryAfter.parse(response.value(forHTTPHeaderField: "Retry-After"), now: configuration.now()),
+                isRefusal: response.statusCode == 429 || response.statusCode == 503
             )
         default: DownloadError.network("The server answered with status \(response.statusCode).")
         }
@@ -528,8 +575,9 @@ struct DownloadRun: Sendable {
             return Probed(body: .whole(probe), finalURL: finalURL, totalBytes: total, probeResponse: response)
         case 206:
             probe.cancel()
-            guard let reply = ContentRange(response), reply.start == 0, reply.end == 0 else {
-                throw DownloadError.rangeNotSupported
+            // A range reply that can't be used means one connection for the whole file.
+            guard Self.isUsableRangeReply(response), let reply = ContentRange(response), reply.start == 0, reply.end == 0 else {
+                return try await openWholeFile(at: finalURL)
             }
             return Probed(
                 body: .ranges(total: reply.total, validator: Self.validator(of: response)),
@@ -541,6 +589,27 @@ struct DownloadRun: Sendable {
             probe.cancel()
             throw failure(for: response)
         }
+    }
+
+    /// A range reply carries the file's own bytes: no `Content-Encoding` other than identity, and
+    /// not `multipart/byteranges` (architecture.md, validate).
+    private static func isUsableRangeReply(_ response: HTTPURLResponse) -> Bool {
+        let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.trimmingCharacters(in: .whitespaces).lowercased()
+        let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        let plain = encoding == nil || encoding == "identity"
+        return plain && !type.hasPrefix("multipart/byteranges")
+    }
+
+    /// Asks for the whole file without a range, for a server whose range replies can't be used.
+    private func openWholeFile(at target: URL) async throws -> Probed {
+        let connection = Connection(request: request(for: target, range: nil), idleTimeout: configuration.idleTimeout)
+        let response = try await connection.firstResponse()
+        guard response.statusCode == 200 else {
+            connection.cancel()
+            throw failure(for: response)
+        }
+        let total = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
+        return Probed(body: .whole(connection), finalURL: response.url ?? target, totalBytes: total, probeResponse: response)
     }
 
     /// A strong `ETag`, or else `Last-Modified`. A weak ETag can't be used with `If-Range`.
@@ -574,6 +643,10 @@ extension DownloadRun {
 
 /// A segment request's validator no longer matched, so the file changed on the server.
 struct FileChangedOnServer: Error {}
+
+/// A range reply that can't be used, so the download falls back to one connection (spec,
+/// connections).
+struct RangesUnusable: Error {}
 
 // MARK: - Run state
 

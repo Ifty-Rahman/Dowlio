@@ -37,6 +37,22 @@ public final class TestServer: @unchecked Sendable {
         public var newETagEveryRequest: Bool
         /// Replies to ranges that start at this offset trickle out at this speed.
         public var throttle: RangeThrottle?
+        /// At most this many replies for this file are in flight at once. Requests beyond it get
+        /// a 503, as from a server that limits parallel connections. The one-byte probe request
+        /// isn't counted. A reply the client stops reading early, as after a steal, stays in
+        /// flight until the server's send to it ends.
+        public var maxParallel: Int?
+        /// Extra headers sent with every 206 reply only, such as a `Content-Encoding` that a range
+        /// reply must not have.
+        public var rangeReplyHeaders: [String: String]
+        /// Whether `rangeReplyHeaders` also go on the one-byte probe reply, or only on the replies
+        /// to segment requests.
+        public var rangeReplyHeadersOnProbe: Bool
+        /// A broken server: it answers the one-byte probe range, but ignores every longer range
+        /// and sends the whole file with 200.
+        public var ignoresSegmentRanges: Bool
+        /// Limits `misreportRangeStartBy` to replies for the range that starts at this offset.
+        public var misreportOnlyRangeStartingAt: Int?
 
         public init(
             data: Data,
@@ -52,8 +68,18 @@ public final class TestServer: @unchecked Sendable {
             stallFirst: BodyFault? = nil,
             changeAfter: FileChange? = nil,
             newETagEveryRequest: Bool = false,
-            throttle: RangeThrottle? = nil
+            throttle: RangeThrottle? = nil,
+            maxParallel: Int? = nil,
+            rangeReplyHeaders: [String: String] = [:],
+            rangeReplyHeadersOnProbe: Bool = true,
+            ignoresSegmentRanges: Bool = false,
+            misreportOnlyRangeStartingAt: Int? = nil
         ) {
+            self.misreportOnlyRangeStartingAt = misreportOnlyRangeStartingAt
+            self.ignoresSegmentRanges = ignoresSegmentRanges
+            self.maxParallel = maxParallel
+            self.rangeReplyHeaders = rangeReplyHeaders
+            self.rangeReplyHeadersOnProbe = rangeReplyHeadersOnProbe
             self.throttle = throttle
             self.changeAfter = changeAfter
             self.newETagEveryRequest = newETagEveryRequest
@@ -159,6 +185,10 @@ public final class TestServer: @unchecked Sendable {
     /// Stalled connections stay open until the server goes away.
     private var stalled: [NWConnection] = []
     private var recorded: [Request] = []
+    /// Replies in flight per path, the most there ever were, and the 503s `maxParallel` sent.
+    private var inFlight: [String: Int] = [:]
+    private var peakInFlight: [String: Int] = [:]
+    private var refusedCount: [String: Int] = [:]
     private var released = false
     private var heldSends: [@Sendable () -> Void] = []
 
@@ -216,6 +246,16 @@ public final class TestServer: @unchecked Sendable {
 
     public var requests: [Request] {
         lock.withLock { recorded }
+    }
+
+    /// How many requests for `path` got a 503 because `maxParallel` replies were in flight.
+    public func refusals(at path: String) -> Int {
+        lock.withLock { refusedCount[path, default: 0] }
+    }
+
+    /// The most replies for `path` that were ever in flight at once.
+    public func peakParallel(at path: String) -> Int {
+        lock.withLock { peakInFlight[path, default: 0] }
     }
 
     /// Lets every held response, and every later one, send the rest of its body.
@@ -290,6 +330,32 @@ public final class TestServer: @unchecked Sendable {
             return send(status: "\(fault.status) Fault", headers: fault.headers, body: Data(), hold: nil, on: connection)
         }
 
+        // A reply stays in flight until the server closes its connection. The count goes down
+        // before the close, so a client never sees the close before the server allows a new reply.
+        var leave: @Sendable () -> Void = {}
+        // The one-byte probe doesn't count: its reply ends at once, but the client may already
+        // open its segment connections before this server sees the probe's connection close.
+        if let cap = file.maxParallel, headers["range"] != "bytes=0-0" {
+            let path = request.path
+            let admitted: Bool = lock.withLock {
+                guard inFlight[path, default: 0] < cap else {
+                    refusedCount[path, default: 0] += 1
+                    return false
+                }
+                inFlight[path, default: 0] += 1
+                peakInFlight[path] = max(peakInFlight[path, default: 0], inFlight[path]!)
+                return true
+            }
+            guard admitted else {
+                return send(status: "503 Service Unavailable", headers: [:], body: Data(), hold: nil, on: connection)
+            }
+            let left = LockedFlag()
+            leave = { [weak self] in
+                guard let self, left.set() else { return }
+                self.lock.withLock { self.inFlight[path, default: 1] -= 1 }
+            }
+        }
+
         let served: Int = lock.withLock {
             servedCount[request.path, default: 0] += 1
             return servedCount[request.path]!
@@ -310,7 +376,10 @@ public final class TestServer: @unchecked Sendable {
         }()
 
         let total = file.data.count
-        if file.supportsRanges, let range = rangeHeader.flatMap({ Self.parseRange($0, total: total) }) {
+        let honoured = rangeHeader.flatMap { Self.parseRange($0, total: total) }.flatMap { range in
+            file.ignoresSegmentRanges && range.count > 1 ? nil : range
+        }
+        if file.supportsRanges, let range = honoured {
             guard range.lowerBound < total else {
                 return send(status: "416 Range Not Satisfiable", headers: ["Content-Range": "bytes */\(total)"], body: Data(), hold: nil, on: connection)
             }
@@ -318,16 +387,20 @@ public final class TestServer: @unchecked Sendable {
             if body.count > file.shortRangeBodiesBy { body.removeLast(file.shortRangeBodiesBy) }
             let cut = cut(for: file, at: request.path, bodyCount: body.count)
             let slow = file.throttle.flatMap { $0.rangeStart == range.lowerBound ? $0.bytesPerSecond : nil }
+            let misreported = range.count > 1 && (file.misreportOnlyRangeStartingAt ?? range.lowerBound) == range.lowerBound
+            let shift = misreported ? file.misreportRangeStartBy : 0
             send(
                 status: "206 Partial Content",
                 headers: file.validatorHeaders.merging([
-                    "Content-Range": "bytes \(range.lowerBound + (range.count > 1 ? file.misreportRangeStartBy : 0))-\(range.upperBound - 1)/\(total)",
+                    "Content-Range": "bytes \(range.lowerBound + shift)-\(range.upperBound - 1)/\(total)",
                     "Accept-Ranges": "bytes",
-                ].merging(file.headers) { current, _ in current }) { $1 },
+                ].merging(file.headers) { current, _ in current }) { $1 }
+                    .merging(range.count > 1 || file.rangeReplyHeadersOnProbe ? file.rangeReplyHeaders : [:]) { $1 },
                 body: body,
                 hold: file.holdAfterBytes,
                 cut: cut,
                 bytesPerSecond: slow,
+                onClose: leave,
                 on: connection
             )
         } else {
@@ -340,6 +413,7 @@ public final class TestServer: @unchecked Sendable {
                 body: file.data,
                 hold: file.holdAfterBytes,
                 cut: cut,
+                onClose: leave,
                 on: connection
             )
         }
@@ -373,6 +447,7 @@ public final class TestServer: @unchecked Sendable {
         hold: Int?,
         cut: Cut? = nil,
         bytesPerSecond: Int? = nil,
+        onClose: @escaping @Sendable () -> Void = {},
         on connection: NWConnection
     ) {
         var head = "HTTP/1.1 \(status)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n"
@@ -381,17 +456,21 @@ public final class TestServer: @unchecked Sendable {
 
         if let bytesPerSecond {
             connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
-            trickle(body, at: bytesPerSecond, on: connection)
+            trickle(body, at: bytesPerSecond, on: connection, onClose: onClose)
             return
         }
 
-        let close: @Sendable (NWError?) -> Void = { _ in connection.cancel() }
+        let close: @Sendable (NWError?) -> Void = { _ in
+            onClose()
+            connection.cancel()
+        }
         switch cut {
         case .drop(let after):
             // The connection closes before the body that `Content-Length` promised is complete.
             connection.send(content: Data(head.utf8) + body.prefix(after), completion: .contentProcessed(close))
             return
         case .stall(let after):
+            // A stalled reply stays in flight until the server goes away.
             connection.send(content: Data(head.utf8) + body.prefix(after), completion: .contentProcessed { _ in })
             lock.withLock { stalled.append(connection) }
             return
@@ -419,17 +498,23 @@ public final class TestServer: @unchecked Sendable {
 
     /// Sends `body` in 16 KB pieces spaced to `bytesPerSecond`, until it's sent or the client
     /// goes away.
-    private func trickle(_ body: Data, at bytesPerSecond: Int, on connection: NWConnection) {
+    private func trickle(_ body: Data, at bytesPerSecond: Int, on connection: NWConnection, onClose: @escaping @Sendable () -> Void) {
         let piece = 16 * 1024
-        guard !body.isEmpty else { return connection.cancel() }
+        guard !body.isEmpty else {
+            onClose()
+            return connection.cancel()
+        }
         let chunk = body.prefix(piece)
         let rest = body.dropFirst(piece)
         let pause = Double(chunk.count) / Double(bytesPerSecond)
         let queue = self.queue
         connection.send(content: chunk, completion: .contentProcessed { [weak self] error in
-            guard error == nil, !rest.isEmpty else { return connection.cancel() }
+            guard error == nil, !rest.isEmpty else {
+                onClose()
+                return connection.cancel()
+            }
             queue.asyncAfter(deadline: .now() + pause) { [weak self] in
-                self?.trickle(Data(rest), at: bytesPerSecond, on: connection)
+                self?.trickle(Data(rest), at: bytesPerSecond, on: connection, onClose: onClose)
             }
         })
     }

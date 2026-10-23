@@ -26,8 +26,11 @@ public actor DownloadEngine {
     private var entries: [DownloadID: DownloadEntry] = [:]
     private let configuration: EngineConfiguration
 
-    public init() {
-        self.init(configuration: EngineConfiguration())
+    /// An engine whose learned host limits live in `hostLimits`. The default keeps them in memory.
+    public init(hostLimits: any HostLimitStore = InMemoryHostLimitStore()) {
+        var configuration = EngineConfiguration()
+        configuration.hostLimits = hostLimits
+        self.init(configuration: configuration)
     }
 
     init(configuration: EngineConfiguration) {

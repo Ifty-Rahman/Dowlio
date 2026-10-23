@@ -184,17 +184,4 @@ struct OneConnectionDownloadTests {
         #expect(finished.fileName == "app-1.2.dmg")
         #expect(try TestFiles.sha256(of: folder.appending(path: "app-1.2.dmg")) == TestFiles.sha256(data))
     }
-
-    @Test func aRangeReplyForTheWrongBytesIsRejected() async throws {
-        let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024), misreportRangeStartBy: 1), at: "/odd.bin")
-        let folder = try TestFiles.makeFolder()
-
-        let engine = DownloadEngine()
-        let id = await engine.add(url: server.url(for: "/odd.bin"), to: folder)
-        let finished = try await engine.finished(id)
-
-        #expect(finished.state == .failed(.rangeNotSupported))
-        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "odd.bin").path))
-    }
 }

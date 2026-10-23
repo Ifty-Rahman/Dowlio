@@ -37,9 +37,6 @@ public enum DownloadState: Equatable, Sendable {
 /// Why a download failed. Each case maps to one sentence of user copy in the interface.
 public enum DownloadError: Error, Equatable, Sendable {
     case destinationNotWritable
-    /// The server's range reply didn't match what Dowlio asked for. Ticket 05 falls back to one
-    /// connection instead of failing.
-    case rangeNotSupported
     /// The server sent fewer bytes than the file's size, so the file isn't complete.
     case incompleteFile
     case network(String)
