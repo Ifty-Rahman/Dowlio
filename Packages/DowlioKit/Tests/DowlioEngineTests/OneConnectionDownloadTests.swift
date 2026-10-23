@@ -1,0 +1,195 @@
+import DowlioCore
+import DowlioEngine
+import DowlioTestSupport
+import Foundation
+import Testing
+
+@Suite(.timeLimit(.minutes(1)))
+struct OneConnectionDownloadTests {
+    @Test func downloadCompletesWithTheServedBytes() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 3 * 1024 * 1024)
+        server.serve(.init(data: data), at: "/files/archive.zip")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/files/archive.zip"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        let file = folder.appending(path: "archive.zip")
+        #expect(try TestFiles.sha256(of: file) == TestFiles.sha256(data))
+    }
+
+    @Test func firstRequestProbesForRangeSupport() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024)), at: "/probe.bin")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/probe.bin"), to: folder)
+        _ = try await engine.finished(id)
+
+        let probe = try #require(server.requests.first)
+        #expect(probe.method == "GET")
+        #expect(probe.headers["range"] == "bytes=0-0")
+        #expect(probe.headers["accept-encoding"] == "identity")
+    }
+
+    @Test func serverWithoutRangeSupportStillCompletes() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 7)
+        server.serve(.init(data: data, supportsRanges: false), at: "/plain.iso")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/plain.iso"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "plain.iso")) == TestFiles.sha256(data))
+        #expect(server.requests.count == 1)
+    }
+
+    @Test func bytesGoIntoAPartialFileUntilTheDownloadCompletes() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 4 * 1024 * 1024, seed: 3)
+        let held = 1024 * 1024
+        server.serve(.init(data: data, holdAfterBytes: held), at: "/video.mp4")
+        let folder = try TestFiles.makeFolder()
+        let partial = folder.appending(path: "video.mp4.dowlio")
+        let destination = folder.appending(path: "video.mp4")
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/video.mp4"), to: folder)
+        let midway = try await engine.firstSnapshot(of: id) { $0.receivedBytes >= Int64(held) }
+
+        #expect(midway.state == .downloading)
+        #expect(midway.totalBytes == Int64(data.count))
+        #expect(FileManager.default.fileExists(atPath: partial.path))
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+
+        server.releaseHeldResponses()
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.receivedBytes == Int64(data.count))
+        #expect(!FileManager.default.fileExists(atPath: partial.path))
+        #expect(try TestFiles.sha256(of: destination) == TestFiles.sha256(data))
+    }
+
+    @Test func anExistingFileIsNeverOverwritten() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024)), at: "/report.pdf")
+        let folder = try TestFiles.makeFolder()
+        let existing = folder.appending(path: "report.pdf")
+        let original = Data("the user's own report".utf8)
+        try original.write(to: existing)
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/report.pdf"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .failed(.fileExists))
+        #expect(try Data(contentsOf: existing) == original)
+    }
+
+    @Test func aShortFileIsNeverPutInPlace() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024)
+        server.serve(.init(data: data, shortRangeBodiesBy: 100), at: "/short.bin")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/short.bin"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .failed(.incompleteFile))
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "short.bin").path))
+    }
+
+    @Test func theSnapshotStreamEndsAfterCompleted() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024)
+        server.serve(.init(data: data), at: "/notes.txt")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/notes.txt"), to: folder)
+        var states: [DownloadState] = []
+        for await snapshot in await engine.snapshots(of: id) {
+            states.append(snapshot.state)
+        }
+        #expect(states.last == .completed)
+        #expect(states.contains(.downloading))
+
+        var late: [DownloadSnapshot] = []
+        for await snapshot in await engine.snapshots(of: id) {
+            late.append(snapshot)
+        }
+        #expect(late.count == 1)
+        #expect(late.first?.state == .completed)
+        #expect(late.first?.fileName == "notes.txt")
+        #expect(late.first?.totalBytes == Int64(data.count))
+    }
+
+    @Test func aMissingFileLeavesNoPartialFileBehind() async throws {
+        let server = try await TestServer()
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/gone.zip"), to: folder)
+        _ = try await engine.finished(id)
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    }
+
+    @Test func aSecondDownloadOfTheSameFileGetsItsOwnPartialFile() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024)
+        server.serve(.init(data: data, holdAfterBytes: 1024), at: "/twice.iso")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let first = await engine.add(url: server.url(for: "/twice.iso"), to: folder)
+        let second = await engine.add(url: server.url(for: "/twice.iso"), to: folder)
+        _ = try await engine.firstSnapshot(of: first) { $0.receivedBytes > 0 }
+        let secondMidway = try await engine.firstSnapshot(of: second) { $0.receivedBytes > 0 }
+
+        #expect(secondMidway.state == .downloading)
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "twice.iso.dowlio").path))
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "twice.iso 2.dowlio").path))
+        server.releaseHeldResponses()
+        _ = try await engine.finished(first)
+        _ = try await engine.finished(second)
+    }
+
+    @Test func theFileIsNamedFromTheFinalURLAfterRedirects() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024)
+        server.serve(.init(data: data), at: "/releases/app-1.2.dmg")
+        server.redirect("/download/latest", to: "/releases/app-1.2.dmg")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/download/latest"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.fileName == "app-1.2.dmg")
+        #expect(try TestFiles.sha256(of: folder.appending(path: "app-1.2.dmg")) == TestFiles.sha256(data))
+    }
+
+    @Test func aRangeReplyForTheWrongBytesIsRejected() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024), misreportRangeStartBy: 1), at: "/odd.bin")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/odd.bin"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .failed(.rangeNotSupported))
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "odd.bin").path))
+    }
+}
