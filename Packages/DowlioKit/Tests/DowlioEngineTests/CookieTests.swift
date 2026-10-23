@@ -19,6 +19,28 @@ struct CookieTests {
 
     private static let header = "session=\(secret); theme=dark"
 
+    @Test func cookiesNeverFollowARedirectToAnotherHost() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 74)
+        server.serve(.init(data: data, eTag: "\"x1\""), at: "/real.bin")
+        // The link is on 127.0.0.1. It redirects to the same server under the host name
+        // "localhost", so the file comes from a host the cookies don't belong to.
+        server.redirect("/start.bin", to: "http://localhost:\(server.port)/real.bin")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/start.bin"), to: folder, options: Self.options)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        let toLinkHost = server.requests.filter { $0.path == "/start.bin" }
+        let toOtherHost = server.requests.filter { $0.path == "/real.bin" }
+        #expect(!toLinkHost.isEmpty)
+        #expect(toLinkHost.allSatisfy { $0.headers["cookie"] == Self.header })
+        #expect(!toOtherHost.isEmpty)
+        #expect(toOtherHost.allSatisfy { $0.headers["cookie"] == nil })
+    }
+
     @Test func everyRequestSendsTheCookiesIncludingRetries() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 71)

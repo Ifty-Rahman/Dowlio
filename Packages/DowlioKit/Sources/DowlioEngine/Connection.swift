@@ -67,6 +67,21 @@ final class Connection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         completionHandler(.allow)
     }
 
+    /// Follows redirects, but never carries the `Cookie` header to another host.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        var request = request
+        if let from = task.originalRequest?.url, let to = request.url, !DownloadRun.sameHost(from, to) {
+            request.setValue(nil, forHTTPHeaderField: "Cookie")
+        }
+        completionHandler(request)
+    }
+
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         continuation.yield(.data(data))
     }

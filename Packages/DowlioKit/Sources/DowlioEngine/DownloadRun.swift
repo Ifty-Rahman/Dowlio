@@ -640,18 +640,24 @@ struct DownloadRun: Sendable {
     }
 
     /// A request for `range` of the file, or for the whole file when `range` is `nil`, with the
-    /// download's referrer, user agent and cookies.
+    /// download's referrer and user agent. Cookies go only to the link's own host: they came from
+    /// that site, and a redirect may lead somewhere else.
     private func request(for url: URL, range: ByteRange?) -> URLRequest {
         var request = URLRequest(url: url)
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
-        if !options.cookies.isEmpty {
+        if !options.cookies.isEmpty, Self.sameHost(url, self.url) {
             let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
         }
         return request
+    }
+
+    static func sameHost(_ a: URL, _ b: URL) -> Bool {
+        guard let hostA = a.host()?.lowercased(), let hostB = b.host()?.lowercased() else { return false }
+        return hostA == hostB
     }
 }
 
