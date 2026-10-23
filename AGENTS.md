@@ -24,4 +24,5 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 ### Github rules
 
+After a phase completion create a @pr 
 Always ask before pushing

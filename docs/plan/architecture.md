@@ -152,6 +152,7 @@ These hold in every phase.
 
 - No analytics, crash reporting service, ads or tracking SDK.
 - Logs use `os.Logger` and mark URLs, paths and file names as private. No log line contains a full URL.
+- Finished files get the quarantine flag with Dowlio as the agent and the download's source URL as the origin, the same as a browser download. macOS keeps the URL in its own per-user quarantine log, not in the file. The owner chose this on 2026-10-23, so macOS can show where a file came from.
 - Cookies never touch disk. When the user shares sign-in for a site, the cookies stay in memory for that download only.
 - Dowlio talks only to the sites the user downloads from, GitHub (yt-dlp and Dowlio updates), and the local browser link.
 
