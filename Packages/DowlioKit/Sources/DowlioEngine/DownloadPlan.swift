@@ -1,6 +1,5 @@
 import Foundation
 
-/// What a download learned from its probe, how its segments are laid out, and where its bytes go.
 struct DownloadPlan: Sendable {
     enum Layout: Sendable {
         case whole
@@ -21,8 +20,7 @@ struct DownloadPlan: Sendable {
     }
 }
 
-/// The plan, kept between runs for Retry and Resume, and the probe's connection, which only the
-/// first try may read.
+/// Outlives one run, so Retry and Resume continue from the same plan.
 final class PlanStore: @unchecked Sendable {
     // @unchecked: both stored properties are only read or written under `lock`.
     private let lock = NSLock()

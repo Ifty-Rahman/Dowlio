@@ -3,7 +3,6 @@ import DowlioEngine
 import Foundation
 
 extension EngineConfiguration {
-    /// Short waits, so retry tests finish quickly.
     package static var fast: EngineConfiguration {
         var configuration = EngineConfiguration()
         configuration.retry.firstDelay = .milliseconds(10)

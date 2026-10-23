@@ -50,7 +50,6 @@ extension DownloadRun {
     }
 }
 
-/// A failure worth trying again: a busy server, a dropped or stalled connection.
 struct RetryableFailure: Error {
     var retryAfter: Duration?
     /// A 429, a 503 or a reset connection, so the host gets one connection fewer.
@@ -68,7 +67,6 @@ extension RetryableFailure {
         }
     }
 
-    /// Throws when a body that ended cleanly holds fewer bytes than `expected`.
     static func throwIfEndedEarly(received: Int64, expected: Int64?) throws {
         try Task.checkCancellation()
         if let expected, received < expected { throw RetryableFailure() }
@@ -88,7 +86,6 @@ final class RetryTracker: @unchecked Sendable {
         _ = lock.withLock { waits.removeValue(forKey: key) }
     }
 
-    /// The highest attempt and the earliest next try of every wait, or `nil` while nothing waits.
     var state: DownloadState? {
         lock.withLock {
             guard let attempt = waits.values.map(\.attempt).max(),

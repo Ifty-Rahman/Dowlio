@@ -1,8 +1,6 @@
 import DowlioCore
 import Foundation
 
-/// Runs one download: probes the server, receives the bytes into the partial file, then puts the
-/// finished file in place. Running it again after it failed continues from the bytes it has.
 struct DownloadRun: Sendable {
     typealias ChangeSnapshot = @Sendable (@escaping @Sendable (inout DownloadSnapshot) -> Void) async -> Void
 

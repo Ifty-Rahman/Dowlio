@@ -2,7 +2,6 @@ import Foundation
 
 extension DownloadRun {
     /// The counts are read before the data file is flushed, so they never lead the bytes on disk.
-    /// A failed save keeps the previous manifest.
     func saveManifest(_ plan: DownloadPlan) {
         let reading = plan.board.reading
         let (layout, validator): (PartialFileManifest.Layout, String?) = switch plan.layout {

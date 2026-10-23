@@ -22,12 +22,10 @@ public actor DownloadEngine {
         var observers: [UUID: AsyncStream<DownloadSnapshot>.Continuation] = [:]
         var task: Task<Void, Never>?
         let partialFile = PartialFileLocation()
-        /// Kept so Retry can run it again from the bytes it has.
         var run: DownloadRun?
     }
 
     private var entries: [DownloadID: DownloadEntry] = [:]
-    /// Followers of every download's snapshots (`allSnapshots()`).
     private var allObservers: [UUID: AsyncStream<DownloadSnapshot>.Continuation] = [:]
     private let configuration: EngineConfiguration
 

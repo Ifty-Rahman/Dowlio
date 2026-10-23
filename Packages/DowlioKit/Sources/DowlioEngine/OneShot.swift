@@ -1,6 +1,5 @@
 import Foundation
 
-/// A signal that fires once. Waiters resume when it fires, and wait no longer after that.
 final class OneShot: @unchecked Sendable {
     // @unchecked: `fired` and `waiters` are only read or written under `lock`.
     private let lock = NSLock()

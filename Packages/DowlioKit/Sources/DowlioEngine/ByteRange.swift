@@ -10,7 +10,6 @@ struct ByteRange: Equatable, Sendable {
     var headerValue: String { "bytes=\(start)-\(end)" }
 }
 
-/// A parsed `Content-Range: bytes start-end/total` header.
 struct ContentRange: Equatable {
     let range: ByteRange
     let total: Int64
