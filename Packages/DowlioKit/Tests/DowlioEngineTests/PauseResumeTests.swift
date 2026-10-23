@@ -223,9 +223,13 @@ struct PauseResumeTests {
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "notes.zip")) == TestFiles.sha256(data))
         // A changed file can't be detected, so both segments start again from their first byte.
+        // Their ends may differ: a connection that finishes early can steal part of the other.
         let half = Self.size / 2
-        let resumed = Set(server.requests[requestsWhenPaused...].compactMap { $0.headers["range"] })
-        #expect(resumed.isSuperset(of: ["bytes=0-\(half - 1)", "bytes=\(half)-\(Self.size - 1)"]))
+        let resumedStarts = Set(server.requests[requestsWhenPaused...].compactMap { request -> Int? in
+            guard let range = request.headers["range"], range != "bytes=0-0" else { return nil }
+            return Int(range.dropFirst("bytes=".count).prefix { $0 != "-" })
+        })
+        #expect(resumedStarts.isSuperset(of: [0, half]))
     }
 
     @Test func aFileChangedMidDownloadStartsOverOnce() async throws {

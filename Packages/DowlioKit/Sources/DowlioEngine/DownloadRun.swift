@@ -288,8 +288,8 @@ struct DownloadRun: Sendable {
     /// The others open once it receives data, or at once in "all at once" mode.
     private func receiveSegments(_ prepared: Prepared, validator: String?) async throws {
         let board = prepared.board
-        let unfinished = prepared.segments.indices.filter { index in
-            board.received(segment: index) < prepared.segments[index].length
+        let unfinished = (0..<board.segmentCount).filter { index in
+            board.received(segment: index) < board.range(segment: index).length
         }
         guard let first = unfinished.first, let total = prepared.totalBytes else { return }
 
@@ -305,10 +305,17 @@ struct DownloadRun: Sendable {
                 }
                 group.addTask {
                     defer { if index == first { firstData.fire() } }
-                    try await withRetries(.segment(index)) {
-                        try await receive(
-                            segment: index, of: prepared, total: total, validator: validator, onData: onData
-                        )
+                    // A connection that finishes its segment steals half of the largest remaining
+                    // part and keeps going, until nothing is left to steal.
+                    var current = index
+                    while true {
+                        try await withRetries(.segment(current)) {
+                            try await receive(
+                                segment: current, of: prepared, total: total, validator: validator, onData: onData
+                            )
+                        }
+                        guard let stolen = board.steal() else { return }
+                        current = stolen
                     }
                 }
             }
@@ -325,6 +332,8 @@ struct DownloadRun: Sendable {
     }
 
     /// Fetches the part of one segment that isn't downloaded yet, and writes it at its own offset.
+    /// When another connection steals the segment's end, this one writes up to the new end and
+    /// closes its connection there, instead of asking the server again.
     private func receive(
         segment index: Int,
         of prepared: Prepared,
@@ -332,8 +341,8 @@ struct DownloadRun: Sendable {
         validator: String?,
         onData: @Sendable () -> Void
     ) async throws {
-        let segment = prepared.segments[index]
         let board = prepared.board
+        let segment = board.range(segment: index)
         let missing = ByteRange(start: segment.start + board.received(segment: index), end: segment.end)
         guard missing.start <= missing.end else { return }
 
@@ -358,14 +367,22 @@ struct DownloadRun: Sendable {
         var offset = missing.start
         for try await event in connection.events {
             guard case .data(let data) = event else { continue }
-            try prepared.partial.write(data, at: offset)
-            offset += Int64(data.count)
-            board.add(Int64(data.count), to: index)
-            onData()
+            let allowed = board.claim(Int64(data.count), at: offset, segment: index)
+            if allowed > 0 {
+                try prepared.partial.write(data.prefix(Int(allowed)), at: offset)
+                offset += allowed
+                board.add(allowed, to: index)
+                onData()
+            }
+            // Reached the segment's end, which may have moved earlier through stealing.
+            if allowed < Int64(data.count) || offset > board.range(segment: index).end {
+                connection.cancel()
+                return
+            }
         }
         try Task.checkCancellation()
         // The connection ended cleanly but early.
-        if offset <= missing.end { throw RetryableFailure() }
+        if offset <= board.range(segment: index).end { throw RetryableFailure() }
     }
 
     // MARK: - Retrying

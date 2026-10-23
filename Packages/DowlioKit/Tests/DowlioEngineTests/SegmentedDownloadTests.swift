@@ -18,12 +18,15 @@ struct SegmentedDownloadTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
-        let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }.sorted()
-        #expect(segmentRanges == [
-            "bytes=0-8388607", "bytes=16777216-25165823", "bytes=25165824-33554431",
+        // Each planned segment is asked for once. Connections that finish early may then steal
+        // parts of the others, which adds requests that start inside a planned segment.
+        let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }
+        let planned = [
+            "bytes=0-8388607", "bytes=8388608-16777215", "bytes=16777216-25165823", "bytes=25165824-33554431",
             "bytes=33554432-41943039", "bytes=41943040-50331647", "bytes=50331648-58720255",
-            "bytes=58720256-67108863", "bytes=8388608-16777215",
-        ])
+            "bytes=58720256-67108863",
+        ]
+        #expect(planned.allSatisfy { range in segmentRanges.filter { $0 == range }.count == 1 })
     }
 
     @Test func theConnectionSettingDecidesHowManyConnectionsOpen() async throws {
@@ -36,13 +39,22 @@ struct SegmentedDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/three.bin"), to: folder, options: options)
-        let finished = try await engine.finished(id)
+        var mostConnections = 0
+        var last: DownloadSnapshot?
+        for await snapshot in await engine.snapshots(of: id) {
+            mostConnections = max(mostConnections, snapshot.activeConnections)
+            last = snapshot
+        }
 
-        #expect(finished.state == .completed)
+        #expect(last?.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "three.bin")) == TestFiles.sha256(data))
-        #expect(server.requests.dropFirst().compactMap { $0.headers["range"] }.sorted() == [
-            "bytes=0-4194303", "bytes=4194304-8388607", "bytes=8388608-12582911",
-        ])
+        // Three segments, each asked for once. Stealing adds requests later, but never a fourth
+        // connection at the same time.
+        let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }
+        for range in ["bytes=0-4194303", "bytes=4194304-8388607", "bytes=8388608-12582911"] {
+            #expect(segmentRanges.filter { $0 == range }.count == 1)
+        }
+        #expect(mostConnections <= 3)
     }
 
     @Test func extraConnectionsWaitUntilTheFirstOneReceivesData() async throws {

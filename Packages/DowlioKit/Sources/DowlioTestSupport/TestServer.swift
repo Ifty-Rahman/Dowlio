@@ -35,6 +35,8 @@ public final class TestServer: @unchecked Sendable {
         public var changeAfter: FileChange?
         /// Every reply carries a new `ETag`, as if the file changed between any two requests.
         public var newETagEveryRequest: Bool
+        /// Replies to ranges that start at this offset trickle out at this speed.
+        public var throttle: RangeThrottle?
 
         public init(
             data: Data,
@@ -49,8 +51,10 @@ public final class TestServer: @unchecked Sendable {
             dropFirst: BodyFault? = nil,
             stallFirst: BodyFault? = nil,
             changeAfter: FileChange? = nil,
-            newETagEveryRequest: Bool = false
+            newETagEveryRequest: Bool = false,
+            throttle: RangeThrottle? = nil
         ) {
+            self.throttle = throttle
             self.changeAfter = changeAfter
             self.newETagEveryRequest = newETagEveryRequest
             self.data = data
@@ -110,6 +114,17 @@ public final class TestServer: @unchecked Sendable {
         public init(afterBytes: Int, count: Int) {
             self.afterBytes = afterBytes
             self.count = count
+        }
+    }
+
+    /// Slows the replies to ranges that start at `rangeStart` to `bytesPerSecond`.
+    public struct RangeThrottle: Sendable {
+        public var rangeStart: Int
+        public var bytesPerSecond: Int
+
+        public init(rangeStart: Int, bytesPerSecond: Int) {
+            self.rangeStart = rangeStart
+            self.bytesPerSecond = bytesPerSecond
         }
     }
 
@@ -302,6 +317,7 @@ public final class TestServer: @unchecked Sendable {
             var body = file.data.subdata(in: range)
             if body.count > file.shortRangeBodiesBy { body.removeLast(file.shortRangeBodiesBy) }
             let cut = cut(for: file, at: request.path, bodyCount: body.count)
+            let slow = file.throttle.flatMap { $0.rangeStart == range.lowerBound ? $0.bytesPerSecond : nil }
             send(
                 status: "206 Partial Content",
                 headers: file.validatorHeaders.merging([
@@ -311,6 +327,7 @@ public final class TestServer: @unchecked Sendable {
                 body: body,
                 hold: file.holdAfterBytes,
                 cut: cut,
+                bytesPerSecond: slow,
                 on: connection
             )
         } else {
@@ -349,10 +366,24 @@ public final class TestServer: @unchecked Sendable {
         return nil
     }
 
-    private func send(status: String, headers: [String: String], body: Data, hold: Int?, cut: Cut? = nil, on connection: NWConnection) {
+    private func send(
+        status: String,
+        headers: [String: String],
+        body: Data,
+        hold: Int?,
+        cut: Cut? = nil,
+        bytesPerSecond: Int? = nil,
+        on connection: NWConnection
+    ) {
         var head = "HTTP/1.1 \(status)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n"
         for (name, value) in headers { head += "\(name): \(value)\r\n" }
         head += "\r\n"
+
+        if let bytesPerSecond {
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
+            trickle(body, at: bytesPerSecond, on: connection)
+            return
+        }
 
         let close: @Sendable (NWError?) -> Void = { _ in connection.cancel() }
         switch cut {
@@ -384,6 +415,23 @@ public final class TestServer: @unchecked Sendable {
             return false
         }
         if sendNow { sendRest() }
+    }
+
+    /// Sends `body` in 16 KB pieces spaced to `bytesPerSecond`, until it's sent or the client
+    /// goes away.
+    private func trickle(_ body: Data, at bytesPerSecond: Int, on connection: NWConnection) {
+        let piece = 16 * 1024
+        guard !body.isEmpty else { return connection.cancel() }
+        let chunk = body.prefix(piece)
+        let rest = body.dropFirst(piece)
+        let pause = Double(chunk.count) / Double(bytesPerSecond)
+        let queue = self.queue
+        connection.send(content: chunk, completion: .contentProcessed { [weak self] error in
+            guard error == nil, !rest.isEmpty else { return connection.cancel() }
+            queue.asyncAfter(deadline: .now() + pause) { [weak self] in
+                self?.trickle(Data(rest), at: bytesPerSecond, on: connection)
+            }
+        })
     }
 
     /// Parses `bytes=a-b` and `bytes=a-`. Returns a half-open range clamped to the file.
