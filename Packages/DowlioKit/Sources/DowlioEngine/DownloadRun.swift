@@ -17,11 +17,12 @@ struct DownloadRun: Sendable {
     func run() async {
         do {
             let body = try await probe()
-            let fileName = FileNaming.name(for: body.finalURL)
+            let fileName = FileNaming.name(for: body.probeResponse, finalURL: body.finalURL)
             await changeSnapshot {
                 $0.state = .downloading
                 $0.fileName = fileName
                 $0.totalBytes = body.totalBytes
+                $0.isNotSecure = body.finalURL.isPlainHTTP || url.isPlainHTTP
             }
 
             let partial = try PartialFile.create(for: fileName, in: folder)
@@ -32,8 +33,8 @@ struct DownloadRun: Sendable {
             if let expected = body.totalBytes, count != expected {
                 throw DownloadError.incompleteFile
             }
-            try partial.finish(as: folder.appending(path: fileName))
-            await changeSnapshot { $0.state = .completed }
+            let finishedName = try partial.finish(named: fileName, in: folder, policy: options.nameConflictPolicy, source: url)
+            await changeSnapshot { $0.fileName = finishedName; $0.state = .completed }
         } catch let error as DownloadError {
             await changeSnapshot { $0.state = .failed(error) }
         } catch {
@@ -73,6 +74,8 @@ struct DownloadRun: Sendable {
         let connection: Connection
         let finalURL: URL
         let totalBytes: Int64?
+        /// The probe's response, whose headers name the file.
+        let probeResponse: HTTPURLResponse
     }
 
     /// Sends `Range: bytes=0-0` (architecture.md, probe). A 206 means the server supports ranges,
@@ -85,7 +88,7 @@ struct DownloadRun: Sendable {
         switch response.statusCode {
         case 200:
             let total = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
-            return Body(connection: probe, finalURL: finalURL, totalBytes: total)
+            return Body(connection: probe, finalURL: finalURL, totalBytes: total, probeResponse: response)
         case 206:
             probe.cancel()
             guard let reply = ContentRange(response), reply.start == 0, reply.end == 0 else {
@@ -102,7 +105,7 @@ struct DownloadRun: Sendable {
                 connection.cancel()
                 throw DownloadError.rangeNotSupported
             }
-            return Body(connection: connection, finalURL: finalURL, totalBytes: reply.total)
+            return Body(connection: connection, finalURL: finalURL, totalBytes: reply.total, probeResponse: response)
         default:
             probe.cancel()
             throw DownloadError.unexpectedStatus(response.statusCode)

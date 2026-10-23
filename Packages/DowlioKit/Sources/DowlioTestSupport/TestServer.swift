@@ -16,19 +16,24 @@ public final class TestServer: @unchecked Sendable {
         /// A broken server: replies to ranges longer than one byte claim to start this many bytes
         /// later than they do. The one-byte probe reply stays correct.
         public var misreportRangeStartBy: Int
+        /// Extra headers sent with every 200 and 206 reply, such as `Content-Disposition` or
+        /// `Content-Type`.
+        public var headers: [String: String]
 
         public init(
             data: Data,
             supportsRanges: Bool = true,
             holdAfterBytes: Int? = nil,
             shortRangeBodiesBy: Int = 0,
-            misreportRangeStartBy: Int = 0
+            misreportRangeStartBy: Int = 0,
+            headers: [String: String] = [:]
         ) {
             self.data = data
             self.supportsRanges = supportsRanges
             self.holdAfterBytes = holdAfterBytes
             self.shortRangeBodiesBy = shortRangeBodiesBy
             self.misreportRangeStartBy = misreportRangeStartBy
+            self.headers = headers
         }
     }
 
@@ -175,7 +180,7 @@ public final class TestServer: @unchecked Sendable {
                 headers: [
                     "Content-Range": "bytes \(range.lowerBound + (range.count > 1 ? file.misreportRangeStartBy : 0))-\(range.upperBound - 1)/\(total)",
                     "Accept-Ranges": "bytes",
-                ],
+                ].merging(file.headers) { current, _ in current },
                 body: body,
                 hold: file.holdAfterBytes,
                 on: connection
@@ -183,7 +188,7 @@ public final class TestServer: @unchecked Sendable {
         } else {
             send(
                 status: "200 OK",
-                headers: file.supportsRanges ? ["Accept-Ranges": "bytes"] : [:],
+                headers: (file.supportsRanges ? ["Accept-Ranges": "bytes"] : [:]).merging(file.headers) { current, _ in current },
                 body: file.data,
                 hold: file.holdAfterBytes,
                 on: connection

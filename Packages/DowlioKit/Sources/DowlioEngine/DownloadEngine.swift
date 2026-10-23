@@ -1,6 +1,11 @@
 import DowlioCore
 import Foundation
 
+extension URL {
+    /// `http://`, whose bytes travel unencrypted (ADR 0003).
+    var isPlainHTTP: Bool { scheme?.lowercased() == "http" }
+}
+
 /// Owns every download and is the only way in: add a download, then follow its snapshots.
 public actor DownloadEngine {
     private struct DownloadEntry {
@@ -20,7 +25,8 @@ public actor DownloadEngine {
             id: id,
             state: .probing,
             fileName: FileNaming.name(for: url),
-            destinationFolder: folder
+            destinationFolder: folder,
+            isNotSecure: url.isPlainHTTP
         )
         entries[id] = DownloadEntry(snapshot: snapshot)
 
