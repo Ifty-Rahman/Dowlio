@@ -45,7 +45,36 @@ public enum DownloadError: Error, Equatable, Sendable {
 
 /// How a download should run. Each ticket adds the options it needs (spec, engine interface).
 public struct RequestOptions: Equatable, Sendable {
+    /// Connections per download, 1 to 16. Values outside that range are clamped.
+    public var connections: Int = 8
+    public var openExtraConnections: OpenExtraConnections = .afterFirstConnectionStarts
+
     public init() {}
+}
+
+/// When a download opens its connections after the first one.
+public enum OpenExtraConnections: Equatable, Sendable {
+    /// After the first connection starts receiving data, so a broken link costs one request.
+    case afterFirstConnectionStarts
+    case allAtOnce
+}
+
+/// One segment's progress, for the segmented bar.
+public struct SegmentProgress: Equatable, Sendable {
+    /// The segment's first byte.
+    public var start: Int64
+    /// The segment's last byte, inclusive.
+    public var end: Int64
+    public var receivedBytes: Int64
+    /// Whether a connection is fetching this segment now.
+    public var isActive: Bool
+
+    public init(start: Int64, end: Int64, receivedBytes: Int64 = 0, isActive: Bool = false) {
+        self.start = start
+        self.end = end
+        self.receivedBytes = receivedBytes
+        self.isActive = isActive
+    }
 }
 
 /// What the engine reports about one download.
@@ -58,6 +87,13 @@ public struct DownloadSnapshot: Equatable, Sendable {
     public var receivedBytes: Int64
     /// `nil` while the size is unknown.
     public var totalBytes: Int64?
+    /// One entry per segment, in file order. Empty while the size is unknown.
+    public var segments: [SegmentProgress] = []
+    public var activeConnections: Int = 0
+    /// Speed smoothed over the last 5 seconds.
+    public var bytesPerSecond: Int64 = 0
+    /// Seconds left at the current speed. `nil` while the size or the speed is unknown.
+    public var timeRemaining: TimeInterval?
 
     public init(
         id: DownloadID,

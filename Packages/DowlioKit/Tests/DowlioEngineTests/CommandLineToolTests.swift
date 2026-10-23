@@ -27,7 +27,7 @@ struct CommandLineToolTests {
         // The response stalls at 25 percent. The server lets it finish only after the tool has
         // printed two progress lines during the stall, so a tool that stops printing hangs here.
         var stalledLines = 0
-        let result = try await runTool(["get", server.url(for: "/slow.zip").absoluteString, "-o", folder.path]) { line in
+        let result = try await runTool(["get", server.url(for: "/slow.zip").absoluteString, "-c", "1", "-o", folder.path]) { line in
             guard line.hasPrefix("25%") else { return }
             stalledLines += 1
             if stalledLines == 2 { server.releaseHeldResponses() }
