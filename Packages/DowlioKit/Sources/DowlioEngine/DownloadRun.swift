@@ -94,8 +94,7 @@ struct DownloadRun: Sendable {
                 $0.state = .finalizing
             }
             // Every byte must be present before the file goes into place.
-            if let expected = prepared.totalBytes,
-               reading.receivedBytes != expected || (!reading.segments.isEmpty && !prepared.board.coversEverySegment) {
+            if let expected = prepared.totalBytes, !prepared.board.coversFile(of: expected) {
                 throw DownloadError.incompleteFile
             }
             try Task.checkCancellation()

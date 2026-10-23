@@ -117,4 +117,44 @@ struct ResumabilityTests {
 
         #expect(!snapshot.canResume)
     }
+
+    @Test func overlappingSegmentsInARestoredManifestNeverFinishAFileWithAHole() async throws {
+        let server = try await TestServer()
+        let mebibyte = 1024 * 1024
+        let data = TestServer.makeData(size: Self.size, seed: 54)
+        server.serve(.init(data: data, eTag: "\"h1\""), at: "/holey.bin")
+        let folder = try TestFiles.makeFolder()
+        let package = folder.appending(path: "holey.bin.dowlio", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: false)
+        // Two segments overlap on the second mebibyte, and nothing covers the fourth. Their
+        // received counts still add up to the file's size.
+        var bytes = data
+        bytes.replaceSubrange((3 * mebibyte)..<Self.size, with: Data(count: mebibyte))
+        try bytes.write(to: package.appending(path: "data"))
+        let manifest = PartialFileManifest(
+            formatVersion: PartialFileManifest.currentFormatVersion,
+            downloadID: UUID().uuidString,
+            originalURL: server.url(for: "/holey.bin"),
+            finalURL: server.url(for: "/holey.bin"),
+            validator: "\"h1\"",
+            totalBytes: Int64(Self.size),
+            fileName: "holey.bin",
+            connections: 2,
+            segments: [
+                .init(start: 0, end: Int64(2 * mebibyte - 1), received: Int64(2 * mebibyte)),
+                .init(start: Int64(mebibyte), end: Int64(3 * mebibyte - 1), received: Int64(2 * mebibyte)),
+            ],
+            layout: .ranges
+        )
+        try JSONEncoder().encode(manifest).write(to: package.appending(path: "manifest.json"))
+
+        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let restored = try await engine.restore(partialFile: package)
+        await engine.resume(restored)
+        let finished = try await engine.finished(restored)
+
+        #expect(finished.state == .failed(.incompleteFile))
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "holey.bin").path))
+        #expect(FileManager.default.fileExists(atPath: package.path))
+    }
 }
