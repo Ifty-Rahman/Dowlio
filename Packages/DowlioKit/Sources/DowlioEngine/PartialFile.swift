@@ -74,6 +74,11 @@ final class PartialFile: @unchecked Sendable {
         try handle.write(contentsOf: data)
     }
 
+    /// Empties the data file, so a download from a server that can't resume starts over.
+    func discardData() throws {
+        try handle.truncate(atOffset: 0)
+    }
+
     private let writeLock = NSLock()
 
     /// Writes `data` at `offset` in the data file. Segments call this from several connections,

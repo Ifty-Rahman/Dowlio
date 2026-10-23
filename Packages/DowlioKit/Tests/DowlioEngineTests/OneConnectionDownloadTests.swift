@@ -1,5 +1,5 @@
 import DowlioCore
-import DowlioEngine
+@testable import DowlioEngine
 import DowlioTestSupport
 import Foundation
 import Testing
@@ -97,18 +97,20 @@ struct OneConnectionDownloadTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "report 2.pdf")) == TestFiles.sha256(data))
     }
 
-    @Test func aShortFileIsNeverPutInPlace() async throws {
+    /// Replies that end early are resumed from the missing bytes (ticket 04), so the file that
+    /// goes into place is complete, never short.
+    @Test func aShortReplyIsResumedNeverPutInPlaceShort() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 1024 * 1024)
         server.serve(.init(data: data, shortRangeBodiesBy: 100), at: "/short.bin")
         let folder = try TestFiles.makeFolder()
 
-        let engine = DownloadEngine()
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/short.bin"), to: folder)
         let finished = try await engine.finished(id)
 
-        #expect(finished.state == .failed(.incompleteFile))
-        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "short.bin").path))
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "short.bin")) == TestFiles.sha256(data))
     }
 
     @Test func theSnapshotStreamEndsAfterCompleted() async throws {

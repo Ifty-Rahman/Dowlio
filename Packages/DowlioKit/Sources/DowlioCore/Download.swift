@@ -20,6 +20,10 @@ public enum DownloadState: Equatable, Sendable {
     case failed(DownloadError)
     /// The user cancelled the download. Its partial file is gone and the engine forgets it.
     case cancelled
+    /// Waiting before trying a failed connection again. `attempt` counts the failures in a row,
+    /// from 1. `nextTry` is when the next try starts. With several connections waiting, it shows
+    /// the highest attempt and the earliest next try.
+    case retrying(attempt: Int, nextTry: Date)
 
     /// No further snapshots follow a terminal state. Failed isn't terminal, because Retry
     /// continues a failed download (`GLOSSARY.md`), so its snapshot stream stays open.
@@ -36,12 +40,17 @@ public enum DownloadError: Error, Equatable, Sendable {
     case rangeNotSupported
     /// The server sent fewer bytes than the file's size, so the file isn't complete.
     case incompleteFile
-    /// The server answered with a status Dowlio doesn't handle yet. Ticket 04 replaces this with
-    /// not found, forbidden, needs sign-in and retries.
-    case unexpectedStatus(Int)
     case network(String)
     /// The destination volume can't hold the whole file.
     case notEnoughSpace
+    /// The server wants a signed-in visitor (401).
+    case needsSignIn
+    /// The server refuses to give the file (403).
+    case forbidden
+    /// The server has no such file (404 or 410).
+    case notFound
+    /// One segment failed 5 times in a row. The partial file stays, so Retry continues it.
+    case tooManyRetries
 }
 
 /// How a download should run. Each ticket adds the options it needs (spec, engine interface).

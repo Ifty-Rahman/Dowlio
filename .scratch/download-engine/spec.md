@@ -151,7 +151,7 @@ A snapshot holds: identifier, state, file name, destination folder, display host
 
 ### Errors
 
-`DownloadError` is a closed set. Each case maps to one sentence of user copy in phase 3: not found, forbidden, needs sign-in, link expired, server changed file (only when restarting fails), range not supported (only used internally to trigger the fallback), not enough space, destination not writable, incomplete file (the bytes received don't cover the file, so the finishing check refuses it), network (with the underlying error), too many retries, cancelled. Two temporary cases exist while tickets land: file exists (ticket 01, replaced by the name conflict policy in ticket 09) and unexpected status (ticket 01, replaced by the status mapping and retries in ticket 04).
+`DownloadError` is a closed set. Each case maps to one sentence of user copy in phase 3: not found, forbidden, needs sign-in, link expired, server changed file (only when restarting fails), range not supported (only used internally to trigger the fallback), not enough space, destination not writable, incomplete file (the bytes received don't cover the file, so the finishing check refuses it), network (with the underlying error), too many retries, cancelled. Ticket 01 added two temporary cases, both gone now: file exists, replaced by the name conflict policy in ticket 09, and unexpected status, replaced by the status mapping and retries in ticket 04.
 
 Status mapping on the first request: 401 is needs sign-in, 403 is forbidden, 404 and 410 are not found. On resume, a 403, 404 or 410 from the original URL leads to the saved final URL. If that fails too, the download fails as link expired.
 

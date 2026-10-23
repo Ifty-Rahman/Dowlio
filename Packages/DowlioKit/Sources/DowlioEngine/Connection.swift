@@ -17,11 +17,14 @@ final class Connection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var session: URLSession?
 
-    init(request: URLRequest) {
+    /// Starts `request`. If no bytes arrive for `idleTimeout`, the events end with
+    /// `URLError.timedOut`.
+    init(request: URLRequest, idleTimeout: Duration = .seconds(60)) {
         (events, continuation) = AsyncThrowingStream.makeStream(of: Event.self)
         super.init()
 
         let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = idleTimeout.timeInterval
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil

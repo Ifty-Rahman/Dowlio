@@ -27,6 +27,14 @@ final class ProgressBoard: @unchecked Sendable {
         }
     }
 
+    /// Forgets every byte received, for a download that starts over.
+    func reset() {
+        lock.withLock {
+            for index in segments.indices { segments[index].receivedBytes = 0 }
+            unsegmentedBytes = 0
+        }
+    }
+
     func setActive(_ isActive: Bool, segment index: Int) {
         lock.withLock { segments[index].isActive = isActive }
     }

@@ -24,6 +24,13 @@ public final class TestServer: @unchecked Sendable {
         /// Extra headers sent with every 200 and 206 reply, such as `Content-Disposition` or
         /// `Content-Type`.
         public var headers: [String: String]
+        /// Answers the first requests for this file with an error status instead of the file.
+        public var failFirst: StatusFault?
+        /// Drops the connection partway through the first replies whose body is long enough.
+        public var dropFirst: BodyFault?
+        /// Sends part of the first replies whose body is long enough, then nothing more, keeping
+        /// the connection open.
+        public var stallFirst: BodyFault?
 
         public init(
             data: Data,
@@ -33,7 +40,10 @@ public final class TestServer: @unchecked Sendable {
             misreportRangeStartBy: Int = 0,
             eTag: String? = nil,
             lastModified: String? = nil,
-            headers: [String: String] = [:]
+            headers: [String: String] = [:],
+            failFirst: StatusFault? = nil,
+            dropFirst: BodyFault? = nil,
+            stallFirst: BodyFault? = nil
         ) {
             self.data = data
             self.supportsRanges = supportsRanges
@@ -43,6 +53,9 @@ public final class TestServer: @unchecked Sendable {
             self.eTag = eTag
             self.lastModified = lastModified
             self.headers = headers
+            self.failFirst = failFirst
+            self.dropFirst = dropFirst
+            self.stallFirst = stallFirst
         }
 
         /// The `ETag` and `Last-Modified` headers this file's replies carry.
@@ -52,6 +65,44 @@ public final class TestServer: @unchecked Sendable {
             if let lastModified { headers["Last-Modified"] = lastModified }
             return headers
         }
+    }
+
+    /// Answers `count` requests with `status` and `headers`. `Int.max` answers every request.
+    public struct StatusFault: Sendable {
+        public var status: Int
+        public var count: Int
+        public var headers: [String: String]
+
+        public init(status: Int, count: Int = .max, headers: [String: String] = [:]) {
+            self.status = status
+            self.count = count
+            self.headers = headers
+        }
+    }
+
+    /// Cuts `count` replies after `afterBytes` body bytes. Only replies whose body is longer than
+    /// `afterBytes` count, so the one-byte probe reply is never cut.
+    public struct BodyFault: Sendable {
+        public var afterBytes: Int
+        public var count: Int
+
+        public init(afterBytes: Int, count: Int) {
+            self.afterBytes = afterBytes
+            self.count = count
+        }
+    }
+
+    /// How a reply's body is cut short.
+    private enum Cut {
+        case drop(after: Int)
+        case stall(after: Int)
+    }
+
+    /// Faults already used for one path.
+    private struct UsedFaults {
+        var status = 0
+        var drop = 0
+        var stall = 0
     }
 
     public struct Request: Sendable {
@@ -66,6 +117,9 @@ public final class TestServer: @unchecked Sendable {
     private let lock = NSLock()
     private var files: [String: File] = [:]
     private var redirects: [String: String] = [:]
+    private var usedFaults: [String: UsedFaults] = [:]
+    /// Stalled connections stay open until the server goes away.
+    private var stalled: [NWConnection] = []
     private var recorded: [Request] = []
     private var released = false
     private var heldSends: [@Sendable () -> Void] = []
@@ -98,6 +152,7 @@ public final class TestServer: @unchecked Sendable {
 
     deinit {
         listener.cancel()
+        stalled.forEach { $0.cancel() }
     }
 
     public func url(for path: String) -> URL {
@@ -185,6 +240,10 @@ public final class TestServer: @unchecked Sendable {
             return send(status: "404 Not Found", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
+        if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {
+            return send(status: "\(fault.status) Fault", headers: fault.headers, body: Data(), hold: nil, on: connection)
+        }
+
         let total = file.data.count
         if file.supportsRanges, let range = headers["range"].flatMap({ Self.parseRange($0, total: total) }) {
             guard range.lowerBound < total else {
@@ -192,6 +251,7 @@ public final class TestServer: @unchecked Sendable {
             }
             var body = file.data.subdata(in: range)
             if body.count > file.shortRangeBodiesBy { body.removeLast(file.shortRangeBodiesBy) }
+            let cut = cut(for: file, at: request.path, bodyCount: body.count)
             send(
                 status: "206 Partial Content",
                 headers: file.validatorHeaders.merging([
@@ -200,9 +260,11 @@ public final class TestServer: @unchecked Sendable {
                 ].merging(file.headers) { current, _ in current }) { $1 },
                 body: body,
                 hold: file.holdAfterBytes,
+                cut: cut,
                 on: connection
             )
         } else {
+            let cut = cut(for: file, at: request.path, bodyCount: file.data.count)
             send(
                 status: "200 OK",
                 headers: file.validatorHeaders
@@ -210,17 +272,51 @@ public final class TestServer: @unchecked Sendable {
                     .merging(file.headers) { current, _ in current },
                 body: file.data,
                 hold: file.holdAfterBytes,
+                cut: cut,
                 on: connection
             )
         }
     }
 
-    private func send(status: String, headers: [String: String], body: Data, hold: Int?, on connection: NWConnection) {
+    /// Uses one fault of `kind` for `path` if fewer than `limit` were used. Returns whether it did.
+    private func takeFault(_ kind: WritableKeyPath<UsedFaults, Int>, at path: String, limit: Int) -> Bool {
+        lock.withLock {
+            var used = usedFaults[path] ?? UsedFaults()
+            guard used[keyPath: kind] < limit else { return false }
+            used[keyPath: kind] += 1
+            usedFaults[path] = used
+            return true
+        }
+    }
+
+    private func cut(for file: File, at path: String, bodyCount: Int) -> Cut? {
+        if let drop = file.dropFirst, bodyCount > drop.afterBytes, takeFault(\.drop, at: path, limit: drop.count) {
+            return .drop(after: drop.afterBytes)
+        }
+        if let stall = file.stallFirst, bodyCount > stall.afterBytes, takeFault(\.stall, at: path, limit: stall.count) {
+            return .stall(after: stall.afterBytes)
+        }
+        return nil
+    }
+
+    private func send(status: String, headers: [String: String], body: Data, hold: Int?, cut: Cut? = nil, on connection: NWConnection) {
         var head = "HTTP/1.1 \(status)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n"
         for (name, value) in headers { head += "\(name): \(value)\r\n" }
         head += "\r\n"
 
         let close: @Sendable (NWError?) -> Void = { _ in connection.cancel() }
+        switch cut {
+        case .drop(let after):
+            // The connection closes before the body that `Content-Length` promised is complete.
+            connection.send(content: Data(head.utf8) + body.prefix(after), completion: .contentProcessed(close))
+            return
+        case .stall(let after):
+            connection.send(content: Data(head.utf8) + body.prefix(after), completion: .contentProcessed { _ in })
+            lock.withLock { stalled.append(connection) }
+            return
+        case nil:
+            break
+        }
         // One-byte bodies, such as the probe reply, are never held.
         guard let hold, hold < body.count, body.count > 1 else {
             connection.send(content: Data(head.utf8) + body, completion: .contentProcessed(close))

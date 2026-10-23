@@ -1,0 +1,248 @@
+import DowlioCore
+@testable import DowlioEngine
+import DowlioTestSupport
+import Foundation
+import Testing
+
+@Suite(.timeLimit(.minutes(1)))
+struct RetryTests {
+    @Test(arguments: [
+        (401, DownloadError.needsSignIn),
+        (403, DownloadError.forbidden),
+        (404, DownloadError.notFound),
+        (410, DownloadError.notFound),
+    ])
+    func refusalsOnTheFirstRequestFailWithoutRetrying(status: Int, error: DownloadError) async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024), failFirst: .init(status: status)), at: "/locked.zip")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/locked.zip"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .failed(error))
+        #expect(server.requests.count == 1)
+    }
+
+    @Test func otherClientErrorsFailWithoutRetrying() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024), failFirst: .init(status: 400)), at: "/bad.zip")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/bad.zip"), to: folder)
+        let finished = try await engine.finished(id)
+
+        guard case .failed = finished.state else {
+            Issue.record("Expected Failed, got \(finished.state)")
+            return
+        }
+        #expect(server.requests.count == 1)
+    }
+
+    @Test(arguments: [408, 429, 500, 502, 503])
+    func busyServersAreRetriedUntilTheDownloadCompletes(status: Int) async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: UInt64(status))
+        server.serve(.init(data: data, failFirst: .init(status: status, count: 2)), at: "/busy.iso")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/busy.iso"), to: folder)
+        let states = await recordStates(of: id, in: engine)
+
+        #expect(states.last == .completed)
+        #expect(states.contains { if case .retrying = $0 { true } else { false } })
+        let retryingIndex = try #require(states.lastIndex { if case .retrying = $0 { true } else { false } })
+        #expect(states[(retryingIndex + 1)...].contains(.downloading))
+        #expect(try TestFiles.sha256(of: folder.appending(path: "busy.iso")) == TestFiles.sha256(data))
+    }
+}
+
+extension RetryTests {
+    @Test func aDroppedConnectionResumesItsSegmentFromTheBytesItHas() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 21)
+        let cut = 256 * 1024
+        server.serve(.init(data: data, dropFirst: .init(afterBytes: cut, count: 2)), at: "/flaky.zip")
+        let folder = try TestFiles.makeFolder()
+
+        var options = RequestOptions()
+        options.connections = 1
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/flaky.zip"), to: folder, options: options)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "flaky.zip")) == TestFiles.sha256(data))
+        let ranges = server.requests.compactMap { $0.headers["range"] }
+        #expect(ranges == ["bytes=0-0", "bytes=0-\(data.count - 1)", "bytes=\(cut)-\(data.count - 1)", "bytes=\(2 * cut)-\(data.count - 1)"])
+    }
+
+    @Test func fiveFailuresMakeTheDownloadFailedAndRetryContinuesIt() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 22)
+        let cut = 128 * 1024
+        server.serve(.init(data: data, dropFirst: .init(afterBytes: cut, count: 5)), at: "/stubborn.iso")
+        let folder = try TestFiles.makeFolder()
+
+        var options = RequestOptions()
+        options.connections = 1
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/stubborn.iso"), to: folder, options: options)
+        let failed = try await engine.finished(id)
+
+        #expect(failed.state == .failed(.tooManyRetries))
+        #expect(failed.activeConnections == 0)
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "stubborn.iso.dowlio").path))
+        // Every connection stopped: no request arrives after the download failed.
+        let requestsWhenFailed = server.requests.count
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(server.requests.count == requestsWhenFailed)
+
+        await engine.retry(id)
+        let finished = try await engine.firstSnapshot(of: id) { $0.state == .completed }
+
+        #expect(finished.receivedBytes == Int64(data.count))
+        #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
+        // Retry asked only for the bytes the five failed tries didn't bring.
+        let retryRange = server.requests[requestsWhenFailed...].first?.headers["range"]
+        #expect(retryRange == "bytes=\(5 * cut)-\(data.count - 1)")
+    }
+}
+
+extension RetryTests {
+    /// With the clock and the jitter fixed, the next try's time shows each wait exactly: it doubles
+    /// from the first wait, varies by the jitter, and never exceeds the maximum.
+    @Test(arguments: [
+        (0.8, [8, 16, 30, 30]),
+        (1.2, [12, 24, 30, 30]),
+    ])
+    func waitsDoubleCarryJitterAndAreCapped(jitter: Double, expectedMilliseconds: [Int]) async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024, seed: 23)
+        server.serve(.init(data: data, dropFirst: .init(afterBytes: 1024, count: 4)), at: "/steady.bin")
+        let folder = try TestFiles.makeFolder()
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var configuration = EngineConfiguration.fast
+        configuration.retry.firstDelay = .milliseconds(10)
+        configuration.retry.maximumDelay = .milliseconds(30)
+        configuration.now = { now }
+        configuration.random = { range in jitter < 1 ? range.lowerBound : range.upperBound }
+        var options = RequestOptions()
+        options.connections = 1
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/steady.bin"), to: folder, options: options)
+        let states = await recordStates(of: id, in: engine)
+
+        let waits = states.compactMap { state -> Int? in
+            guard case .retrying(_, let nextTry) = state else { return nil }
+            return Int((nextTry.timeIntervalSince(now) * 1000).rounded())
+        }
+        let attempts = states.compactMap { state -> Int? in
+            guard case .retrying(let attempt, _) = state else { return nil }
+            return attempt
+        }
+        #expect(states.last == .completed)
+        #expect(attempts == [1, 2, 3, 4])
+        #expect(waits == expectedMilliseconds)
+    }
+}
+
+extension RetryTests {
+    /// A server's `Retry-After` replaces the computed wait, as seconds or as a date, and is capped.
+    @Test(arguments: [
+        ("1", 1000),
+        ("Fri, 15 Jan 2027 08:00:01 GMT", 1000),
+        ("3600", 200),
+    ])
+    func retryAfterSetsTheWaitUpToTheCap(retryAfter: String, expectedMilliseconds: Int) async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 512 * 1024, seed: 24)
+        let busy = TestServer.StatusFault(status: 503, count: 1, headers: ["Retry-After": retryAfter])
+        server.serve(.init(data: data, failFirst: busy), at: "/later.zip")
+        let folder = try TestFiles.makeFolder()
+
+        // 08:00:00 GMT on the date the second argument names.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var configuration = EngineConfiguration.fast
+        // Only the 3600-second case reaches the cap.
+        configuration.retry.maximumRetryAfter = expectedMilliseconds == 200 ? .milliseconds(200) : .seconds(5)
+        configuration.now = { now }
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/later.zip"), to: folder)
+        let states = await recordStates(of: id, in: engine)
+
+        let waits = states.compactMap { state -> Int? in
+            guard case .retrying(_, let nextTry) = state else { return nil }
+            return Int((nextTry.timeIntervalSince(now) * 1000).rounded())
+        }
+        #expect(waits == [expectedMilliseconds])
+        #expect(states.last == .completed)
+    }
+}
+
+extension RetryTests {
+    @Test func aSilentConnectionTimesOutAndIsRetried() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024, seed: 25)
+        let cut = 64 * 1024
+        server.serve(.init(data: data, stallFirst: .init(afterBytes: cut, count: 1)), at: "/quiet.bin")
+        let folder = try TestFiles.makeFolder()
+
+        var options = RequestOptions()
+        options.connections = 1
+        var configuration = EngineConfiguration.fast
+        configuration.idleTimeout = .milliseconds(300)
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/quiet.bin"), to: folder, options: options)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "quiet.bin")) == TestFiles.sha256(data))
+        #expect(server.requests.last?.headers["range"] == "bytes=\(cut)-\(data.count - 1)")
+    }
+}
+
+extension RetryTests {
+    /// A server without range support can't resume, so a retry starts the file over.
+    @Test func aDropFromAServerThatCantResumeStartsTheFileOver() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024, seed: 26)
+        server.serve(.init(data: data, supportsRanges: false, dropFirst: .init(afterBytes: 300 * 1024, count: 1)), at: "/plain.tar")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/plain.tar"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.receivedBytes == Int64(data.count))
+        #expect(try TestFiles.sha256(of: folder.appending(path: "plain.tar")) == TestFiles.sha256(data))
+        #expect(server.requests.count == 2)
+        #expect(server.requests.last?.headers["range"] == nil)
+    }
+}
+
+/// Every state the download goes through, until Completed or Failed.
+func recordStates(of id: DownloadID, in engine: DownloadEngine) async -> [DownloadState] {
+    var states: [DownloadState] = []
+    for await snapshot in await engine.snapshots(of: id) {
+        if states.last != snapshot.state { states.append(snapshot.state) }
+        if case .failed = snapshot.state { break }
+    }
+    return states
+}
+
+extension EngineConfiguration {
+    /// Short waits, so retry tests finish quickly.
+    static var fast: EngineConfiguration {
+        var configuration = EngineConfiguration()
+        configuration.retry.firstDelay = .milliseconds(10)
+        configuration.retry.maximumDelay = .milliseconds(40)
+        configuration.idleTimeout = .milliseconds(500)
+        return configuration
+    }
+}
