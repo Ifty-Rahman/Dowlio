@@ -9,7 +9,10 @@ struct DownloadRun: Sendable {
     typealias ChangeSnapshot = @Sendable (@escaping @Sendable (inout DownloadSnapshot) -> Void) async -> Void
 
     static let progressInterval: Duration = .milliseconds(250)
+    /// The manifest is saved every 4 progress ticks, about once a second.
+    static let ticksPerManifestSave = 4
 
+    let id: DownloadID
     let url: URL
     let folder: URL
     let options: RequestOptions
@@ -21,6 +24,7 @@ struct DownloadRun: Sendable {
     private let retries = RetryTracker()
 
     init(
+        id: DownloadID,
         url: URL,
         folder: URL,
         options: RequestOptions,
@@ -28,6 +32,7 @@ struct DownloadRun: Sendable {
         configuration: EngineConfiguration,
         changeSnapshot: @escaping ChangeSnapshot
     ) {
+        self.id = id
         self.url = url
         self.folder = folder
         self.options = options
@@ -36,18 +41,36 @@ struct DownloadRun: Sendable {
         self.changeSnapshot = changeSnapshot
     }
 
-    func run() async {
-        // Kept outside `do`, so a failure still reports the bytes the download has.
-        var board: ProgressBoard?
+    /// Runs the download. `resuming` is true when the user resumes a paused download.
+    func run(resuming: Bool = false) async {
+        // Kept outside `do`, so a failure still reports and saves the bytes the download has.
+        var current: Prepared?
         do {
-            let prepared = try await prepare()
-            board = prepared.board
-            try await reportingProgress(of: prepared.board, total: prepared.totalBytes) {
-                switch prepared.layout {
-                case .whole:
-                    try await receiveWhole(prepared)
-                case .ranges(let validator):
-                    try await receiveSegments(prepared, validator: validator)
+            var prepared = try await prepare(resuming: resuming)
+            current = prepared
+            saveManifest(prepared)
+            // A file that changes on the server starts the download over once. A second change in
+            // a row fails it, so bytes from two versions are never mixed.
+            var startedOverForChange = false
+            while true {
+                let attempt = prepared
+                do {
+                    try await reportingProgress(of: attempt) {
+                        switch attempt.layout {
+                        case .whole:
+                            try await receiveWhole(attempt)
+                        case .ranges(let validator):
+                            try await receiveSegments(attempt, validator: validator)
+                        }
+                    }
+                    break
+                } catch is FileChangedOnServer {
+                    guard !startedOverForChange else { throw DownloadError.serverChangedFile }
+                    startedOverForChange = true
+                    let probed = try await withRetries(.probe) { try await probe(url) }
+                    prepared = try await startOver(attempt, with: probed)
+                    current = prepared
+                    saveManifest(prepared)
                 }
             }
 
@@ -70,18 +93,25 @@ struct DownloadRun: Sendable {
             partialFile.url = nil
             await changeSnapshot { $0.fileName = finishedName; $0.state = .completed }
         } catch where Task.isCancelled {
-            // Cancelled by the engine, which deletes the partial file and reports Cancelled.
+            // Stopped by the engine for Pause or Cancel. The engine reports the new state. The last
+            // reading goes out first, so a paused download shows exactly the bytes it keeps.
+            if let current {
+                saveManifest(current)
+                let reading = current.board.reading
+                await changeSnapshot { $0.apply(reading) }
+            }
         } catch let error as DownloadError {
-            await fail(with: error, board: board)
+            await fail(with: error, current)
         } catch {
-            await fail(with: .network(error.localizedDescription), board: board)
+            await fail(with: .network(error.localizedDescription), current)
         }
     }
 
     /// Reports Failed with the progress the download keeps, so the interface shows how much is
     /// already downloaded and Retry continues from there.
-    private func fail(with error: DownloadError, board: ProgressBoard?) async {
-        let reading = board?.reading
+    private func fail(with error: DownloadError, _ prepared: Prepared?) async {
+        if let prepared { saveManifest(prepared) }
+        let reading = prepared?.board.reading
         await changeSnapshot {
             if let reading { $0.apply(reading) }
             $0.bytesPerSecond = 0
@@ -90,16 +120,39 @@ struct DownloadRun: Sendable {
         }
     }
 
+    /// Saves the partial file's manifest. The counts are read before the data file is flushed,
+    /// so they never claim bytes that aren't on disk yet. A failed save keeps the previous one.
+    private func saveManifest(_ prepared: Prepared) {
+        let reading = prepared.board.reading
+        let validator: String? = if case .ranges(let validator) = prepared.layout { validator } else { nil }
+        let manifest = PartialFileManifest(
+            formatVersion: PartialFileManifest.currentFormatVersion,
+            downloadID: id.description,
+            originalURL: url,
+            finalURL: prepared.finalURL,
+            validator: validator,
+            totalBytes: prepared.totalBytes,
+            fileName: prepared.fileName,
+            connections: options.connections,
+            referrer: options.referrer,
+            userAgent: options.userAgent,
+            segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) }
+        )
+        try? prepared.partial.saveManifest(manifest)
+    }
+
     // MARK: - Preparing
 
-    /// The probe's result and the partial file, from this run or from an earlier one that failed.
-    private func prepare() async throws -> Prepared {
+    /// The probe's result and the partial file. Retry continues an earlier run's state as it is.
+    /// Resume asks the server again first, because the file may have changed while paused.
+    private func prepare(resuming: Bool) async throws -> Prepared {
         if let prepared = state.prepared {
+            if resuming { return try await revalidate(prepared) }
             await changeSnapshot { $0.state = .downloading }
             return prepared
         }
 
-        let probed = try await withRetries(.probe) { try await probe() }
+        let probed = try await withRetries(.probe) { try await probe(url) }
         let fileName = FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
         await changeSnapshot {
             $0.state = .downloading
@@ -108,9 +161,67 @@ struct DownloadRun: Sendable {
             $0.isNotSecure = probed.finalURL.isPlainHTTP || url.isPlainHTTP
         }
 
-        // The space is reserved before any of the file's bytes are requested.
         let partial = try PartialFile.create(for: fileName, in: folder)
         partialFile.url = partial.packageURL
+        let prepared = try layOut(probed, fileName: fileName, in: partial)
+        await changeSnapshot { $0.canResume = prepared.canResume }
+        return prepared
+    }
+
+    /// On Resume, requests the original link again, because signed final links expire
+    /// (architecture.md, resume). The download keeps its segments only if the server still has the
+    /// same file: same size and the same validator. Otherwise it starts over in the same partial file.
+    private func revalidate(_ prepared: Prepared) async throws -> Prepared {
+        let probed = try await probeForResume(prepared)
+        if case .ranges(let total, let validator?) = probed.body,
+           case .ranges(let saved?) = prepared.layout,
+           total == prepared.totalBytes, validator == saved {
+            var kept = prepared
+            kept.finalURL = probed.finalURL
+            state.store(kept, probeConnection: nil)
+            await changeSnapshot { $0.state = .downloading }
+            return kept
+        }
+
+        return try await startOver(prepared, with: probed)
+    }
+
+    /// Empties the partial file and lays the download out again from `probed`, for a file that
+    /// changed on the server or can't be checked. The finished file keeps its planned name.
+    private func startOver(_ prepared: Prepared, with probed: Probed) async throws -> Prepared {
+        try prepared.partial.discardData()
+        let restarted = try layOut(probed, fileName: prepared.fileName, in: prepared.partial)
+        let reading = restarted.board.reading
+        await changeSnapshot {
+            $0.state = .downloading
+            $0.totalBytes = restarted.totalBytes
+            $0.canResume = restarted.canResume
+            $0.apply(reading)
+        }
+        return restarted
+    }
+
+    /// Probes the original link. If it's gone (403, 404, 410), probes the last final link, which
+    /// may still work for a while. If both are gone, the link has expired.
+    private func probeForResume(_ prepared: Prepared) async throws -> Probed {
+        do {
+            return try await withRetries(.probe) { try await probe(url) }
+        } catch let error as DownloadError where Self.meansLinkGone(error) {
+            do {
+                return try await withRetries(.probe) { try await probe(prepared.finalURL) }
+            } catch let error as DownloadError where Self.meansLinkGone(error) {
+                throw DownloadError.linkExpired
+            }
+        }
+    }
+
+    private static func meansLinkGone(_ error: DownloadError) -> Bool {
+        error == .forbidden || error == .notFound
+    }
+
+    /// Plans the segments for what `probed` found and reserves the space, before any of the file's
+    /// bytes are requested.
+    private func layOut(_ probed: Probed, fileName: String, in partial: PartialFile) throws -> Prepared {
         if let total = probed.totalBytes { try partial.reserve(bytes: total) }
 
         let prepared: Prepared
@@ -149,7 +260,7 @@ struct DownloadRun: Sendable {
                 try prepared.partial.discardData()
                 board.reset()
                 if let total = prepared.totalBytes { try prepared.partial.reserve(bytes: total) }
-                connection = Connection(request: Self.request(for: prepared.finalURL, range: nil), idleTimeout: configuration.idleTimeout)
+                connection = Connection(request: request(for: prepared.finalURL, range: nil), idleTimeout: configuration.idleTimeout)
                 let response = try await connection.firstResponse()
                 guard response.statusCode == 200 else {
                     connection.cancel()
@@ -226,7 +337,7 @@ struct DownloadRun: Sendable {
         let missing = ByteRange(start: segment.start + board.received(segment: index), end: segment.end)
         guard missing.start <= missing.end else { return }
 
-        var request = Self.request(for: prepared.finalURL, range: missing)
+        var request = request(for: prepared.finalURL, range: missing)
         if let validator { request.setValue(validator, forHTTPHeaderField: "If-Range") }
         let connection = Connection(request: request, idleTimeout: configuration.idleTimeout)
         board.setActive(true, segment: index)
@@ -235,8 +346,10 @@ struct DownloadRun: Sendable {
         let response = try await connection.firstResponse()
         guard response.statusCode == 206 else {
             connection.cancel()
-            // A 200 to a ranged request means the server sent the whole file instead.
-            throw response.statusCode == 200 ? DownloadError.rangeNotSupported : failure(for: response)
+            guard response.statusCode == 200 else { throw failure(for: response) }
+            // A 200 to a request with If-Range means the validator no longer matches: the file
+            // changed on the server. Without a validator, the server just ignored the range.
+            throw validator == nil ? DownloadError.rangeNotSupported : FileChangedOnServer()
         }
         guard ContentRange(response) == ContentRange(range: missing, total: total) else {
             connection.cancel()
@@ -330,15 +443,21 @@ struct DownloadRun: Sendable {
     // MARK: - Progress
 
     /// Runs `work` while publishing the board at most 4 times a second, also while no bytes
-    /// arrive, with speed smoothed over 5 seconds and the time left.
-    private func reportingProgress(of board: ProgressBoard, total: Int64?, _ work: () async throws -> Void) async throws {
+    /// arrive, with speed smoothed over 5 seconds and the time left. Saves the manifest about once
+    /// a second.
+    private func reportingProgress(of prepared: Prepared, _ work: () async throws -> Void) async throws {
+        let board = prepared.board
+        let total = prepared.totalBytes
         let reporter = Task {
             var meter = SpeedMeter()
             // The starting sample lets the first tick measure bytes that arrived before it.
             _ = meter.record(board.reading.receivedBytes, at: .now)
             var published: (reading: ProgressBoard.Reading, speed: Int64)?
+            var ticks = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.progressInterval)
+                ticks += 1
+                if ticks.isMultiple(of: Self.ticksPerManifestSave) { saveManifest(prepared) }
                 let reading = board.reading
                 let speed = meter.record(reading.receivedBytes, at: .now)
                 if let published, published.reading == reading, published.speed == speed { continue }
@@ -376,10 +495,10 @@ struct DownloadRun: Sendable {
 
     /// Sends `Range: bytes=0-0` (architecture.md, probe). A 206 means the server supports ranges
     /// and gives the size. A 200 means it doesn't, and the probe's own response is the download.
-    private func probe() async throws -> Probed {
-        let probe = Connection(request: Self.request(for: url, range: ByteRange(start: 0, end: 0)), idleTimeout: configuration.idleTimeout)
+    private func probe(_ target: URL) async throws -> Probed {
+        let probe = Connection(request: request(for: target, range: ByteRange(start: 0, end: 0)), idleTimeout: configuration.idleTimeout)
         let response = try await probe.firstResponse()
-        let finalURL = response.url ?? url
+        let finalURL = response.url ?? target
         switch response.statusCode {
         case 200:
             let total = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
@@ -409,14 +528,20 @@ struct DownloadRun: Sendable {
         return response.value(forHTTPHeaderField: "Last-Modified")
     }
 
-    /// A request for `range` of the file, or for the whole file when `range` is `nil`.
-    private static func request(for url: URL, range: ByteRange?) -> URLRequest {
+    /// A request for `range` of the file, or for the whole file when `range` is `nil`, with the
+    /// download's referrer and user agent.
+    private func request(for url: URL, range: ByteRange?) -> URLRequest {
         var request = URLRequest(url: url)
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
+        if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
         return request
     }
 }
+
+/// A segment request's validator no longer matched, so the file changed on the server.
+struct FileChangedOnServer: Error {}
 
 // MARK: - Run state
 
@@ -430,12 +555,17 @@ struct Prepared: Sendable {
     }
 
     let fileName: String
-    let finalURL: URL
+    var finalURL: URL
     let totalBytes: Int64?
     let layout: Layout
     let segments: [ByteRange]
     let partial: PartialFile
     let board: ProgressBoard
+
+    /// Pausing keeps the bytes only when the server supports ranges and the size is known.
+    var canResume: Bool {
+        if case .ranges = layout, totalBytes != nil { true } else { false }
+    }
 }
 
 /// A download's prepared state, kept between a run that failed and the Retry that continues it.

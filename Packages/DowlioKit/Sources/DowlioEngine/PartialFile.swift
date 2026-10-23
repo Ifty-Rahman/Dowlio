@@ -70,6 +70,16 @@ final class PartialFile: @unchecked Sendable {
         }
     }
 
+    /// Flushes the data file to disk, then writes `manifest` atomically. The caller takes the
+    /// manifest's counts before calling, so the saved counts never lead the bytes on disk.
+    func saveManifest(_ manifest: PartialFileManifest) throws {
+        guard !isClosed else { return }
+        try handle.synchronize()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(manifest).write(to: packageURL.appending(path: "manifest.json"), options: .atomic)
+    }
+
     func append(_ data: Data) throws {
         try handle.write(contentsOf: data)
     }

@@ -42,7 +42,7 @@ public actor DownloadEngine {
         entries[id] = entry
 
         let run = DownloadRun(
-            url: url, folder: folder, options: options, partialFile: entry.partialFile, configuration: configuration
+            id: id, url: url, folder: folder, options: options, partialFile: entry.partialFile, configuration: configuration
         ) { [weak self] change in
             await self?.update(id, change)
         }
@@ -57,6 +57,36 @@ public actor DownloadEngine {
         guard let entry = entries[id], case .failed = entry.snapshot.state, let run = entry.run else { return }
         update(id) { $0.state = .downloading }
         entries[id]?.task = Task { await run.run() }
+    }
+
+    /// Pauses a download (`GLOSSARY.md`): stops every connection and keeps the bytes it has.
+    /// Does nothing unless the download is probing, downloading or retrying.
+    public func pause(_ id: DownloadID) async {
+        guard let entry = entries[id], Self.canPause(entry.snapshot.state) else { return }
+        entry.task?.cancel()
+        await entry.task?.value
+        // The download may have finished or failed while it was stopping.
+        guard let state = entries[id]?.snapshot.state, Self.canPause(state) else { return }
+        update(id) {
+            $0.state = .paused
+            $0.bytesPerSecond = 0
+            $0.timeRemaining = nil
+        }
+    }
+
+    /// Resumes a paused download (`GLOSSARY.md`) from the bytes it has. Does nothing for a
+    /// download that isn't Paused.
+    public func resume(_ id: DownloadID) {
+        guard let entry = entries[id], entry.snapshot.state == .paused, let run = entry.run else { return }
+        update(id) { $0.state = .downloading }
+        entries[id]?.task = Task { await run.run(resuming: true) }
+    }
+
+    private static func canPause(_ state: DownloadState) -> Bool {
+        switch state {
+        case .probing, .downloading, .retrying: true
+        default: false
+        }
     }
 
     /// The download's current snapshot, then one snapshot per change. The stream ends after a
