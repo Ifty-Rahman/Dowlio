@@ -168,7 +168,7 @@ public actor DownloadEngine {
         options.userAgent = manifest.userAgent
 
         let segments = manifest.segments.map { ByteRange(start: $0.start, end: $0.end) }
-        let prepared = Prepared(
+        let plan = DownloadPlan(
             fileName: manifest.fileName,
             finalURL: manifest.finalURL,
             totalBytes: manifest.totalBytes,
@@ -187,8 +187,8 @@ public actor DownloadEngine {
             isNotSecure: manifest.originalURL.isPlainHTTP || manifest.finalURL.isPlainHTTP,
             displayHost: manifest.originalURL.displayHost
         )
-        snapshot.apply(prepared.board.reading)
-        snapshot.canResume = prepared.canResume
+        snapshot.apply(plan.board.reading)
+        snapshot.canResume = plan.canResume
 
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry
@@ -199,7 +199,7 @@ public actor DownloadEngine {
         ) { [weak self] change in
             await self?.update(id, change)
         }
-        run.adopt(prepared)
+        run.adopt(plan)
         entries[id]?.run = run
         return id
     }
