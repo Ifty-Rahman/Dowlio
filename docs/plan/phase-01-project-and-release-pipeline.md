@@ -1,5 +1,7 @@
 # Phase 1: Project and release pipeline
 
+Status: done, 2026-10-23. Release `v0.0.1` passed every check below, including a browser download and Open Anyway install that matched the README.
+
 ## Goal
 
 An empty Dowlio app that builds, runs, signs and publishes to GitHub Releases. Doing this first means every later phase can ship a test build the same day.
