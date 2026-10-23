@@ -16,4 +16,32 @@ enum SegmentPlanner {
             ByteRange(start: size * index / count, end: size * (index + 1) / count - 1)
         }
     }
+
+    /// How a free connection takes over work: `victim` keeps `kept`, and the connection fetches
+    /// `taken`, which ends where the victim's range ended.
+    struct Steal: Equatable {
+        let victim: Int
+        let kept: ByteRange
+        let taken: ByteRange
+    }
+
+    /// The steal for a connection that finished its segment. `remaining` holds each segment's part
+    /// that isn't downloaded yet, or `nil` when the segment is finished. The connection takes the
+    /// second half of the largest remaining range, the first on a tie, and only when both halves
+    /// stay at 1 MiB or more. `nil` means nothing can be stolen, so the connection closes.
+    static func steal(from remaining: [ByteRange?]) -> Steal? {
+        var largest: (index: Int, range: ByteRange)?
+        for (index, range) in remaining.enumerated() {
+            guard let range else { continue }
+            if range.length > largest?.range.length ?? 0 { largest = (index, range) }
+        }
+        guard let (victim, range) = largest, range.length / 2 >= minimumSegmentSize else { return nil }
+        // The kept half takes the extra byte of an odd length.
+        let keptLength = range.length - range.length / 2
+        return Steal(
+            victim: victim,
+            kept: ByteRange(start: range.start, end: range.start + keptLength - 1),
+            taken: ByteRange(start: range.start + keptLength, end: range.end)
+        )
+    }
 }

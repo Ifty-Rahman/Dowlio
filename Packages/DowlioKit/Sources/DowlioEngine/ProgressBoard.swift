@@ -12,12 +12,17 @@ final class ProgressBoard: @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    /// Indexes stay stable while a download runs. Stealing appends new segments at the end.
     private var segments: [SegmentProgress]
     /// Bytes of a download whose size is unknown, so it has no segments.
     private var unsegmentedBytes: Int64 = 0
+    /// Per segment, the bytes from its start a connection has taken on: written, or about to be.
+    /// Never below `receivedBytes`. Stealing never takes these bytes.
+    private var claimed: [Int64]
 
     init(segments: [ByteRange]) {
         self.segments = segments.map { SegmentProgress(start: $0.start, end: $0.end) }
+        claimed = Array(repeating: 0, count: segments.count)
     }
 
     /// A board for segments that already hold `received` bytes each, from a restored manifest.
@@ -29,7 +34,12 @@ final class ProgressBoard: @unchecked Sendable {
     /// Adds `bytes` to segment `index`, or to the unsegmented count when the size is unknown.
     func add(_ bytes: Int64, to index: Int?) {
         lock.withLock {
-            if let index { segments[index].receivedBytes += bytes } else { unsegmentedBytes += bytes }
+            if let index {
+                segments[index].receivedBytes += bytes
+                claimed[index] = max(claimed[index], segments[index].receivedBytes)
+            } else {
+                unsegmentedBytes += bytes
+            }
         }
     }
 
@@ -37,6 +47,7 @@ final class ProgressBoard: @unchecked Sendable {
     func reset() {
         lock.withLock {
             for index in segments.indices { segments[index].receivedBytes = 0 }
+            claimed = Array(repeating: 0, count: segments.count)
             unsegmentedBytes = 0
         }
     }
@@ -52,7 +63,8 @@ final class ProgressBoard: @unchecked Sendable {
     var reading: Reading {
         lock.withLock {
             Reading(
-                segments: segments,
+                // File order, also after stealing appended segments.
+                segments: segments.sorted { $0.start < $1.start },
                 receivedBytes: unsegmentedBytes + segments.reduce(0) { $0 + $1.receivedBytes },
                 activeConnections: segments.filter(\.isActive).count
             )
@@ -62,6 +74,41 @@ final class ProgressBoard: @unchecked Sendable {
     /// Whether every segment holds exactly its own length.
     var coversEverySegment: Bool {
         lock.withLock { segments.allSatisfy { $0.receivedBytes == $0.end - $0.start + 1 } }
+    }
+
+    /// How many segments there are, including ones stealing added.
+    var segmentCount: Int { lock.withLock { segments.count } }
+
+    /// Segment `index`'s current bounds. Its end moves earlier when another connection steals.
+    func range(segment index: Int) -> ByteRange {
+        lock.withLock { ByteRange(start: segments[index].start, end: segments[index].end) }
+    }
+
+    /// Takes on up to `length` bytes of segment `index` from `offset`, and returns how many fall
+    /// inside the segment's current end. The connection writes only those, then adds them.
+    func claim(_ length: Int64, at offset: Int64, segment index: Int) -> Int64 {
+        lock.withLock {
+            let allowed = max(0, min(length, segments[index].end - offset + 1))
+            claimed[index] = offset + allowed - segments[index].start
+            return allowed
+        }
+    }
+
+    /// Lets a connection that finished its segment take over work: the second half of the largest
+    /// part no connection has taken on yet (`SegmentPlanner.steal`). Returns the new segment's
+    /// index, or `nil` when nothing can be stolen.
+    func steal() -> Int? {
+        lock.withLock {
+            let remaining: [ByteRange?] = segments.indices.map { index in
+                let start = segments[index].start + max(claimed[index], segments[index].receivedBytes)
+                return start <= segments[index].end ? ByteRange(start: start, end: segments[index].end) : nil
+            }
+            guard let steal = SegmentPlanner.steal(from: remaining) else { return nil }
+            segments[steal.victim].end = steal.kept.end
+            segments.append(SegmentProgress(start: steal.taken.start, end: steal.taken.end))
+            claimed.append(0)
+            return segments.count - 1
+        }
     }
 }
 

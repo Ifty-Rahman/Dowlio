@@ -58,3 +58,84 @@ struct SegmentPlannerTests {
         #expect(SegmentPlanner.plan(size: 67_108_864, connections: 20).count == 16)
     }
 }
+
+/// Seam 2: stealing. Expected splits are worked out by hand: a free connection takes the second
+/// half of the largest remaining range, and only when both halves stay at 1 MiB or more.
+struct SegmentStealTests {
+    static let mebibyte: Int64 = 1_048_576
+
+    struct Case: Sendable, CustomTestStringConvertible {
+        let name: String
+        /// Each segment's part that isn't downloaded yet, or `nil` when it's finished.
+        let remaining: [ClosedRange<Int64>?]
+        /// The victim, its kept part and the taken part, or `nil` when nothing can be stolen.
+        let expected: Expected?
+
+        var testDescription: String { name }
+    }
+
+    struct Expected: Sendable {
+        let victim: Int
+        let kept: ClosedRange<Int64>
+        let taken: ClosedRange<Int64>
+    }
+
+    static let cases: [Case] = [
+        Case(
+            name: "the largest remaining range is split at its midpoint",
+            remaining: [nil, 4_194_304...8_388_607, 9_437_184...10_485_759],
+            expected: Expected(victim: 1, kept: 4_194_304...6_291_455, taken: 6_291_456...8_388_607)
+        ),
+        Case(
+            name: "an odd length keeps the extra byte",
+            remaining: [0...2_097_152],
+            expected: Expected(victim: 0, kept: 0...1_048_576, taken: 1_048_577...2_097_152)
+        ),
+        Case(
+            name: "exactly 2 MiB splits into two 1 MiB halves",
+            remaining: [nil, 3_145_728...5_242_879],
+            expected: Expected(victim: 1, kept: 3_145_728...4_194_303, taken: 4_194_304...5_242_879)
+        ),
+        Case(name: "just under 2 MiB can't be split", remaining: [0...2_097_150, nil], expected: nil),
+        Case(name: "every segment finished", remaining: [nil, nil, nil], expected: nil),
+        Case(
+            name: "a tie goes to the first segment",
+            remaining: [0...3_145_727, 4_194_304...7_340_031],
+            expected: Expected(victim: 0, kept: 0...1_572_863, taken: 1_572_864...3_145_727)
+        ),
+    ]
+
+    @Test(arguments: cases)
+    func aFreeConnectionTakesTheSecondHalfOfTheLargestRemainingRange(_ testCase: Case) {
+        let remaining = testCase.remaining.map { $0.map { ByteRange(start: $0.lowerBound, end: $0.upperBound) } }
+        let steal = SegmentPlanner.steal(from: remaining)
+        if let expected = testCase.expected {
+            #expect(steal?.victim == expected.victim)
+            #expect(steal?.kept == ByteRange(start: expected.kept.lowerBound, end: expected.kept.upperBound))
+            #expect(steal?.taken == ByteRange(start: expected.taken.lowerBound, end: expected.taken.upperBound))
+        } else {
+            #expect(steal == nil)
+        }
+    }
+
+    /// Three connections finish at once against one 8 MiB range. Each steal sees the previous one's
+    /// result, so the second splits the kept half (a tie, which goes to the first segment) and the
+    /// third splits the first taken half.
+    @Test func severalConnectionsFinishingAtOnceSplitOneAfterAnother() {
+        var remaining: [ByteRange?] = [ByteRange(start: 0, end: 8 * Self.mebibyte - 1)]
+        var taken: [ByteRange] = []
+        for _ in 0..<3 {
+            guard let steal = SegmentPlanner.steal(from: remaining) else { break }
+            remaining[steal.victim] = steal.kept
+            remaining.append(steal.taken)
+            taken.append(steal.taken)
+        }
+
+        #expect(taken == [
+            ByteRange(start: 4 * Self.mebibyte, end: 8 * Self.mebibyte - 1),
+            ByteRange(start: 2 * Self.mebibyte, end: 4 * Self.mebibyte - 1),
+            ByteRange(start: 6 * Self.mebibyte, end: 8 * Self.mebibyte - 1),
+        ])
+        #expect(remaining.compactMap { $0 }.map(\.length).reduce(0, +) == 8 * Self.mebibyte)
+    }
+}
