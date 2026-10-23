@@ -4,6 +4,9 @@ import Foundation
 extension URL {
     /// `http://`, whose bytes travel unencrypted (ADR 0003).
     var isPlainHTTP: Bool { scheme?.lowercased() == "http" }
+
+    /// The host as the snapshot shows it: lowercased, `nil` when the link has none.
+    var displayHost: String? { host(percentEncoded: false)?.lowercased() }
 }
 
 /// Why a partial file couldn't be restored.
@@ -47,7 +50,8 @@ public actor DownloadEngine {
             state: .probing,
             fileName: FileNaming.name(for: url),
             destinationFolder: folder,
-            isNotSecure: url.isPlainHTTP
+            isNotSecure: url.isPlainHTTP,
+            displayHost: url.displayHost
         )
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry
@@ -187,7 +191,8 @@ public actor DownloadEngine {
             fileName: manifest.fileName,
             destinationFolder: folder,
             totalBytes: manifest.totalBytes,
-            isNotSecure: manifest.originalURL.isPlainHTTP || manifest.finalURL.isPlainHTTP
+            isNotSecure: manifest.originalURL.isPlainHTTP || manifest.finalURL.isPlainHTTP,
+            displayHost: manifest.originalURL.displayHost
         )
         snapshot.apply(prepared.board.reading)
         snapshot.canResume = prepared.canResume

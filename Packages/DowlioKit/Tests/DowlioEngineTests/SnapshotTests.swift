@@ -48,4 +48,55 @@ struct SnapshotTests {
         let third = await engine.add(url: server.url(for: "/third.txt"), to: folder)
         #expect(await all.next()?.id == third)
     }
+
+    @Test func theDisplayHostIsTheOriginalLinksHostInLowercase() async throws {
+        let folder = try TestFiles.makeFolder()
+        let engine = DownloadEngine(configuration: .fast)
+        // Nothing listens on port 1, so this only checks the snapshot before the download fails.
+        let id = await engine.add(url: URL(string: "http://LocalHost:1/Report.pdf")!, to: folder)
+
+        let first = try await engine.firstSnapshot(of: id) { _ in true }
+
+        #expect(first.displayHost == "localhost")
+    }
+
+    @Test func theDisplayHostStaysTheOriginalLinksHostThroughARedirect() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024)), at: "/file.txt")
+        server.redirect("/go", to: "http://localhost:\(server.port)/file.txt")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/go"), to: folder)
+        let finished = try await engine.finished(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.displayHost == "127.0.0.1")
+    }
+
+    @Test func aRestoredDownloadHasTheDisplayHostOfItsOriginalLink() async throws {
+        let folder = try TestFiles.makeFolder()
+        let package = folder.appending(path: "a.zip.dowlio", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: false)
+        try Data(count: 1024).write(to: package.appending(path: "data"))
+        let manifest = PartialFileManifest(
+            formatVersion: PartialFileManifest.currentFormatVersion,
+            downloadID: UUID().uuidString,
+            originalURL: URL(string: "https://Files.Example.com/a.zip")!,
+            finalURL: URL(string: "https://cdn.example.net/a.zip")!,
+            validator: "\"a1\"",
+            totalBytes: 2048,
+            fileName: "a.zip",
+            connections: 8,
+            segments: [.init(start: 0, end: 2047, received: 1024)],
+            layout: .ranges
+        )
+        try JSONEncoder().encode(manifest).write(to: package.appending(path: "manifest.json"))
+
+        let engine = DownloadEngine()
+        let restored = try await engine.restore(partialFile: package)
+        let snapshot = try await engine.firstSnapshot(of: restored) { _ in true }
+
+        #expect(snapshot.displayHost == "files.example.com")
+    }
 }

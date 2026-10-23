@@ -137,6 +137,9 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// and a file with its name already existed. `fileName` is the download's own planned name,
     /// which the existing file has.
     public var wasSkipped: Bool = false
+    /// The original link's host, lowercased, for showing where the download comes from. It stays
+    /// the same when redirects lead elsewhere. `nil` for a link without a host.
+    public var displayHost: String?
 
     public init(
         id: DownloadID,
@@ -145,7 +148,8 @@ public struct DownloadSnapshot: Equatable, Sendable {
         destinationFolder: URL,
         receivedBytes: Int64 = 0,
         totalBytes: Int64? = nil,
-        isNotSecure: Bool = false
+        isNotSecure: Bool = false,
+        displayHost: String? = nil
     ) {
         self.id = id
         self.state = state
@@ -154,5 +158,6 @@ public struct DownloadSnapshot: Equatable, Sendable {
         self.receivedBytes = receivedBytes
         self.totalBytes = totalBytes
         self.isNotSecure = isNotSecure
+        self.displayHost = displayHost
     }
 }
