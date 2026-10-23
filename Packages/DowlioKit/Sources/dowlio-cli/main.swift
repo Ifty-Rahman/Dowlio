@@ -5,9 +5,10 @@ import DowlioEngine
 import Foundation
 
 let usage = """
-usage: dowlio-cli get <url> [-o <folder>]
+usage: dowlio-cli get <url> [-c <connections>] [-o <folder>]
 
-  get   Download <url> into <folder> (default: the current folder).
+  get   Download <url> into <folder> (default: the current folder) over up to
+        <connections> connections (default: 8, at most 16).
 """
 
 // Progress lines must reach a pipe as they're printed, not when the tool exits.
@@ -24,10 +25,19 @@ guard arguments.first == "get", arguments.count >= 2, let url = URL(string: argu
 }
 
 var folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+var options = RequestOptions()
 var rest = arguments.dropFirst(2)
 while let option = rest.popFirst() {
-    guard option == "-o", let path = rest.popFirst() else { fail(usage) }
-    folder = URL(fileURLWithPath: path, isDirectory: true)
+    switch option {
+    case "-o":
+        guard let path = rest.popFirst() else { fail(usage) }
+        folder = URL(fileURLWithPath: path, isDirectory: true)
+    case "-c":
+        guard let count = rest.popFirst().flatMap({ Int($0) }) else { fail(usage) }
+        options.connections = count
+    default:
+        fail(usage)
+    }
 }
 
 func bytes(_ count: Int64) -> String {
@@ -38,7 +48,10 @@ func progressLine(_ snapshot: DownloadSnapshot) -> String {
     let received = bytes(snapshot.receivedBytes)
     guard let total = snapshot.totalBytes, total > 0 else { return "\(received)  \(snapshot.state)" }
     let percent = Int(Double(snapshot.receivedBytes) / Double(total) * 100)
-    return "\(percent)%  \(received) of \(bytes(total))  \(snapshot.state)"
+    let speed = "\(bytes(snapshot.bytesPerSecond))/s"
+    let left = snapshot.timeRemaining.map { "\(Int($0.rounded())) s left" } ?? "time left unknown"
+    return "\(percent)%  \(received) of \(bytes(total))  \(speed)  \(left)  "
+        + "\(snapshot.activeConnections) connections  \(snapshot.state)"
 }
 
 /// The newest snapshot, shared between the snapshot loop and the once-a-second printer.
@@ -48,7 +61,7 @@ actor Latest {
 }
 
 let engine = DownloadEngine()
-let id = await engine.add(url: url, to: folder)
+let id = await engine.add(url: url, to: folder, options: options)
 let latest = Latest()
 
 // One progress line a second, including while no bytes arrive.

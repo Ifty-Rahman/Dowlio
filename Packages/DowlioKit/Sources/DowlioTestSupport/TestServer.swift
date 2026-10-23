@@ -8,7 +8,8 @@ public final class TestServer: @unchecked Sendable {
         public var data: Data
         public var supportsRanges: Bool
         /// When set, every response for this file stops after this many body bytes until
-        /// `releaseHeldResponses()` is called.
+        /// `releaseHeldResponses()` is called. Zero holds the whole body. One-byte bodies, such as
+        /// the probe reply, are never held.
         public var holdAfterBytes: Int?
         /// A broken server: range replies keep their `Content-Range` but carry this many fewer
         /// bytes, with a matching `Content-Length`.
@@ -16,19 +17,35 @@ public final class TestServer: @unchecked Sendable {
         /// A broken server: replies to ranges longer than one byte claim to start this many bytes
         /// later than they do. The one-byte probe reply stays correct.
         public var misreportRangeStartBy: Int
+        /// Sent as the `ETag` header on every reply, when set.
+        public var eTag: String?
+        /// Sent as the `Last-Modified` header on every reply, when set.
+        public var lastModified: String?
 
         public init(
             data: Data,
             supportsRanges: Bool = true,
             holdAfterBytes: Int? = nil,
             shortRangeBodiesBy: Int = 0,
-            misreportRangeStartBy: Int = 0
+            misreportRangeStartBy: Int = 0,
+            eTag: String? = nil,
+            lastModified: String? = nil
         ) {
             self.data = data
             self.supportsRanges = supportsRanges
             self.holdAfterBytes = holdAfterBytes
             self.shortRangeBodiesBy = shortRangeBodiesBy
             self.misreportRangeStartBy = misreportRangeStartBy
+            self.eTag = eTag
+            self.lastModified = lastModified
+        }
+
+        /// The `ETag` and `Last-Modified` headers this file's replies carry.
+        var validatorHeaders: [String: String] {
+            var headers: [String: String] = [:]
+            if let eTag { headers["ETag"] = eTag }
+            if let lastModified { headers["Last-Modified"] = lastModified }
+            return headers
         }
     }
 
@@ -172,10 +189,10 @@ public final class TestServer: @unchecked Sendable {
             if body.count > file.shortRangeBodiesBy { body.removeLast(file.shortRangeBodiesBy) }
             send(
                 status: "206 Partial Content",
-                headers: [
+                headers: file.validatorHeaders.merging([
                     "Content-Range": "bytes \(range.lowerBound + (range.count > 1 ? file.misreportRangeStartBy : 0))-\(range.upperBound - 1)/\(total)",
                     "Accept-Ranges": "bytes",
-                ],
+                ]) { $1 },
                 body: body,
                 hold: file.holdAfterBytes,
                 on: connection
@@ -183,7 +200,7 @@ public final class TestServer: @unchecked Sendable {
         } else {
             send(
                 status: "200 OK",
-                headers: file.supportsRanges ? ["Accept-Ranges": "bytes"] : [:],
+                headers: file.validatorHeaders.merging(file.supportsRanges ? ["Accept-Ranges": "bytes"] : [:]) { $1 },
                 body: file.data,
                 hold: file.holdAfterBytes,
                 on: connection
@@ -197,7 +214,8 @@ public final class TestServer: @unchecked Sendable {
         head += "\r\n"
 
         let close: @Sendable (NWError?) -> Void = { _ in connection.cancel() }
-        guard let hold, hold < body.count else {
+        // One-byte bodies, such as the probe reply, are never held.
+        guard let hold, hold < body.count, body.count > 1 else {
             connection.send(content: Data(head.utf8) + body, completion: .contentProcessed(close))
             return
         }

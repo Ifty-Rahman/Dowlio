@@ -54,7 +54,7 @@ struct OneConnectionDownloadTests {
     @Test func bytesGoIntoAPartialFileUntilTheDownloadCompletes() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 4 * 1024 * 1024, seed: 3)
-        let held = 1024 * 1024
+        let held = 512 * 1024
         server.serve(.init(data: data, holdAfterBytes: held), at: "/video.mp4")
         let folder = try TestFiles.makeFolder()
         let partial = folder.appending(path: "video.mp4.dowlio")

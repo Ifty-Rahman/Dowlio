@@ -32,6 +32,14 @@ extension DownloadEngine {
     }
 }
 
+/// Polls `condition` every 20 ms until it holds. The suite's time limit ends a wait that never
+/// succeeds.
+public func waitUntil(_ condition: @Sendable () -> Bool) async throws {
+    while !condition() {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+}
+
 public enum TestFiles {
     /// A fresh empty folder under the temporary directory.
     public static func makeFolder() throws -> URL {

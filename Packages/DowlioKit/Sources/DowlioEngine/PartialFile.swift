@@ -55,6 +55,30 @@ final class PartialFile: @unchecked Sendable {
         try handle.write(contentsOf: data)
     }
 
+    private let writeLock = NSLock()
+
+    /// Writes `data` at `offset` in the data file. Segments call this from several connections,
+    /// and the lock makes it the one serial writer the spec asks for.
+    func write(_ data: Data, at offset: Int64) throws {
+        try writeLock.withLock {
+            try data.withUnsafeBytes { buffer in
+                var done = 0
+                while done < buffer.count {
+                    let written = pwrite(
+                        handle.fileDescriptor,
+                        buffer.baseAddress! + done,
+                        buffer.count - done,
+                        off_t(offset) + off_t(done)
+                    )
+                    guard written > 0 else {
+                        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                    }
+                    done += written
+                }
+            }
+        }
+    }
+
     /// Flushes the data, moves it to `destination` in one atomic rename and deletes the package.
     /// Throws `DownloadError.fileExists`, and leaves the package in place, if `destination` exists.
     func finish(as destination: URL) throws {
