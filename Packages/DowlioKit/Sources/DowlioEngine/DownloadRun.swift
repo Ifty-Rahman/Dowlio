@@ -552,8 +552,17 @@ struct DownloadRun: Sendable {
                 }
             }
         }
-        defer { reporter.cancel() }
-        try await work()
+        // The reporter ends before this returns, so none of its snapshots can follow the state
+        // the download moves to next, such as Completed or Paused.
+        do {
+            try await work()
+        } catch {
+            reporter.cancel()
+            await reporter.value
+            throw error
+        }
+        reporter.cancel()
+        await reporter.value
     }
 
     // MARK: - Probe
