@@ -111,7 +111,7 @@ In this phase, a developer drives the engine from a command-line tool. Phase 3 p
 ### Modules
 
 - **DowlioCore** gains the shared models: download identifier, download state, download error, request options, download snapshot and segment progress. These types are what the app sees. They must be `Sendable` and free of engine internals.
-- **DowlioEngine** is a new module. It holds the engine actor and its parts: prober, segment planner, connection, partial file, finalizer, retry policy and host limit store.
+- **DowlioEngine** is a new module. It holds the engine actor and its parts: the download run, segment planner, connection, partial file, retry policy and host limit store. The download run probes the server first and puts the finished file in place last.
 - **dowlio-cli** is a new executable product in the package. CI builds and tests it, but it never ships in the app or in a release.
 - **DowlioTestSupport** is a new test-only target with the fault-injecting test server, shared by engine tests and later phases.
 
@@ -200,7 +200,7 @@ A small store keyed by host. It starts in memory. Phase 3 persists it in the dat
 - The manifest is saved atomically about once a second, and on every state change.
 - If the package is missing when a download runs, the download starts over in a new package.
 
-### Finalizer
+### Finishing the file
 
 - Checks that the segments cover byte 0 to the total size exactly. When the size is unknown, it checks that the stream ended cleanly.
 - Flushes, then moves the data file to its final name with an atomic rename in the same folder, then deletes the package.
