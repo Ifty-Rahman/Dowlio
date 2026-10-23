@@ -102,7 +102,7 @@ struct WorkStealingTests {
 
         let requestsBeforeResume = server.requests.count
         await engine.resume(id)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "split.iso")) == TestFiles.sha256(data))

@@ -54,7 +54,7 @@ struct CancelAndDiskSpaceTests {
         #expect(allocated >= size)
 
         server.releaseHeldResponses()
-        #expect(try await engine.finished(id).state == .completed)
+        #expect(try await engine.completedOrFailed(id).state == .completed)
     }
 
     @Test func aFileThatCantFitFailsBeforeAnyDataIsRequested() async throws {
@@ -65,7 +65,7 @@ struct CancelAndDiskSpaceTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/huge.dmg"), to: volume.folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .failed(.notEnoughSpace))
         #expect(server.requests.count == 1)
@@ -81,7 +81,7 @@ struct CancelAndDiskSpaceTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/locked.pdf"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .failed(.destinationNotWritable))
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)

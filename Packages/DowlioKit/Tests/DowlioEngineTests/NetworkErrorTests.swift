@@ -14,7 +14,7 @@ struct NetworkErrorTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/odd"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         guard case .failed(.network(let failure)) = finished.state else {
             Issue.record("Expected a network failure, got \(finished.state)")
@@ -31,7 +31,7 @@ struct NetworkErrorTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/bad.zip"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         guard case .failed(.network(let failure)) = finished.state else {
             Issue.record("Expected a network failure, got \(finished.state)")

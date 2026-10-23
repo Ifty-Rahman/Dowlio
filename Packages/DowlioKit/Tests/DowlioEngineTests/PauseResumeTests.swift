@@ -33,7 +33,7 @@ struct PauseResumeTests {
         #expect(stillPaused.receivedBytes == Int64(2 * Self.held))
 
         await engine.resume(id)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
@@ -120,7 +120,7 @@ struct PauseResumeTests {
         let requestsWhenPaused = server.requests.count
         server.releaseHeldResponses()
         await engine.resume(id)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(server.requests[requestsWhenPaused].path == "/latest")
@@ -139,7 +139,7 @@ struct PauseResumeTests {
         let requestsWhenPaused = server.requests.count
         server.releaseHeldResponses()
         await engine.resume(id)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         let afterPause = server.requests[requestsWhenPaused...].map(\.path)
@@ -162,7 +162,7 @@ struct PauseResumeTests {
         server.remove("/signed.bin")
         server.releaseHeldResponses()
         await engine.resume(id)
-        let failed = try await engine.finished(id)
+        let failed = try await engine.completedOrFailed(id)
 
         #expect(failed.state == .failed(.linkExpired))
         #expect(failed.receivedBytes == Int64(2 * Self.held))
@@ -180,7 +180,7 @@ struct PauseResumeTests {
         server.serve(.init(data: new, eTag: "\"new\""), at: "/report.pdf")
         server.releaseHeldResponses()
         await engine.resume(id)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "report.pdf")) == TestFiles.sha256(new))
@@ -197,7 +197,7 @@ struct PauseResumeTests {
         let requestsWhenPaused = server.requests.count
         server.releaseHeldResponses()
         await engine.resume(id)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "notes.zip")) == TestFiles.sha256(data))
@@ -224,7 +224,7 @@ struct PauseResumeTests {
 
         let engine = DownloadEngine(configuration: .fastWithHolds)
         let id = await engine.add(url: server.url(for: "/build.zip"), to: folder, options: options)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "build.zip")) == TestFiles.sha256(new))
@@ -239,7 +239,7 @@ struct PauseResumeTests {
 
         let engine = DownloadEngine(configuration: .fastWithHolds)
         let id = await engine.add(url: server.url(for: "/live.log"), to: folder, options: options)
-        let failed = try await engine.finished(id)
+        let failed = try await engine.completedOrFailed(id)
 
         #expect(failed.state == .failed(.serverChangedFile))
         #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "live.log").path))
@@ -258,7 +258,7 @@ struct PauseResumeTests {
 
         #expect(downloading.canResume == rangesSupported)
         server.releaseHeldResponses()
-        _ = try await engine.finished(id)
+        _ = try await engine.completedOrFailed(id)
     }
 
     @Test func everyRequestSendsTheReferrerAndUserAgent() async throws {
@@ -272,7 +272,7 @@ struct PauseResumeTests {
 
         let engine = DownloadEngine(configuration: .fastWithHolds)
         let id = await engine.add(url: server.url(for: "/page-file.zip"), to: folder, options: options)
-        _ = try await engine.finished(id)
+        _ = try await engine.completedOrFailed(id)
 
         #expect(server.requests.count == 4)
         #expect(server.requests.allSatisfy { $0.headers["referer"] == "https://example.com/downloads" })

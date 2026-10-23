@@ -68,7 +68,7 @@ struct SnapshotTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/go"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(finished.displayHost == "127.0.0.1")

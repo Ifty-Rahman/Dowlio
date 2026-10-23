@@ -33,7 +33,7 @@ struct ResumabilityTests {
         server.releaseHeldResponses()
         let requestsBeforeResume = server.requests.count
         await fresh.resume(restored)
-        let finished = try await fresh.finished(restored)
+        let finished = try await fresh.completedOrFailed(restored)
 
         #expect(finished.state == .completed)
         #expect(finished.receivedBytes == Int64(Self.size))
@@ -89,7 +89,7 @@ struct ResumabilityTests {
 
         #expect(downloading.canResume == canResume)
         server.releaseHeldResponses()
-        #expect(try await engine.finished(id).state == .completed)
+        #expect(try await engine.completedOrFailed(id).state == .completed)
     }
 
     @Test func aRestoredDownloadWithoutAValidatorCantResume() async throws {
@@ -144,7 +144,7 @@ struct ResumabilityTests {
         let engine = DownloadEngine(configuration: .fastWithHolds)
         let restored = try await engine.restore(partialFile: package)
         await engine.resume(restored)
-        let finished = try await engine.finished(restored)
+        let finished = try await engine.completedOrFailed(restored)
 
         #expect(finished.state == .failed(.incompleteFile))
         #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "holey.bin").path))

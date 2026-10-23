@@ -22,14 +22,8 @@ extension DownloadEngine {
         throw EngineTestError.streamEnded(last: last)
     }
 
-    /// Waits until `id` is Completed or Failed and returns that snapshot.
-    public func finished(_ id: DownloadID) async throws -> DownloadSnapshot {
-        try await firstSnapshot(of: id) { snapshot in
-            switch snapshot.state {
-            case .completed, .failed: true
-            default: false
-            }
-        }
+    public func completedOrFailed(_ id: DownloadID) async throws -> DownloadSnapshot {
+        try await firstSnapshot(of: id) { $0.state == .completed || $0.state.isFailed }
     }
 }
 

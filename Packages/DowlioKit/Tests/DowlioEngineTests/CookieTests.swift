@@ -30,7 +30,7 @@ struct CookieTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/start.bin"), to: folder, options: Self.options)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         let toLinkHost = server.requests.filter { $0.path == "/start.bin" }
@@ -49,7 +49,7 @@ struct CookieTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/k.bin"), to: folder, options: Self.options)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "k.bin")) == TestFiles.sha256(data))
@@ -66,7 +66,7 @@ struct CookieTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/fallback.bin"), to: folder, options: Self.options)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "fallback.bin")) == TestFiles.sha256(data))
@@ -99,7 +99,7 @@ struct CookieTests {
         server.releaseHeldResponses()
         let requestsBeforeResume = server.requests.count
         await fresh.resume(restored)
-        let finished = try await fresh.finished(restored)
+        let finished = try await fresh.completedOrFailed(restored)
 
         #expect(finished.state == .completed)
         #expect(server.requests[..<requestsBeforeResume].allSatisfy { $0.headers["cookie"] == Self.header })

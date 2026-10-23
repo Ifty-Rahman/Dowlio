@@ -24,7 +24,7 @@ struct UnknownSizeTests {
         #expect(!midway.canResume)
 
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(finished.receivedBytes == Int64(data.count))

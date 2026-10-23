@@ -18,7 +18,7 @@ struct FinishedFileTests {
         server.serve(file, at: path)
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: path), to: folder, options: options)
-        return try await engine.finished(id)
+        return try await engine.completedOrFailed(id)
     }
 
     @Test func theNameComesFromContentDisposition() async throws {
@@ -172,7 +172,7 @@ struct FinishedFileTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: source, to: folder)
-        _ = try await engine.finished(id)
+        _ = try await engine.completedOrFailed(id)
 
         // The file's quarantine attribute keeps the agent. macOS stores the origin URL in its own
         // quarantine database, so it can't be read back from the file.

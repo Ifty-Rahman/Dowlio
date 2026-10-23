@@ -45,7 +45,7 @@ extension DownloadEngine {
         let path = "/other-\(UUID().uuidString).bin"
         server.serve(.init(data: TestServer.makeData(size: 2 * 1024 * 1024, seed: 99)), at: path)
         let id = add(url: server.url(for: path), to: try TestFiles.makeFolder())
-        let finished = try await finished(id)
+        let finished = try await completedOrFailed(id)
         guard finished.state == .completed else { throw EngineTestError.streamEnded(last: finished) }
         return path
     }

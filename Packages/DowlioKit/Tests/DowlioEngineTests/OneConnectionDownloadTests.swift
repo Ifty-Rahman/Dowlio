@@ -14,7 +14,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/files/archive.zip"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         let file = folder.appending(path: "archive.zip")
@@ -28,7 +28,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/probe.bin"), to: folder)
-        _ = try await engine.finished(id)
+        _ = try await engine.completedOrFailed(id)
 
         let probe = try #require(server.requests.first)
         #expect(probe.method == "GET")
@@ -44,7 +44,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/plain.iso"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "plain.iso")) == TestFiles.sha256(data))
@@ -70,7 +70,7 @@ struct OneConnectionDownloadTests {
         #expect(!FileManager.default.fileExists(atPath: destination.path))
 
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(finished.receivedBytes == Int64(data.count))
@@ -89,7 +89,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/report.pdf"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(finished.fileName == "report 2.pdf")
@@ -107,7 +107,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/short.bin"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "short.bin")) == TestFiles.sha256(data))
@@ -175,7 +175,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/gone.zip"), to: folder)
-        _ = try await engine.finished(id)
+        _ = try await engine.completedOrFailed(id)
 
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
     }
@@ -196,8 +196,8 @@ struct OneConnectionDownloadTests {
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "twice.iso.dowlio").path))
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "twice.iso 2.dowlio").path))
         server.releaseHeldResponses()
-        _ = try await engine.finished(first)
-        _ = try await engine.finished(second)
+        _ = try await engine.completedOrFailed(first)
+        _ = try await engine.completedOrFailed(second)
     }
 
     @Test func theFileIsNamedFromTheFinalURLAfterRedirects() async throws {
@@ -209,7 +209,7 @@ struct OneConnectionDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/download/latest"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(finished.fileName == "app-1.2.dmg")

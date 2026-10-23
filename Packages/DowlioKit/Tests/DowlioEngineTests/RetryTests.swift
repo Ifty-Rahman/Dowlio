@@ -19,7 +19,7 @@ struct RetryTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/locked.zip"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .failed(error))
         #expect(server.requests.count == 1)
@@ -32,7 +32,7 @@ struct RetryTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/bad.zip"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         guard case .failed = finished.state else {
             Issue.record("Expected Failed, got \(finished.state)")
@@ -107,7 +107,7 @@ extension RetryTests {
         options.connections = 1
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/stubborn.iso"), to: folder, options: options)
-        let failed = try await engine.finished(id)
+        let failed = try await engine.completedOrFailed(id)
 
         #expect(failed.state == .failed(.tooManyRetries))
         #expect(failed.activeConnections == 0)
@@ -220,7 +220,7 @@ extension RetryTests {
         configuration.idleTimeout = .milliseconds(300)
         let engine = DownloadEngine(configuration: configuration)
         let id = await engine.add(url: server.url(for: "/quiet.bin"), to: folder, options: options)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "quiet.bin")) == TestFiles.sha256(data))
@@ -238,7 +238,7 @@ extension RetryTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/plain.tar"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(finished.receivedBytes == Int64(data.count))

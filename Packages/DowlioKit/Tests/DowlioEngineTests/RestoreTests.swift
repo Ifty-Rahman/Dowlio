@@ -34,7 +34,7 @@ struct RestoreTests {
         server.releaseHeldResponses()
         let requestsBeforeResume = server.requests.count
         await fresh.resume(restored)
-        let finished = try await fresh.finished(restored)
+        let finished = try await fresh.completedOrFailed(restored)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "backup.tar")) == TestFiles.sha256(data))
@@ -74,7 +74,7 @@ struct RestoreTests {
 
         server.releaseHeldResponses()
         await fresh.resume(restored)
-        let finished = try await fresh.finished(restored)
+        let finished = try await fresh.completedOrFailed(restored)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "crash.dmg")) == TestFiles.sha256(data))
@@ -117,7 +117,7 @@ struct RestoreTests {
         let afterRestore = try await engine.firstSnapshot(of: id) { _ in true }
         #expect(afterRestore.state == .downloading)
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
         #expect(finished.state == .completed)
     }
 

@@ -14,7 +14,7 @@ struct SegmentedDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/big.iso"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
@@ -99,7 +99,7 @@ struct SegmentedDownloadTests {
         try await waitUntil { server.requests.count == 9 }
 
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "burst.bin")) == TestFiles.sha256(data))
     }
@@ -126,7 +126,7 @@ struct SegmentedDownloadTests {
         #expect(midway.timeRemaining != nil)
 
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
         #expect(finished.state == .completed)
         #expect(finished.segments.allSatisfy { $0.receivedBytes == 1_048_576 && !$0.isActive })
         #expect(finished.activeConnections == 0)
@@ -156,7 +156,7 @@ struct SegmentedDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/tagged.zip"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         let segmentRequests = Array(server.requests.dropFirst())

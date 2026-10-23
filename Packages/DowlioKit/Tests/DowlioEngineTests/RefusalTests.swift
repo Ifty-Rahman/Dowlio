@@ -35,7 +35,7 @@ struct RefusalTests {
         // the limit by one: 8 to 3.
         try await waitUntil { server.refusals(at: "/capped.iso") == 5 && limits.limit(for: Self.host(of: server)) == 3 }
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "capped.iso")) == TestFiles.sha256(data))
@@ -62,10 +62,10 @@ struct RefusalTests {
         let firstID = await engine.add(url: server.url(for: "/first.iso"), to: folder, options: options)
         try await waitUntil { server.refusals(at: "/first.iso") == 6 }
         server.releaseHeldResponses()
-        #expect(try await engine.finished(firstID).state == .completed)
+        #expect(try await engine.completedOrFailed(firstID).state == .completed)
 
         let secondID = await engine.add(url: server.url(for: "/second.bin"), to: folder, options: options)
-        let finished = try await engine.finished(secondID)
+        let finished = try await engine.completedOrFailed(secondID)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "second.bin")) == TestFiles.sha256(second))
@@ -113,7 +113,7 @@ struct RefusalTests {
         var options = RequestOptions()
         options.connections = 4
         let id = await engine.add(url: server.url(for: "/refused.bin"), to: folder, options: options)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "refused.bin")) == TestFiles.sha256(data))
@@ -129,7 +129,7 @@ struct RefusalTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/\(name)"), to: folder)
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: name)) == TestFiles.sha256(file.data))
@@ -209,7 +209,7 @@ struct RefusalTests {
         #expect(written == data.prefix(Self.held))
 
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
+        let finished = try await engine.completedOrFailed(id)
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "mixed.iso")) == TestFiles.sha256(data))
     }
