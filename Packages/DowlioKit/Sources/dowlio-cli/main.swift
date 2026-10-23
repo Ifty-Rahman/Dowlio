@@ -70,6 +70,13 @@ func progressLine(_ snapshot: DownloadSnapshot) -> String {
         + "\(snapshot.activeConnections) connections  \(snapshot.state)"
 }
 
+func readable(_ error: DownloadError) -> String {
+    switch error {
+    case .network(let failure): "network error: \(failure.message)"
+    default: "\(error)"
+    }
+}
+
 /// The newest snapshot, shared between the snapshot loop and the once-a-second printer.
 actor Latest {
     var snapshot: DownloadSnapshot?
@@ -122,7 +129,7 @@ for await snapshot in await engine.snapshots(of: id) {
         exit(0)
     case .failed(let error):
         printer.cancel()
-        print("Failed: \(error)")
+        print("Failed: \(readable(error))")
         exit(1)
     default:
         break

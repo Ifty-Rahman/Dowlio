@@ -39,7 +39,9 @@ public enum DownloadError: Error, Equatable, Sendable {
     case destinationNotWritable
     /// The server sent fewer bytes than the file's size, so the file isn't complete.
     case incompleteFile
-    case network(String)
+    /// The connection failed in a way retrying can't fix, or the server answered with a status
+    /// Dowlio doesn't expect.
+    case network(NetworkFailure)
     /// The destination volume can't hold the whole file.
     case notEnoughSpace
     /// The server wants a signed-in visitor (401).
@@ -55,6 +57,28 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// The file changed on the server twice in a row while downloading, so Dowlio stopped instead
     /// of mixing versions.
     case serverChangedFile
+}
+
+/// What went wrong with the network: the URL loading system's error code and its description.
+public struct NetworkFailure: Equatable, Sendable, CustomStringConvertible {
+    /// The underlying `URLError`'s code. `badServerResponse` for a status Dowlio doesn't expect,
+    /// `unknown` for an error that isn't a `URLError`.
+    public var code: URLError.Code
+    /// The underlying error's description, for logs and developer tools.
+    public var message: String
+
+    public init(code: URLError.Code, message: String) {
+        self.code = code
+        self.message = message
+    }
+
+    /// The failure `error` stands for, keeping its `URLError` code when it has one.
+    public init(_ error: Error) {
+        let code = (error as? URLError)?.code ?? .unknown
+        self.init(code: code, message: error.localizedDescription)
+    }
+
+    public var description: String { message }
 }
 
 /// How a download should run. Each ticket adds the options it needs (spec, engine interface).

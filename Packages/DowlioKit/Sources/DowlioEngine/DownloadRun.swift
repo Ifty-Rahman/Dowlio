@@ -118,7 +118,7 @@ struct DownloadRun: Sendable {
         } catch let error as DownloadError {
             await fail(with: error, current)
         } catch {
-            await fail(with: .network(error.localizedDescription), current)
+            await fail(with: .network(NetworkFailure(error)), current)
         }
     }
 
@@ -513,7 +513,10 @@ struct DownloadRun: Sendable {
                 retryAfter: RetryAfter.parse(response.value(forHTTPHeaderField: "Retry-After"), now: configuration.now()),
                 isRefusal: response.statusCode == 429 || response.statusCode == 503
             )
-        default: DownloadError.network("The server answered with status \(response.statusCode).")
+        default:
+            DownloadError.network(NetworkFailure(
+                code: .badServerResponse, message: "The server answered with status \(response.statusCode)."
+            ))
         }
     }
 
