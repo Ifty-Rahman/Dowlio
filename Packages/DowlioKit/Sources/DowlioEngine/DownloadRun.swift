@@ -136,7 +136,10 @@ struct DownloadRun: Sendable {
     /// so they never claim bytes that aren't on disk yet. A failed save keeps the previous one.
     private func saveManifest(_ prepared: Prepared) {
         let reading = prepared.board.reading
-        let validator: String? = if case .ranges(let validator) = prepared.layout { validator } else { nil }
+        let (layout, validator): (PartialFileManifest.Layout, String?) = switch prepared.layout {
+        case .whole: (.whole, nil)
+        case .ranges(let validator): (.ranges, validator)
+        }
         let manifest = PartialFileManifest(
             formatVersion: PartialFileManifest.currentFormatVersion,
             downloadID: id.description,
@@ -148,7 +151,8 @@ struct DownloadRun: Sendable {
             connections: options.connections,
             referrer: options.referrer,
             userAgent: options.userAgent,
-            segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) }
+            segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) },
+            layout: layout
         )
         try? prepared.partial.saveManifest(manifest)
     }

@@ -158,7 +158,7 @@ public actor DownloadEngine {
             fileName: manifest.fileName,
             finalURL: manifest.finalURL,
             totalBytes: manifest.totalBytes,
-            layout: segments.isEmpty || manifest.totalBytes == nil ? .whole : .ranges(validator: manifest.validator),
+            layout: manifest.layout == .ranges && manifest.totalBytes != nil ? .ranges(validator: manifest.validator) : .whole,
             segments: segments,
             partial: partial,
             board: ProgressBoard(segments: segments, received: manifest.segments.map(\.received))

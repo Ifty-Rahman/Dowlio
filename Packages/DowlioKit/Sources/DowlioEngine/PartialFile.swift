@@ -167,7 +167,8 @@ final class PartialFile: @unchecked Sendable {
     static func readManifest(in package: URL) throws -> PartialFileManifest {
         guard let data = try? Data(contentsOf: package.appending(path: "manifest.json")),
               let manifest = try? JSONDecoder().decode(PartialFileManifest.self, from: data),
-              manifest.formatVersion == PartialFileManifest.currentFormatVersion else {
+              (PartialFileManifest.oldestReadableFormatVersion...PartialFileManifest.currentFormatVersion)
+                  .contains(manifest.formatVersion) else {
             throw RestoreError.unreadableManifest
         }
         return manifest

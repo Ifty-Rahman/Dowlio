@@ -106,7 +106,7 @@ struct PauseResumeTests {
     /// received count never exceeds the bytes actually in the data file.
     private static func checkManifest(in package: URL, id: DownloadID, server: TestServer, data: Data) throws {
         let manifest = try manifest(in: package)
-        #expect(manifest["formatVersion"] as? Int == 1)
+        #expect(manifest["formatVersion"] as? Int == 2)
         #expect(manifest["downloadID"] as? String == id.description)
         #expect(manifest["originalURL"] as? String == server.url(for: "/disk.img").absoluteString)
         #expect(manifest["finalURL"] as? String == server.url(for: "/disk.img").absoluteString)
