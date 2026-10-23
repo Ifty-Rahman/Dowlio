@@ -37,8 +37,11 @@ struct DownloadRun: Sendable {
     }
 
     func run() async {
+        // Kept outside `do`, so a failure still reports the bytes the download has.
+        var board: ProgressBoard?
         do {
             let prepared = try await prepare()
+            board = prepared.board
             try await reportingProgress(of: prepared.board, total: prepared.totalBytes) {
                 switch prepared.layout {
                 case .whole:
@@ -48,8 +51,7 @@ struct DownloadRun: Sendable {
                 }
             }
 
-            let board = prepared.board
-            let reading = board.reading
+            let reading = prepared.board.reading
             await changeSnapshot {
                 $0.apply(reading)
                 $0.bytesPerSecond = 0
@@ -58,7 +60,7 @@ struct DownloadRun: Sendable {
             }
             // Every byte must be present before the file goes into place.
             if let expected = prepared.totalBytes,
-               reading.receivedBytes != expected || (!reading.segments.isEmpty && !board.coversEverySegment) {
+               reading.receivedBytes != expected || (!reading.segments.isEmpty && !prepared.board.coversEverySegment) {
                 throw DownloadError.incompleteFile
             }
             try Task.checkCancellation()
@@ -70,10 +72,21 @@ struct DownloadRun: Sendable {
         } catch where Task.isCancelled {
             // Cancelled by the engine, which deletes the partial file and reports Cancelled.
         } catch let error as DownloadError {
-            await changeSnapshot { $0.state = .failed(error) }
+            await fail(with: error, board: board)
         } catch {
-            let description = error.localizedDescription
-            await changeSnapshot { $0.state = .failed(.network(description)) }
+            await fail(with: .network(error.localizedDescription), board: board)
+        }
+    }
+
+    /// Reports Failed with the progress the download keeps, so the interface shows how much is
+    /// already downloaded and Retry continues from there.
+    private func fail(with error: DownloadError, board: ProgressBoard?) async {
+        let reading = board?.reading
+        await changeSnapshot {
+            if let reading { $0.apply(reading) }
+            $0.bytesPerSecond = 0
+            $0.timeRemaining = nil
+            $0.state = .failed(error)
         }
     }
 

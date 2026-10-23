@@ -72,12 +72,28 @@ extension RetryTests {
         options.connections = 1
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/flaky.zip"), to: folder, options: options)
-        let finished = try await engine.finished(id)
+        var received: [Int64] = []
+        var last: DownloadSnapshot?
+        for await snapshot in await engine.snapshots(of: id) {
+            received.append(snapshot.receivedBytes)
+            last = snapshot
+        }
 
-        #expect(finished.state == .completed)
+        #expect(last?.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "flaky.zip")) == TestFiles.sha256(data))
-        let ranges = server.requests.compactMap { $0.headers["range"] }
-        #expect(ranges == ["bytes=0-0", "bytes=0-\(data.count - 1)", "bytes=\(cut)-\(data.count - 1)", "bytes=\(2 * cut)-\(data.count - 1)"])
+        // How many bytes arrive before a dropped connection varies, because URLSession may discard
+        // the last ones it buffered. What must hold: progress never goes back, and each new request
+        // starts at or after the previous one and runs to the end of the file. An engine that
+        // restarted the segment would ask for byte 0 again.
+        #expect(received == received.sorted())
+        let starts = server.requests.compactMap { $0.headers["range"] }.dropFirst(2).map { range -> Int in
+            #expect(range.hasSuffix("-\(data.count - 1)"))
+            return Int(range.dropFirst("bytes=".count).prefix { $0 != "-" }) ?? -1
+        }
+        #expect(starts.count == 2)
+        #expect(starts == starts.sorted())
+        #expect(starts.allSatisfy { $0 >= 0 && $0 <= 2 * cut })
+        #expect(starts.last ?? 0 > 0)
     }
 
     @Test func fiveFailuresMakeTheDownloadFailedAndRetryContinuesIt() async throws {
@@ -106,9 +122,10 @@ extension RetryTests {
 
         #expect(finished.receivedBytes == Int64(data.count))
         #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
-        // Retry asked only for the bytes the five failed tries didn't bring.
+        // Retry asked only for the bytes the download didn't have when it failed.
         let retryRange = server.requests[requestsWhenFailed...].first?.headers["range"]
-        #expect(retryRange == "bytes=\(5 * cut)-\(data.count - 1)")
+        #expect(failed.receivedBytes > 0)
+        #expect(retryRange == "bytes=\(failed.receivedBytes)-\(data.count - 1)")
     }
 }
 
