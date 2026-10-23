@@ -1,4 +1,4 @@
-# Phase 5: Send page
+# Phase 5: Send to Dowlio
 
 ## Goal
 
@@ -13,7 +13,7 @@ Phase 4.
 ### Triggers
 
 - Global shortcut. The KeyboardShortcuts package registers the hot key and provides the recorder view used in onboarding page 4 and Settings › Browsers. On press, `FrontBrowser` reads `NSWorkspace.shared.frontmostApplication`. If it's a supported browser, it reads the current tab's URL with an Apple Event through `NSAppleScript`: `URL of active tab of front window` for Chromium browsers, `URL of current tab of front window` for Safari. The app declares `NSAppleEventsUsageDescription` and the `com.apple.security.automation.apple-events` entitlement. If the front app isn't a browser, or permission was refused, the Send panel offers the link on the clipboard instead.
-- Extension button, command and context menu. Clicking the toolbar button, choosing "Send page to Dowlio" or "Download link with Dowlio" in the context menu, or pressing the extension's command shortcut is a user gesture. Chrome grants `activeTab`, and the extension runs `scan.js` once with `chrome.scripting.executeScript`. Then it sends `page.send` with the URL, title and scan results.
+- Extension button, command and context menu. Clicking the toolbar button, choosing "Send to Dowlio" or "Download link with Dowlio" in the context menu, or pressing the extension's command shortcut is a user gesture. Chrome grants `activeTab`, and the extension runs `scan.js` once with `chrome.scripting.executeScript`. Then it sends `page.send` with the URL, title and scan results.
 
 ### The scan script
 

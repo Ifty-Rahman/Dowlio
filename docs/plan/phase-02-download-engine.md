@@ -12,14 +12,14 @@ Phase 1.
 
 Follow "The download engine" and "Files on disk" in architecture.md. In short:
 
-- `DownloadEngine` is an actor that owns every `TransferJob`. Each job has a state machine with these states: `probing`, `downloading`, `paused`, `retrying(attempt, nextTry)`, `finalizing`, `completed`, `failed(DownloadError)` and `cancelled`.
+- `DownloadEngine` is an actor that owns every `Download`. Each download has a state machine with these states: `probing`, `downloading`, `paused`, `retrying(attempt, nextTry)`, `finalizing`, `completed`, `failed(DownloadError)` and `cancelled`. `probing` and `finalizing` show as Downloading in the interface. The other names match the download states in `GLOSSARY.md`.
 - `Prober` sends the `bytes=0-0` probe and returns a `RemoteFile`: final URL, size, validator, ranges supported, MIME type and suggested name.
 - `SegmentPlanner` is pure logic. It splits a size into ranges, picks the next range to steal, and lowers the count after refusals. It does no I/O, so it's easy to test thoroughly.
 - `SegmentConnection` wraps one `URLSession` and one data task. It reports bytes as they arrive.
-- `PartFile` owns the `.dowlio` package: a preallocated `data` file written with `pwrite` from one serial queue, and the atomic `manifest.json`.
+- `PartFile` owns the `.dowlio` package: a `data` file reserved at full size with `fcntl(F_PREALLOCATE)` when the size is known, written written with `pwrite` from one serial queue, and the atomic `manifest.json`.
 - `Finalizer` checks coverage, moves the file into place, resolves name conflicts and sets the quarantine attribute.
 - `DownloadError` is a closed enum, and every case maps to one sentence of user copy later. Cases: `notFound`, `forbidden`, `needsSignIn`, `linkExpired`, `serverChangedFile`, `rangeNotSupported`, `diskFull`, `destinationNotWritable`, `network(underlying)`, `tooManyRetries`, `cancelled`.
-- Progress goes out as an `AsyncStream<JobSnapshot>` at most 4 times a second. A snapshot holds bytes done, speed, time left and each segment's range and progress. The segmented bar in phase 3 draws from it.
+- Progress goes out as an `AsyncStream<DownloadSnapshot>` at most 4 times a second. A snapshot holds bytes done, speed, time left and each segment's range and progress. The segmented bar in phase 3 draws from it.
 
 ## Steps
 
@@ -28,10 +28,10 @@ Follow "The download engine" and "Files on disk" in architecture.md. In short:
 3. Write `Prober` and its tests against the server: range support, no range support, redirects, missing length, `Content-Disposition` names.
 4. Write `PartFile`: preallocation, writes at offsets, manifest save and load, coverage check. Test reopening after a simulated crash.
 5. Write `SegmentConnection` with one `URLSession` per connection. Check `Content-Range` on every reply.
-6. Write `TransferJob`, combining the pieces: ramp-up after the first bytes, work stealing, retry with backoff and jitter, `If-Range`, and fallback to one connection.
+6. Write `Download`, combining the pieces: ramp-up after the first bytes, work stealing, retry with backoff and jitter, `If-Range`, and fallback to one connection.
 7. Write `Finalizer`: the coverage check, atomic move, "Keep both" naming, the quarantine attribute and cleanup on cancel.
-8. Write `DownloadEngine`: add, pause, resume, cancel, and restore every job from its manifest at launch.
-9. Write `dowlio-cli`. `dowlio-cli get <url> [-c 8] [-o dir]` prints live progress. `dowlio-cli resume <package>` continues a paused download.
+8. Write `DownloadEngine`: add, pause, resume, cancel, and restore every download from its manifest at launch.
+9. Write `dowlio-cli`. It's a developer tool. CI builds and tests it, but it never ships in the app or in a release. `dowlio-cli get <url> [-c 8] [-o dir]` prints live progress. `dowlio-cli resume <package>` continues a paused download.
 10. Benchmark. Download a large public file, such as an OS image from a major CDN, with 1, 4, 8 and 16 connections. Record the results in `docs/benchmarks.md`. Run it once with one shared `URLSession` and once with one session per connection, to confirm the session choice.
 
 ## Done when

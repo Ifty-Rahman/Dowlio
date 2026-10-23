@@ -11,6 +11,7 @@ This file fixes the technology and the methods for the whole app. A phase file m
 | Minimum macOS | macOS 14 Sonoma |
 | Project | XcodeGen `project.yml` generates the Xcode project. Logic lives in a local Swift package |
 | HTTP | `URLSession`, one session per connection so each segment gets its own TCP connection |
+| Plain HTTP | Allowed. App Transport Security is off app-wide and plain-HTTP downloads show "Not secure" (ADR 0003) |
 | Storage | SQLite through GRDB for history and settings that need queries. `UserDefaults` for simple preferences. Keychain for secrets |
 | Browser extension | Manifest V3 extension in plain JavaScript for Chrome, Arc, Brave and Edge |
 | App and extension link | An authenticated WebSocket on `127.0.0.1`, served by the app with Network.framework. No native messaging host |
@@ -52,17 +53,18 @@ Downloads keep running while every window is closed. The app stays alive in the 
 
 ## The download engine
 
-The engine is an actor, `DownloadEngine`. Each download is a `TransferJob`. The method follows RFC 9110 range requests.
+The engine is an actor, `DownloadEngine`. Each download is a `Download`, in the sense of `GLOSSARY.md`. The method follows RFC 9110 range requests.
 
 1. Probe. Send `GET` with `Range: bytes=0-0` and `Accept-Encoding: identity`. Don't use `HEAD`, because some servers answer it differently. A `206` with `Content-Range: bytes 0-0/N` means the server supports ranges and the file is N bytes. A `200` means one connection only, so keep reading that response as the download.
-2. Identity. Record the final URL after redirects, a strong `ETag` or the `Last-Modified` date, the content type, and the file name from `Content-Disposition`.
+2. Identity. Record the original URL, the final URL after redirects, a strong `ETag` or the `Last-Modified` date, the content type, and the file name from `Content-Disposition`.
 3. Plan. The segment count is the smallest of these values: the user's setting (default 8, maximum 16), the host's learned limit, and the file size divided by 1 MiB.
 4. Ramp up. Open the first connection. Open the others once the first one returns bytes. This avoids hammering a server that refuses ranges.
 5. Request. Each segment sends `Range` and `If-Range` with the validator. A `200` reply to a ranged request means the file changed on the server. The engine then stops, discards the segments and starts again.
 6. Validate. Every `206` must carry a `Content-Range` whose start, end and total match the request exactly. The engine rejects a `Content-Encoding` on ranged replies and rejects `multipart/byteranges`.
 7. Work stealing. When a connection finishes its range, it takes the second half of the largest remaining range, if both halves stay above 1 MiB. No slow tail is left at the end.
-8. Retry. Each segment retries up to 5 times with exponential backoff and jitter, and honours `Retry-After`. Replies `429`, `503` and connection resets lower the host's connection limit. The engine remembers that limit per host.
-9. Fall back. A `200`, a malformed `206`, a validator mismatch or repeated refusals switch the job to one connection.
+8. Retry. Each segment retries up to 5 times with exponential backoff and jitter, and honours `Retry-After`. While it waits, the download is Retrying. When a segment runs out of retries, the download becomes Failed. Its partial file stays, and Retry continues it. Dowlio never retries forever. Replies `429`, `503` and connection resets lower the host's connection limit. The engine remembers that limit per host.
+9. Resume. A resumed download requests the original URL again and follows its redirects, because signed final URLs expire. If the original URL now fails, for example because it was a one-time link, it tries the saved final URL. It keeps the downloaded segments only if the validator still matches. Otherwise it starts over.
+10. Fall back. A `200`, a malformed `206`, a validator mismatch or repeated refusals switch the job to one connection.
 
 Why one `URLSession` per connection: one session pools connections and multiplexes HTTP/2 requests onto a single TCP connection. Separate sessions open separate connections, which is the point of segmenting. `httpMaximumConnectionsPerHost` is raised above its default of 6 for the single-session fallback. Phase 2 measures this before relying on it.
 
@@ -70,10 +72,16 @@ Why one `URLSession` per connection: one session pools connections and multiplex
 
 A download in progress lives in a package next to its destination: `name.ext.dowlio`. The package holds:
 
-- `data`, one preallocated file that segments write into at their own offsets with `pwrite`.
-- `manifest.json`, the URL, validator, total size and each segment's `start`, `end` and `received`. The engine writes it atomically about once a second and on pause.
+- `data`, one file that segments write into at their own offsets with `pwrite`. When the size is known, Dowlio reserves the full size on disk before the first byte arrives, so a download that can't fit fails at once with "Not enough space" instead of near the end.
+- `manifest.json`, with a format version, the original and final URLs, the validator, total size, the destination file name, the referrer and user agent, and each segment's `start`, `end` and `received`. It never holds cookies. The engine writes it atomically about once a second and on pause.
 
-Finalising checks that the segments cover every byte from 0 to N, flushes the file, moves `data` to the destination with an atomic rename, and deletes the package. It never overwrites a file. Name conflicts follow the user's setting, and the default is "Keep both", which adds " 2", " 3" and so on. The finished file gets the `com.apple.quarantine` attribute with Dowlio as the agent, the same as a file a browser downloads. Cancelling deletes the package.
+The manifest holds everything needed to resume, so a partial file is self-contained. Dowlio registers `.dowlio` as its own file type with its own icon. Double-clicking one opens Dowlio, which shows that download, or adds and resumes it if Dowlio has no record of it.
+
+If the server can't resume, pausing or quitting throws the downloaded bytes away. Dowlio asks first: "This server can't resume. Pausing starts it over from the beginning."
+
+Finalising checks that the segments cover every byte from 0 to N, flushes the file, moves `data` to the destination with an atomic rename, and deletes the package. It never overwrites a file. Name conflicts follow the user's setting, and the default is "Keep both", which adds " 2", " 3" and so on. The finished file gets the `com.apple.quarantine` attribute with Dowlio as the agent, the same as a file a browser downloads. Cancel asks first ("Cancel this download? The 1.2 GB downloaded so far will be deleted."), then deletes the package and removes the download from the list. Dowlio keeps no record of cancelled downloads.
+
+If the partial file disappears, for example because the user deleted it in Finder, the download starts over from the beginning the next time it runs. It doesn't become Failed.
 
 ## Storage
 
@@ -102,7 +110,7 @@ The extension asks for these permissions at install: `downloads`, `storage`, `co
 
 Phase 4 starts with a one-day spike. The spike checks that the current Chrome and Arc let an extension service worker open `ws://127.0.0.1` without a Local Network Access prompt. If they don't, the spike result decides the fix before any other phase 4 work.
 
-## Send Page
+## Send to Dowlio
 
 Two triggers lead to the same page analyser:
 

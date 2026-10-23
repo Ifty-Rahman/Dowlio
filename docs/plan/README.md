@@ -14,8 +14,8 @@ Read these two files before any phase:
 | 1 | [phase-01-project-and-release-pipeline.md](phase-01-project-and-release-pipeline.md) | An empty Dowlio app that builds, signs and publishes a DMG to GitHub Releases from one command |
 | 2 | [phase-02-download-engine.md](phase-02-download-engine.md) | A tested segmented download engine, driven from a command-line tool |
 | 3 | [phase-03-app-and-interface.md](phase-03-app-and-interface.md) | The Mac app: library window, New Download sheet, menu bar, settings, onboarding, history |
-| 4 | [phase-04-browser-capture.md](phase-04-browser-capture.md) | The browser extension and the app's browser link. Downloads clicked in Chrome, Arc, Brave or Edge finish in Dowlio |
-| 5 | [phase-05-send-page.md](phase-05-send-page.md) | Send Page: a shortcut or button sends the current page, Dowlio finds the files and media on it, and the user picks one |
+| 4 | [phase-04-catch-downloads.md](phase-04-catch-downloads.md) | The browser extension and the app's browser link. Downloads clicked in Chrome, Arc, Brave or Edge finish in Dowlio |
+| 5 | [phase-05-send-to-dowlio.md](phase-05-send-to-dowlio.md) | Send to Dowlio: a shortcut or button sends the current page, Dowlio finds the files and media on it, and the user picks one |
 | 6 | [phase-06-media-downloads.md](phase-06-media-downloads.md) | HLS streams, yt-dlp site support, and merging audio and video |
 | 7 | [phase-07-queue-and-recovery.md](phase-07-queue-and-recovery.md) | Queue, schedule, speed limit, duplicate checks, expired-link recovery, disk-full handling |
 | 8 | [phase-08-github-release.md](phase-08-github-release.md) | Automatic updates, install guide, diagnostics, and a release checklist for public GitHub builds |

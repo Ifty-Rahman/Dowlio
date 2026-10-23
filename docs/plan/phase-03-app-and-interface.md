@@ -12,7 +12,7 @@ Phases 1 and 2. Read design.md.
 
 - SwiftUI with the Observation framework (`@Observable`). One `AppModel` on the main actor subscribes to the engine's snapshot streams and publishes rows to the views.
 - The design tokens live in `App/Design/DowlioDesign.swift`: accent colour asset, text styles, spacing and radii from design.md. `docs/flow-ui-reference/swift/FlowDesign.swift` is the reference.
-- `SegmentedBar` is one view used everywhere. It draws each segment's progress from a `JobSnapshot`.
+- `SegmentedBar` is one view used everywhere. It draws each segment's progress from a `DownloadSnapshot`.
 - The menu bar uses AppKit: an `NSStatusItem` with an `NSPopover` hosting SwiftUI. SwiftUI's `MenuBarExtra` can't open its window from code, and phases 4 and 5 need to open the catch toast and the Send panel from code.
 - Dock and menu bar presence use `NSApp.setActivationPolicy`. With Dock off, the policy is `.accessory`. Closing the last window keeps the app running.
 - History goes into `DowlioStore` with GRDB. The library reads it through a GRDB `ValueObservation`, so the list updates live.

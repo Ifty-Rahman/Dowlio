@@ -1,4 +1,4 @@
-# Phase 4: Browser capture
+# Phase 4: Catch downloads
 
 ## Goal
 
@@ -84,4 +84,4 @@ Test sends `ping` and waits for `pong` within 2 seconds. On failure it names the
 
 ## Out of scope
 
-Send Page (phase 5), Firefox and Safari (phase 9 or later), Chrome Web Store publishing.
+Send to Dowlio (phase 5), Firefox and Safari (phase 9 or later), Chrome Web Store publishing.

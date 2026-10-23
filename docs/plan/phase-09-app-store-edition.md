@@ -32,7 +32,7 @@ Download Shuttle, a store app, blocks YouTube, SoundCloud, Vimeo and Vevo (resea
 
 - A Safari Web Extension target, converted from the Chrome extension with `xcrun safari-web-extension-converter`.
 - A Safari web extension sends native messages only to its containing app, with `browser.runtime.sendNativeMessage`. The app extension's `SafariWebExtensionHandler` receives them and passes them to Dowlio through an app group. The WebSocket link stays for Chromium browsers.
-- Catching uses `browser.downloads` where Safari supports it. Where it doesn't, the Safari extension offers Send Page and "Download link with Dowlio" only. Check the current Safari version's support during this phase.
+- Catching uses `browser.downloads` where Safari supports it. Where it doesn't, the Safari extension offers Send to Dowlio and "Download link with Dowlio" only. Check the current Safari version's support during this phase.
 
 ### Store listings
 

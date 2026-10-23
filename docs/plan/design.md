@@ -76,7 +76,7 @@ Changes from the screenshots:
   - The Catch downloads switch lives here and in the menu bar popover. The app is the source of truth and the extension mirrors it. Flow's "Controlled in the extension" note goes away.
   - Below the switch: "Only catch files larger than [1] MB" and "Never catch on these sites (Edit…)".
   - A Sign-in sharing list shows each site the user allowed, with Remove.
-  - The Send page shortcut keeps its recorder. Its help text names the browsers where it works and says macOS will ask for permission once per browser.
+  - The Send to Dowlio shortcut keeps its recorder. Its help text names the browsers where it works and says macOS will ask for permission once per browser.
 
 ## Onboarding
 
