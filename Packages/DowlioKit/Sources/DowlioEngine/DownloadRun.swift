@@ -671,9 +671,11 @@ struct Prepared: Sendable {
     let partial: PartialFile
     let board: ProgressBoard
 
-    /// Pausing keeps the bytes only when the server supports ranges and the size is known.
+    /// Pausing keeps the bytes only when the server supports ranges, the size is known, and a
+    /// strong validator lets a resume check that the file hasn't changed. Without one, a resume
+    /// starts over.
     var canResume: Bool {
-        if case .ranges = layout, totalBytes != nil { true } else { false }
+        if case .ranges(_?) = layout, totalBytes != nil { true } else { false }
     }
 }
 

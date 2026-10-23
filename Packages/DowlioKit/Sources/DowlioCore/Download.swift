@@ -130,7 +130,8 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// The download uses plain HTTP, so its bytes travel unencrypted (ADR 0003).
     public var isNotSecure: Bool
     /// Whether pausing keeps the bytes downloaded so far. False when the server doesn't support
-    /// ranges or the size is unknown, so the interface can warn before a pause starts it over.
+    /// ranges, the size is unknown, or the server sent no strong `ETag` or `Last-Modified`, so the
+    /// interface can warn before a pause starts it over.
     public var canResume: Bool = false
 
     public init(

@@ -75,4 +75,46 @@ struct ResumabilityTests {
         #expect(snapshot.state == .paused)
         #expect(!snapshot.canResume)
     }
+
+    @Test(arguments: [
+        (nil, nil, false),
+        ("W/\"weak\"", nil, false),
+        ("\"strong\"", nil, true),
+        (nil, "Wed, 21 Oct 2026 07:28:00 GMT", true),
+    ] as [(String?, String?, Bool)])
+    func onlyARangedDownloadWithAStrongValidatorCanResume(eTag: String?, lastModified: String?, canResume: Bool) async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 52)
+        server.serve(.init(data: data, holdAfterBytes: Self.held, eTag: eTag, lastModified: lastModified), at: "/v.bin")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.connections = 2
+
+        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let id = await engine.add(url: server.url(for: "/v.bin"), to: folder, options: options)
+        let downloading = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
+
+        #expect(downloading.canResume == canResume)
+        server.releaseHeldResponses()
+        #expect(try await engine.finished(id).state == .completed)
+    }
+
+    @Test func aRestoredDownloadWithoutAValidatorCantResume() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 53)
+        server.serve(.init(data: data, holdAfterBytes: Self.held), at: "/nov.bin")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.connections = 2
+        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let id = await engine.add(url: server.url(for: "/nov.bin"), to: folder, options: options)
+        _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes == Int64(2 * Self.held) }
+        await engine.pause(id)
+
+        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let restored = try await fresh.restore(partialFile: try partialFile(in: folder))
+        let snapshot = try await fresh.firstSnapshot(of: restored) { _ in true }
+
+        #expect(!snapshot.canResume)
+    }
 }
