@@ -16,7 +16,7 @@ struct WorkStealingTests {
     static let slowStart = 24 * mebibyte
     static let slowSpeed = mebibyte
 
-    @Test func aSlowSegmentIsSplitSoTheDownloadFinishesFarSooner() async throws {
+    @Test func otherConnectionsTakeOverTheEndOfASlowSegment() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 31)
         server.serve(
@@ -28,22 +28,34 @@ struct WorkStealingTests {
         var options = RequestOptions()
         options.connections = 4
         let engine = DownloadEngine()
-        let started = ContinuousClock.now
         let id = await engine.add(url: server.url(for: "/big.iso"), to: folder, options: options)
         var snapshots: [DownloadSnapshot] = []
         for await snapshot in await engine.snapshots(of: id) {
             snapshots.append(snapshot)
         }
-        let elapsed = ContinuousClock.now - started
 
-        #expect(snapshots.last?.state == .completed)
+        let completed = try #require(snapshots.last)
+        #expect(completed.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
-        // Alone, the slow segment needs 8 seconds. Stealing must at least halve that.
-        #expect(elapsed < .seconds(4))
-        // The snapshots show the slow segment cut short and new segments taking its end.
-        let slowEnds = snapshots.flatMap(\.segments).filter { $0.start == Int64(Self.slowStart) }.map(\.end)
-        #expect(slowEnds.contains { $0 < Int64(Self.size - 1) })
-        #expect(snapshots.contains { $0.segments.count > 4 })
+        // The slow segment's own connection was asked for its range once, and the segment ended up
+        // shorter than that range: its end moved earlier, and it holds exactly its new length.
+        // Requests are matched by start, because stealing can shorten a range before it's asked for.
+        let starts = server.requests.compactMap { $0.headers["range"] }.map { range in
+            Int64(range.dropFirst("bytes=".count).prefix { $0 != "-" }) ?? -1
+        }
+        #expect(starts.count { $0 == Int64(Self.slowStart) } == 1)
+        let slow = try #require(completed.segments.first { $0.start == Int64(Self.slowStart) })
+        #expect(slow.end < Int64(Self.size - 1))
+        #expect(slow.receivedBytes == slow.end - slow.start + 1)
+        // The rest of its original range went to new segments. Other connections asked for each
+        // one from its own start, and each is complete.
+        let takenOver = completed.segments.filter { $0.start > slow.end }
+        #expect(takenOver.first?.start == slow.end + 1)
+        #expect(takenOver.last?.end == Int64(Self.size - 1))
+        #expect(takenOver.allSatisfy { segment in
+            starts.contains(segment.start) && segment.receivedBytes == segment.end - segment.start + 1
+        })
+        #expect(completed.segments.count > 4)
     }
 
     /// After a split, the manifest describes the new segments, every byte it counts is in the
