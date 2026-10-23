@@ -24,6 +24,8 @@ public actor DownloadEngine {
     }
 
     private var entries: [DownloadID: DownloadEntry] = [:]
+    /// Followers of every download's snapshots (`allSnapshots()`).
+    private var allObservers: [UUID: AsyncStream<DownloadSnapshot>.Continuation] = [:]
     private let configuration: EngineConfiguration
 
     /// An engine whose learned host limits live in `hostLimits`. The default keeps them in memory.
@@ -49,6 +51,7 @@ public actor DownloadEngine {
         )
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry
+        publishToAll(snapshot)
 
         let run = DownloadRun(
             id: id, url: url, folder: folder, options: options, partialFile: entry.partialFile, configuration: configuration
@@ -119,6 +122,20 @@ public actor DownloadEngine {
         return stream
     }
 
+    /// Every download's current snapshot, in no particular order, then one snapshot per change of
+    /// any download, including each new download's first snapshot and a cancelled download's
+    /// last. The stream never ends on its own.
+    public func allSnapshots() -> AsyncStream<DownloadSnapshot> {
+        let (stream, continuation) = AsyncStream.makeStream(of: DownloadSnapshot.self)
+        for entry in entries.values { continuation.yield(entry.snapshot) }
+        let token = UUID()
+        allObservers[token] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeAllObserver(token) }
+        }
+        return stream
+    }
+
     /// Cancels a download (`GLOSSARY.md`): stops its connections, deletes its partial file and
     /// forgets it. The last snapshot is Cancelled. Does nothing for a Completed or unknown download.
     public func cancel(_ id: DownloadID) async {
@@ -177,6 +194,7 @@ public actor DownloadEngine {
 
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry
+        publishToAll(snapshot)
         let run = DownloadRun(
             id: id, url: manifest.originalURL, folder: folder, options: options,
             partialFile: entry.partialFile, configuration: configuration
@@ -204,6 +222,15 @@ public actor DownloadEngine {
         }
         if snapshot.state.isTerminal { record.observers = [:] }
         entries[id] = record
+        publishToAll(snapshot)
+    }
+
+    private func publishToAll(_ snapshot: DownloadSnapshot) {
+        for observer in allObservers.values { observer.yield(snapshot) }
+    }
+
+    private func removeAllObserver(_ token: UUID) {
+        allObservers[token] = nil
     }
 
     private func removeObserver(_ token: UUID, from id: DownloadID) {
