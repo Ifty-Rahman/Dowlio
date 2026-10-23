@@ -76,7 +76,7 @@ final class Connection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
         var request = request
-        if let from = task.originalRequest?.url, let to = request.url, !DownloadRun.sameHost(from, to) {
+        if let from = task.originalRequest?.url, let to = request.url, !from.hasSameHost(as: to) {
             request.setValue(nil, forHTTPHeaderField: "Cookie")
         }
         completionHandler(request)

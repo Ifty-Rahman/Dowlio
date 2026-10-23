@@ -37,15 +37,6 @@ struct RetryPolicy: Sendable {
     }
 }
 
-/// A failure worth trying again: a busy server, a dropped or stalled connection.
-struct RetryableFailure: Error {
-    /// The wait the server asked for with `Retry-After`, if any.
-    var retryAfter: Duration?
-    /// The server refused the connection with 429 or 503, or reset it, so the host gets one
-    /// connection fewer.
-    var isRefusal = false
-}
-
 enum RetryAfter {
     /// Parses `Retry-After` as seconds or as an HTTP date, relative to `now`.
     static func parse(_ value: String?, now: Date) -> Duration? {
@@ -77,5 +68,11 @@ extension URLError.Code {
         default:
             false
         }
+    }
+}
+
+extension Duration {
+    var timeInterval: TimeInterval {
+        TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
     }
 }
