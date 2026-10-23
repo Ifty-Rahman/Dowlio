@@ -51,6 +51,24 @@ final class PartialFile: @unchecked Sendable {
         return PartialFile(packageURL: package, dataURL: dataURL, handle: handle)
     }
 
+    /// Reserves `bytes` on disk for the data file, so a download that can't fit fails before it
+    /// starts (architecture.md, files on disk). Throws `DownloadError.notEnoughSpace` if the volume
+    /// can't hold it.
+    func reserve(bytes: Int64) throws {
+        var store = fstore_t(
+            fst_flags: UInt32(F_ALLOCATEALL),
+            fst_posmode: Int32(F_PEOFPOSMODE),
+            fst_offset: 0,
+            fst_length: off_t(bytes),
+            fst_bytesalloc: 0
+        )
+        guard fcntl(handle.fileDescriptor, F_PREALLOCATE, &store) != -1 else {
+            let code = errno
+            if code == ENOSPC { throw DownloadError.notEnoughSpace }
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+    }
+
     func append(_ data: Data) throws {
         try handle.write(contentsOf: data)
     }
@@ -68,5 +86,18 @@ final class PartialFile: @unchecked Sendable {
             throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
         }
         try FileManager.default.removeItem(at: packageURL)
+    }
+}
+
+/// Where a download's partial file is, shared between the download and the engine, so the engine
+/// can delete it on Cancel. `nil` before the partial file exists and after the file is finished.
+final class PartialFileLocation: @unchecked Sendable {
+    // @unchecked: `stored` is only read or written under `lock`.
+    private let lock = NSLock()
+    private var stored: URL?
+
+    var url: URL? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
     }
 }

@@ -7,6 +7,7 @@ public actor DownloadEngine {
         var snapshot: DownloadSnapshot
         var observers: [UUID: AsyncStream<DownloadSnapshot>.Continuation] = [:]
         var task: Task<Void, Never>?
+        let partialFile = PartialFileLocation()
     }
 
     private var entries: [DownloadID: DownloadEntry] = [:]
@@ -22,9 +23,10 @@ public actor DownloadEngine {
             fileName: FileNaming.name(for: url),
             destinationFolder: folder
         )
-        entries[id] = DownloadEntry(snapshot: snapshot)
+        let entry = DownloadEntry(snapshot: snapshot)
+        entries[id] = entry
 
-        let run = DownloadRun(url: url, folder: folder, options: options) { [weak self] change in
+        let run = DownloadRun(url: url, folder: folder, options: options, partialFile: entry.partialFile) { [weak self] change in
             await self?.update(id, change)
         }
         entries[id]?.task = Task { await run.run() }
@@ -50,6 +52,21 @@ public actor DownloadEngine {
             Task { await self?.removeObserver(token, from: id) }
         }
         return stream
+    }
+
+    /// Cancels a download (`GLOSSARY.md`): stops its connections, deletes its partial file and
+    /// forgets it. The last snapshot is Cancelled. Does nothing for a Completed or unknown download.
+    public func cancel(_ id: DownloadID) async {
+        guard let entry = entries[id], entry.snapshot.state != .completed else { return }
+        entry.task?.cancel()
+        await entry.task?.value
+        // The download may have finished while it was stopping. A finished file stays.
+        guard entries[id]?.snapshot.state != .completed else { return }
+        if let package = entry.partialFile.url {
+            try? FileManager.default.removeItem(at: package)
+        }
+        update(id) { $0.state = .cancelled }
+        entries[id] = nil
     }
 
     private func update(_ id: DownloadID, _ change: @Sendable (inout DownloadSnapshot) -> Void) {

@@ -18,11 +18,13 @@ public enum DownloadState: Equatable, Sendable {
     case finalizing
     case completed
     case failed(DownloadError)
+    /// The user cancelled the download. Its partial file is gone and the engine forgets it.
+    case cancelled
 
     /// No further snapshots follow a terminal state. Failed isn't terminal, because Retry
     /// continues a failed download (`GLOSSARY.md`), so its snapshot stream stays open.
     public var isTerminal: Bool {
-        self == .completed
+        self == .completed || self == .cancelled
     }
 }
 
@@ -41,6 +43,8 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// not found, forbidden, needs sign-in and retries.
     case unexpectedStatus(Int)
     case network(String)
+    /// The destination volume can't hold the whole file.
+    case notEnoughSpace
 }
 
 /// How a download should run. Each ticket adds the options it needs (spec, engine interface).

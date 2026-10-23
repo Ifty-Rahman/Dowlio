@@ -12,19 +12,24 @@ struct DownloadRun: Sendable {
     let url: URL
     let folder: URL
     let options: RequestOptions
+    let partialFile: PartialFileLocation
     let changeSnapshot: ChangeSnapshot
 
     func run() async {
         do {
-            let body = try await probe()
-            let fileName = FileNaming.name(for: body.finalURL)
+            let probed = try await probe()
+            let fileName = FileNaming.name(for: probed.finalURL)
             await changeSnapshot {
                 $0.state = .downloading
                 $0.fileName = fileName
-                $0.totalBytes = body.totalBytes
+                $0.totalBytes = probed.totalBytes
             }
 
+            // The space is reserved before any of the file's bytes are requested.
             let partial = try PartialFile.create(for: fileName, in: folder)
+            partialFile.url = partial.packageURL
+            if let total = probed.totalBytes { try partial.reserve(bytes: total) }
+            let body = try await openBody(after: probed)
             let count = try await receive(body, into: partial)
             await changeSnapshot { $0.receivedBytes = count; $0.state = .finalizing }
 
@@ -32,8 +37,12 @@ struct DownloadRun: Sendable {
             if let expected = body.totalBytes, count != expected {
                 throw DownloadError.incompleteFile
             }
+            try Task.checkCancellation()
             try partial.finish(as: folder.appending(path: fileName))
+            partialFile.url = nil
             await changeSnapshot { $0.state = .completed }
+        } catch where Task.isCancelled {
+            // Cancelled by the engine, which deletes the partial file and reports Cancelled.
         } catch let error as DownloadError {
             await changeSnapshot { $0.state = .failed(error) }
         } catch {
@@ -71,42 +80,57 @@ struct DownloadRun: Sendable {
     /// The connection that carries the file's bytes, already past its response.
     private struct Body {
         let connection: Connection
-        let finalURL: URL
         let totalBytes: Int64?
     }
 
-    /// Sends `Range: bytes=0-0` (architecture.md, probe). A 206 means the server supports ranges,
-    /// so a second request fetches the whole range. A 200 means it doesn't, and the probe's own
-    /// response is the download.
-    private func probe() async throws -> Body {
+    /// What the probe learned about the file.
+    private struct Probed {
+        let finalURL: URL
+        let totalBytes: Int64?
+        /// The probe's own connection, when the server ignored the range and sent the whole file.
+        let wholeFile: Connection?
+    }
+
+    /// Sends `Range: bytes=0-0` (architecture.md, probe). A 206 means the server supports ranges
+    /// and gives the size. A 200 means it doesn't, and the probe's own response is the download.
+    private func probe() async throws -> Probed {
         let probe = Connection(request: Self.request(for: url, range: ByteRange(start: 0, end: 0)))
         let response = try await probe.firstResponse()
         let finalURL = response.url ?? url
         switch response.statusCode {
         case 200:
             let total = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
-            return Body(connection: probe, finalURL: finalURL, totalBytes: total)
+            return Probed(finalURL: finalURL, totalBytes: total, wholeFile: probe)
         case 206:
             probe.cancel()
             guard let reply = ContentRange(response), reply.start == 0, reply.end == 0 else {
                 throw DownloadError.rangeNotSupported
             }
-            let whole = ByteRange(start: 0, end: reply.total - 1)
-            let connection = Connection(request: Self.request(for: finalURL, range: whole))
-            let wholeResponse = try await connection.firstResponse()
-            guard wholeResponse.statusCode == 206 else {
-                connection.cancel()
-                throw DownloadError.unexpectedStatus(wholeResponse.statusCode)
-            }
-            guard ContentRange(wholeResponse) == ContentRange(range: whole, total: reply.total) else {
-                connection.cancel()
-                throw DownloadError.rangeNotSupported
-            }
-            return Body(connection: connection, finalURL: finalURL, totalBytes: reply.total)
+            return Probed(finalURL: finalURL, totalBytes: reply.total, wholeFile: nil)
         default:
             probe.cancel()
             throw DownloadError.unexpectedStatus(response.statusCode)
         }
+    }
+
+    /// The connection for the file's bytes: the probe's own, or a new request for the whole range.
+    private func openBody(after probed: Probed) async throws -> Body {
+        if let wholeFile = probed.wholeFile {
+            return Body(connection: wholeFile, totalBytes: probed.totalBytes)
+        }
+        guard let total = probed.totalBytes else { throw DownloadError.rangeNotSupported }
+        let whole = ByteRange(start: 0, end: total - 1)
+        let connection = Connection(request: Self.request(for: probed.finalURL, range: whole))
+        let response = try await connection.firstResponse()
+        guard response.statusCode == 206 else {
+            connection.cancel()
+            throw DownloadError.unexpectedStatus(response.statusCode)
+        }
+        guard ContentRange(response) == ContentRange(range: whole, total: total) else {
+            connection.cancel()
+            throw DownloadError.rangeNotSupported
+        }
+        return Body(connection: connection, totalBytes: total)
     }
 
     private static func request(for url: URL, range: ByteRange) -> URLRequest {
