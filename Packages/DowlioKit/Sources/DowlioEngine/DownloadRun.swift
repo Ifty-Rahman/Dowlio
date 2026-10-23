@@ -628,13 +628,17 @@ struct DownloadRun: Sendable {
     }
 
     /// A request for `range` of the file, or for the whole file when `range` is `nil`, with the
-    /// download's referrer and user agent.
+    /// download's referrer, user agent and cookies.
     private func request(for url: URL, range: ByteRange?) -> URLRequest {
         var request = URLRequest(url: url)
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        if !options.cookies.isEmpty {
+            let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            request.setValue(cookies, forHTTPHeaderField: "Cookie")
+        }
         return request
     }
 }

@@ -73,6 +73,21 @@ public struct RequestOptions: Equatable, Sendable {
     public var referrer: URL?
     /// Sent as `User-Agent` on every request when set. Otherwise the system's default is sent.
     public var userAgent: String?
+    /// Sent as one `Cookie` header on every request, for servers that only give the file to a
+    /// signed-in visitor. Held in memory only: they never go into the partial file, so a restored
+    /// download has none.
+    public var cookies: [Cookie] = []
+}
+
+/// One cookie a download sends, as the browser had it for the download's link.
+public struct Cookie: Equatable, Sendable {
+    public var name: String
+    public var value: String
+
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
 }
 
 /// What to do when the destination already has a file with the finished file's name.
