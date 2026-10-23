@@ -10,6 +10,9 @@ usage: dowlio-cli get <url> [-o <folder>]
   get   Download <url> into <folder> (default: the current folder).
 """
 
+// Progress lines must reach a pipe as they're printed, not when the tool exits.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(64)

@@ -24,16 +24,17 @@ struct CommandLineToolTests {
         server.serve(.init(data: data, holdAfterBytes: 512 * 1024), at: "/slow.zip")
         let folder = try TestFiles.makeFolder()
 
-        // The response stalls at 25 percent for about two seconds, then finishes.
-        Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            server.releaseHeldResponses()
+        // The response stalls at 25 percent. The server lets it finish only after the tool has
+        // printed two progress lines during the stall, so a tool that stops printing hangs here.
+        var stalledLines = 0
+        let result = try await runTool(["get", server.url(for: "/slow.zip").absoluteString, "-o", folder.path]) { line in
+            guard line.hasPrefix("25%") else { return }
+            stalledLines += 1
+            if stalledLines == 2 { server.releaseHeldResponses() }
         }
-        let result = try await runTool(["get", server.url(for: "/slow.zip").absoluteString, "-o", folder.path])
 
         #expect(result.status == 0)
-        let stalledLines = result.output.split(separator: "\n").filter { $0.hasPrefix("25%") }
-        #expect(stalledLines.count >= 2)
+        #expect(stalledLines >= 2)
     }
 
     @Test func getExitsWithNonZeroWhenTheDownloadFails() async throws {
@@ -61,8 +62,29 @@ private struct ToolResult {
     let output: String
 }
 
-/// Runs the `dowlio-cli` built next to this test bundle.
-private func runTool(_ arguments: [String]) async throws -> ToolResult {
+/// The lines written to `handle`, read on a background thread until the writer closes it.
+private func lines(of handle: FileHandle) -> AsyncStream<String> {
+    AsyncStream { continuation in
+        Thread.detachNewThread {
+            var pending = Data()
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: UInt8(ascii: "\n")) {
+                    continuation.yield(String(decoding: pending[..<newline], as: UTF8.self))
+                    pending.removeSubrange(...newline)
+                }
+            }
+            if !pending.isEmpty { continuation.yield(String(decoding: pending, as: UTF8.self)) }
+            continuation.finish()
+        }
+    }
+}
+
+/// Runs the `dowlio-cli` built next to this test bundle. `onLine` sees each output line as it
+/// arrives.
+private func runTool(_ arguments: [String], onLine: (String) -> Void = { _ in }) async throws -> ToolResult {
     let tool = Bundle(for: BundleMarker.self).bundleURL
         .deletingLastPathComponent()
         .appending(path: "dowlio-cli")
@@ -73,9 +95,12 @@ private func runTool(_ arguments: [String]) async throws -> ToolResult {
     process.standardOutput = pipe
     process.standardError = pipe
     try process.run()
-    let output = try await Task.detached {
-        try pipe.fileHandleForReading.readToEnd() ?? Data()
-    }.value
+
+    var output = ""
+    for await line in lines(of: pipe.fileHandleForReading) {
+        output += line + "\n"
+        onLine(line)
+    }
     process.waitUntilExit()
-    return ToolResult(status: process.terminationStatus, output: String(decoding: output, as: UTF8.self))
+    return ToolResult(status: process.terminationStatus, output: output)
 }
