@@ -94,16 +94,19 @@ struct DownloadRun: Sendable {
                 $0.state = .finalizing
             }
             // Every byte must be present before the file goes into place.
-            if let expected = prepared.totalBytes,
-               reading.receivedBytes != expected || (!reading.segments.isEmpty && !prepared.board.coversEverySegment) {
+            if let expected = prepared.totalBytes, !prepared.board.coversFile(of: expected) {
                 throw DownloadError.incompleteFile
             }
             try Task.checkCancellation()
-            let finishedName = try prepared.partial.finish(
+            let finished = try prepared.partial.finish(
                 named: prepared.fileName, in: folder, policy: options.nameConflictPolicy, source: url
             )
             partialFile.url = nil
-            await changeSnapshot { $0.fileName = finishedName; $0.state = .completed }
+            await changeSnapshot {
+                $0.fileName = finished.name
+                $0.wasSkipped = finished.wasSkipped
+                $0.state = .completed
+            }
         } catch where Task.isCancelled {
             // Stopped by the engine for Pause or Cancel. The engine reports the new state. The last
             // reading goes out first, so a paused download shows exactly the bytes it keeps.
@@ -115,7 +118,7 @@ struct DownloadRun: Sendable {
         } catch let error as DownloadError {
             await fail(with: error, current)
         } catch {
-            await fail(with: .network(error.localizedDescription), current)
+            await fail(with: .network(NetworkFailure(error)), current)
         }
     }
 
@@ -136,7 +139,10 @@ struct DownloadRun: Sendable {
     /// so they never claim bytes that aren't on disk yet. A failed save keeps the previous one.
     private func saveManifest(_ prepared: Prepared) {
         let reading = prepared.board.reading
-        let validator: String? = if case .ranges(let validator) = prepared.layout { validator } else { nil }
+        let (layout, validator): (PartialFileManifest.Layout, String?) = switch prepared.layout {
+        case .whole: (.whole, nil)
+        case .ranges(let validator): (.ranges, validator)
+        }
         let manifest = PartialFileManifest(
             formatVersion: PartialFileManifest.currentFormatVersion,
             downloadID: id.description,
@@ -148,7 +154,8 @@ struct DownloadRun: Sendable {
             connections: options.connections,
             referrer: options.referrer,
             userAgent: options.userAgent,
-            segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) }
+            segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) },
+            layout: layout
         )
         try? prepared.partial.saveManifest(manifest)
     }
@@ -506,7 +513,10 @@ struct DownloadRun: Sendable {
                 retryAfter: RetryAfter.parse(response.value(forHTTPHeaderField: "Retry-After"), now: configuration.now()),
                 isRefusal: response.statusCode == 429 || response.statusCode == 503
             )
-        default: DownloadError.network("The server answered with status \(response.statusCode).")
+        default:
+            DownloadError.network(NetworkFailure(
+                code: .badServerResponse, message: "The server answered with status \(response.statusCode)."
+            ))
         }
     }
 
@@ -542,8 +552,17 @@ struct DownloadRun: Sendable {
                 }
             }
         }
-        defer { reporter.cancel() }
-        try await work()
+        // The reporter ends before this returns, so none of its snapshots can follow the state
+        // the download moves to next, such as Completed or Paused.
+        do {
+            try await work()
+        } catch {
+            reporter.cancel()
+            await reporter.value
+            throw error
+        }
+        reporter.cancel()
+        await reporter.value
     }
 
     // MARK: - Probe
@@ -621,13 +640,17 @@ struct DownloadRun: Sendable {
     }
 
     /// A request for `range` of the file, or for the whole file when `range` is `nil`, with the
-    /// download's referrer and user agent.
+    /// download's referrer, user agent and cookies.
     private func request(for url: URL, range: ByteRange?) -> URLRequest {
         var request = URLRequest(url: url)
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        if !options.cookies.isEmpty {
+            let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            request.setValue(cookies, forHTTPHeaderField: "Cookie")
+        }
         return request
     }
 }
@@ -667,9 +690,11 @@ struct Prepared: Sendable {
     let partial: PartialFile
     let board: ProgressBoard
 
-    /// Pausing keeps the bytes only when the server supports ranges and the size is known.
+    /// Pausing keeps the bytes only when the server supports ranges, the size is known, and a
+    /// strong validator lets a resume check that the file hasn't changed. Without one, a resume
+    /// starts over.
     var canResume: Bool {
-        if case .ranges = layout, totalBytes != nil { true } else { false }
+        if case .ranges(_?) = layout, totalBytes != nil { true } else { false }
     }
 }
 

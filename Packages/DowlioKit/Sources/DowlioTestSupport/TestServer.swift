@@ -53,6 +53,10 @@ public final class TestServer: @unchecked Sendable {
         public var ignoresSegmentRanges: Bool
         /// Limits `misreportRangeStartBy` to replies for the range that starts at this offset.
         public var misreportOnlyRangeStartingAt: Int?
+        /// A streamed or generated file: every reply is a 200 with the whole file, no
+        /// `Content-Length`, and a body that ends when the server closes the connection. Ranges
+        /// are ignored.
+        public var omitsLength: Bool
 
         public init(
             data: Data,
@@ -73,8 +77,10 @@ public final class TestServer: @unchecked Sendable {
             rangeReplyHeaders: [String: String] = [:],
             rangeReplyHeadersOnProbe: Bool = true,
             ignoresSegmentRanges: Bool = false,
-            misreportOnlyRangeStartingAt: Int? = nil
+            misreportOnlyRangeStartingAt: Int? = nil,
+            omitsLength: Bool = false
         ) {
+            self.omitsLength = omitsLength
             self.misreportOnlyRangeStartingAt = misreportOnlyRangeStartingAt
             self.ignoresSegmentRanges = ignoresSegmentRanges
             self.maxParallel = maxParallel
@@ -379,7 +385,7 @@ public final class TestServer: @unchecked Sendable {
         let honoured = rangeHeader.flatMap { Self.parseRange($0, total: total) }.flatMap { range in
             file.ignoresSegmentRanges && range.count > 1 ? nil : range
         }
-        if file.supportsRanges, let range = honoured {
+        if file.supportsRanges, !file.omitsLength, let range = honoured {
             guard range.lowerBound < total else {
                 return send(status: "416 Range Not Satisfiable", headers: ["Content-Range": "bytes */\(total)"], body: Data(), hold: nil, on: connection)
             }
@@ -413,6 +419,7 @@ public final class TestServer: @unchecked Sendable {
                 body: file.data,
                 hold: file.holdAfterBytes,
                 cut: cut,
+                sendsLength: !file.omitsLength,
                 onClose: leave,
                 on: connection
             )
@@ -447,10 +454,14 @@ public final class TestServer: @unchecked Sendable {
         hold: Int?,
         cut: Cut? = nil,
         bytesPerSecond: Int? = nil,
+        sendsLength: Bool = true,
         onClose: @escaping @Sendable () -> Void = {},
         on connection: NWConnection
     ) {
-        var head = "HTTP/1.1 \(status)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n"
+        var head = "HTTP/1.1 \(status)\r\n"
+        // Without `Content-Length`, the body ends where the server closes the connection.
+        if sendsLength { head += "Content-Length: \(body.count)\r\n" }
+        head += "Connection: close\r\n"
         for (name, value) in headers { head += "\(name): \(value)\r\n" }
         head += "\r\n"
 

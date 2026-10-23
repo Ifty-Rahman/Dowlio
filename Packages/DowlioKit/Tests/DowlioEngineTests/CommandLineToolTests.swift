@@ -47,6 +47,17 @@ struct CommandLineToolTests {
         #expect(result.output.contains("Failed"))
     }
 
+    @Test func aNetworkFailureIsPrintedReadably() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024), failFirst: .init(status: 400)), at: "/bad.zip")
+        let folder = try TestFiles.makeFolder()
+
+        let result = try await runTool(["get", server.url(for: "/bad.zip").absoluteString, "-o", folder.path])
+
+        #expect(result.status != 0)
+        #expect(result.output.contains("Failed: network error: The server answered with status 400."))
+    }
+
     @Test func noArgumentsPrintsUsageAndExitsWithNonZero() async throws {
         let result = try await runTool([])
 

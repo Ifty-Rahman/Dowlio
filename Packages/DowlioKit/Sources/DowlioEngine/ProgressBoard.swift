@@ -71,9 +71,17 @@ final class ProgressBoard: @unchecked Sendable {
         }
     }
 
-    /// Whether every segment holds exactly its own length.
-    var coversEverySegment: Bool {
-        lock.withLock { segments.allSatisfy { $0.receivedBytes == $0.end - $0.start + 1 } }
+    /// Whether the segments cover byte 0 to `total` exactly, each one after the other with no gap
+    /// and no overlap, and each holds exactly its own length (spec, finalizer).
+    func coversFile(of total: Int64) -> Bool {
+        lock.withLock {
+            var next: Int64 = 0
+            for segment in segments.sorted(by: { $0.start < $1.start }) {
+                guard segment.start == next, segment.receivedBytes == segment.end - segment.start + 1 else { return false }
+                next = segment.end + 1
+            }
+            return next == total
+        }
     }
 
     /// How many segments there are, including ones stealing added.

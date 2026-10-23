@@ -39,7 +39,9 @@ public enum DownloadError: Error, Equatable, Sendable {
     case destinationNotWritable
     /// The server sent fewer bytes than the file's size, so the file isn't complete.
     case incompleteFile
-    case network(String)
+    /// The connection failed in a way retrying can't fix, or the server answered with a status
+    /// Dowlio doesn't expect.
+    case network(NetworkFailure)
     /// The destination volume can't hold the whole file.
     case notEnoughSpace
     /// The server wants a signed-in visitor (401).
@@ -55,6 +57,28 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// The file changed on the server twice in a row while downloading, so Dowlio stopped instead
     /// of mixing versions.
     case serverChangedFile
+}
+
+/// What went wrong with the network: the URL loading system's error code and its description.
+public struct NetworkFailure: Equatable, Sendable, CustomStringConvertible {
+    /// The underlying `URLError`'s code. `badServerResponse` for a status Dowlio doesn't expect,
+    /// `unknown` for an error that isn't a `URLError`.
+    public var code: URLError.Code
+    /// The underlying error's description, for logs and developer tools.
+    public var message: String
+
+    public init(code: URLError.Code, message: String) {
+        self.code = code
+        self.message = message
+    }
+
+    /// The failure `error` stands for, keeping its `URLError` code when it has one.
+    public init(_ error: Error) {
+        let code = (error as? URLError)?.code ?? .unknown
+        self.init(code: code, message: error.localizedDescription)
+    }
+
+    public var description: String { message }
 }
 
 /// How a download should run. Each ticket adds the options it needs (spec, engine interface).
@@ -73,6 +97,21 @@ public struct RequestOptions: Equatable, Sendable {
     public var referrer: URL?
     /// Sent as `User-Agent` on every request when set. Otherwise the system's default is sent.
     public var userAgent: String?
+    /// Sent as one `Cookie` header on every request, for servers that only give the file to a
+    /// signed-in visitor. Held in memory only: they never go into the partial file, so a restored
+    /// download has none.
+    public var cookies: [Cookie] = []
+}
+
+/// One cookie a download sends, as the browser had it for the download's link.
+public struct Cookie: Equatable, Sendable {
+    public var name: String
+    public var value: String
+
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
 }
 
 /// What to do when the destination already has a file with the finished file's name.
@@ -130,8 +169,16 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// The download uses plain HTTP, so its bytes travel unencrypted (ADR 0003).
     public var isNotSecure: Bool
     /// Whether pausing keeps the bytes downloaded so far. False when the server doesn't support
-    /// ranges or the size is unknown, so the interface can warn before a pause starts it over.
+    /// ranges, the size is unknown, or the server sent no strong `ETag` or `Last-Modified`, so the
+    /// interface can warn before a pause starts it over.
     public var canResume: Bool = false
+    /// The download completed without moving its file in, because the name conflict policy is skip
+    /// and a file with its name already existed. `fileName` is the download's own planned name,
+    /// which the existing file has.
+    public var wasSkipped: Bool = false
+    /// The original link's host, lowercased, for showing where the download comes from. It stays
+    /// the same when redirects lead elsewhere. `nil` for a link without a host.
+    public var displayHost: String?
 
     public init(
         id: DownloadID,
@@ -140,7 +187,8 @@ public struct DownloadSnapshot: Equatable, Sendable {
         destinationFolder: URL,
         receivedBytes: Int64 = 0,
         totalBytes: Int64? = nil,
-        isNotSecure: Bool = false
+        isNotSecure: Bool = false,
+        displayHost: String? = nil
     ) {
         self.id = id
         self.state = state
@@ -149,5 +197,6 @@ public struct DownloadSnapshot: Equatable, Sendable {
         self.receivedBytes = receivedBytes
         self.totalBytes = totalBytes
         self.isNotSecure = isNotSecure
+        self.displayHost = displayHost
     }
 }
