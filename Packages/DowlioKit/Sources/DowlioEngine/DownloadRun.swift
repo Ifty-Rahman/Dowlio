@@ -12,6 +12,7 @@ struct DownloadRun: Sendable {
     let url: URL
     let folder: URL
     let options: RequestOptions
+    let partialFile: PartialFileLocation
     let changeSnapshot: ChangeSnapshot
 
     func run() async {
@@ -25,7 +26,10 @@ struct DownloadRun: Sendable {
                 $0.isNotSecure = probed.finalURL.isPlainHTTP || url.isPlainHTTP
             }
 
+            // The space is reserved before any of the file's bytes are requested.
             let partial = try PartialFile.create(for: fileName, in: folder)
+            partialFile.url = partial.packageURL
+            if let total = probed.totalBytes { try partial.reserve(bytes: total) }
             let board: ProgressBoard
             switch probed.body {
             case .whole(let connection):
@@ -57,8 +61,12 @@ struct DownloadRun: Sendable {
                reading.receivedBytes != expected || (!reading.segments.isEmpty && !board.coversEverySegment) {
                 throw DownloadError.incompleteFile
             }
+            try Task.checkCancellation()
             let finishedName = try partial.finish(named: fileName, in: folder, policy: options.nameConflictPolicy, source: url)
+            partialFile.url = nil
             await changeSnapshot { $0.fileName = finishedName; $0.state = .completed }
+        } catch where Task.isCancelled {
+            // Cancelled by the engine, which deletes the partial file and reports Cancelled.
         } catch let error as DownloadError {
             await changeSnapshot { $0.state = .failed(error) }
         } catch {
