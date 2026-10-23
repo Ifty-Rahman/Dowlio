@@ -31,6 +31,10 @@ public final class TestServer: @unchecked Sendable {
         /// Sends part of the first replies whose body is long enough, then nothing more, keeping
         /// the connection open.
         public var stallFirst: BodyFault?
+        /// The file on the server changes after this many requests for it have been answered.
+        public var changeAfter: FileChange?
+        /// Every reply carries a new `ETag`, as if the file changed between any two requests.
+        public var newETagEveryRequest: Bool
 
         public init(
             data: Data,
@@ -43,8 +47,12 @@ public final class TestServer: @unchecked Sendable {
             headers: [String: String] = [:],
             failFirst: StatusFault? = nil,
             dropFirst: BodyFault? = nil,
-            stallFirst: BodyFault? = nil
+            stallFirst: BodyFault? = nil,
+            changeAfter: FileChange? = nil,
+            newETagEveryRequest: Bool = false
         ) {
+            self.changeAfter = changeAfter
+            self.newETagEveryRequest = newETagEveryRequest
             self.data = data
             self.supportsRanges = supportsRanges
             self.holdAfterBytes = holdAfterBytes
@@ -64,6 +72,19 @@ public final class TestServer: @unchecked Sendable {
             if let eTag { headers["ETag"] = eTag }
             if let lastModified { headers["Last-Modified"] = lastModified }
             return headers
+        }
+    }
+
+    /// A new version of a file: its bytes and `ETag` after `requests` requests were answered.
+    public struct FileChange: Sendable {
+        public var requests: Int
+        public var data: Data
+        public var eTag: String
+
+        public init(afterRequests requests: Int, data: Data, eTag: String) {
+            self.requests = requests
+            self.data = data
+            self.eTag = eTag
         }
     }
 
@@ -118,6 +139,8 @@ public final class TestServer: @unchecked Sendable {
     private var files: [String: File] = [:]
     private var redirects: [String: String] = [:]
     private var usedFaults: [String: UsedFaults] = [:]
+    /// Requests answered per path, for faults that change the file after a number of requests.
+    private var servedCount: [String: Int] = [:]
     /// Stalled connections stay open until the server goes away.
     private var stalled: [NWConnection] = []
     private var recorded: [Request] = []
@@ -161,6 +184,14 @@ public final class TestServer: @unchecked Sendable {
 
     public func serve(_ file: File, at path: String) {
         lock.withLock { files[path] = file }
+    }
+
+    /// Stops serving `path`, as a file or as a redirect. Later requests for it get a 404.
+    public func remove(_ path: String) {
+        lock.withLock {
+            files[path] = nil
+            redirects[path] = nil
+        }
     }
 
     /// Answers requests for `path` with a 302 to `target`.
@@ -236,7 +267,7 @@ public final class TestServer: @unchecked Sendable {
             return send(status: "302 Found", headers: ["Location": redirect], body: Data(), hold: nil, on: connection)
         }
 
-        guard let file else {
+        guard var file else {
             return send(status: "404 Not Found", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
@@ -244,8 +275,27 @@ public final class TestServer: @unchecked Sendable {
             return send(status: "\(fault.status) Fault", headers: fault.headers, body: Data(), hold: nil, on: connection)
         }
 
+        let served: Int = lock.withLock {
+            servedCount[request.path, default: 0] += 1
+            return servedCount[request.path]!
+        }
+        if let change = file.changeAfter, served > change.requests {
+            file.data = change.data
+            file.eTag = change.eTag
+        }
+        if file.newETagEveryRequest {
+            file.eTag = "\"r\(served)\""
+        }
+
+        // RFC 9110 If-Range: a validator that no longer matches gets the whole file, with 200.
+        let rangeHeader: String? = {
+            guard let range = headers["range"] else { return nil }
+            guard let ifRange = headers["if-range"] else { return range }
+            return ifRange == file.eTag || ifRange == file.lastModified ? range : nil
+        }()
+
         let total = file.data.count
-        if file.supportsRanges, let range = headers["range"].flatMap({ Self.parseRange($0, total: total) }) {
+        if file.supportsRanges, let range = rangeHeader.flatMap({ Self.parseRange($0, total: total) }) {
             guard range.lowerBound < total else {
                 return send(status: "416 Range Not Satisfiable", headers: ["Content-Range": "bytes */\(total)"], body: Data(), hold: nil, on: connection)
             }

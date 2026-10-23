@@ -24,6 +24,8 @@ public enum DownloadState: Equatable, Sendable {
     /// from 1. `nextTry` is when the next try starts. With several connections waiting, it shows
     /// the highest attempt and the earliest next try.
     case retrying(attempt: Int, nextTry: Date)
+    /// The user paused the download. Resume continues it from the bytes it has.
+    case paused
 
     /// No further snapshots follow a terminal state. Failed isn't terminal, because Retry
     /// continues a failed download (`GLOSSARY.md`), so its snapshot stream stays open.
@@ -51,6 +53,11 @@ public enum DownloadError: Error, Equatable, Sendable {
     case notFound
     /// One segment failed 5 times in a row. The partial file stays, so Retry continues it.
     case tooManyRetries
+    /// On resume, neither the original link nor the last final link gives the file any more.
+    case linkExpired
+    /// The file changed on the server twice in a row while downloading, so Dowlio stopped instead
+    /// of mixing versions.
+    case serverChangedFile
 }
 
 /// How a download should run. Each ticket adds the options it needs (spec, engine interface).
@@ -63,6 +70,12 @@ public struct RequestOptions: Equatable, Sendable {
 
     /// What happens when a file with the finished file's name already exists.
     public var nameConflictPolicy: NameConflictPolicy = .keepBoth
+
+    /// Sent as `Referer` on every request. Some servers only give the file to visitors who come
+    /// from their own page.
+    public var referrer: URL?
+    /// Sent as `User-Agent` on every request when set. Otherwise the system's default is sent.
+    public var userAgent: String?
 }
 
 /// What to do when the destination already has a file with the finished file's name.
@@ -119,6 +132,9 @@ public struct DownloadSnapshot: Equatable, Sendable {
     public var timeRemaining: TimeInterval?
     /// The download uses plain HTTP, so its bytes travel unencrypted (ADR 0003).
     public var isNotSecure: Bool
+    /// Whether pausing keeps the bytes downloaded so far. False when the server doesn't support
+    /// ranges or the size is unknown, so the interface can warn before a pause starts it over.
+    public var canResume: Bool = false
 
     public init(
         id: DownloadID,
