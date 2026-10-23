@@ -12,8 +12,11 @@ struct CancelAndDiskSpaceTests {
         server.serve(.init(data: data, holdAfterBytes: 64 * 1024), at: "/movie.mkv")
         let folder = try TestFiles.makeFolder()
 
+        // One connection, so no request is still on its way to the server when Cancel runs.
+        var options = RequestOptions()
+        options.connections = 1
         let engine = DownloadEngine()
-        let id = await engine.add(url: server.url(for: "/movie.mkv"), to: folder)
+        let id = await engine.add(url: server.url(for: "/movie.mkv"), to: folder, options: options)
         let states = Task {
             var states: [DownloadState] = []
             for await snapshot in await engine.snapshots(of: id) { states.append(snapshot.state) }

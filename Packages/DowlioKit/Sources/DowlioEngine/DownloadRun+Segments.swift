@@ -64,6 +64,7 @@ extension DownloadRun {
         let segment = board.range(segment: index)
         let missing = ByteRange(start: segment.start + board.received(segment: index), end: segment.end)
         guard missing.start <= missing.end else { return }
+        try Task.checkCancellation()
 
         let connection = connections.open(plan.finalURL, range: missing, ifRange: validator)
         board.setActive(true, segment: index)
