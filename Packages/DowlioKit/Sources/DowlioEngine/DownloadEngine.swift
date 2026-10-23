@@ -70,7 +70,7 @@ public actor DownloadEngine {
     /// Retries a Failed download (`GLOSSARY.md`): continues it from the bytes it has. Does nothing
     /// for a download that isn't Failed.
     public func retry(_ id: DownloadID) {
-        guard let entry = entries[id], case .failed = entry.snapshot.state, let run = entry.run else { return }
+        guard let entry = entries[id], entry.snapshot.state.isFailed, let run = entry.run else { return }
         update(id) { $0.state = .downloading }
         entries[id]?.task = Task { await run.run() }
     }
@@ -78,11 +78,11 @@ public actor DownloadEngine {
     /// Pauses a download (`GLOSSARY.md`): stops every connection and keeps the bytes it has.
     /// Does nothing unless the download is probing, downloading or retrying.
     public func pause(_ id: DownloadID) async {
-        guard let entry = entries[id], Self.canPause(entry.snapshot.state) else { return }
+        guard let entry = entries[id], entry.snapshot.state.isFetching else { return }
         entry.task?.cancel()
         await entry.task?.value
         // The download may have finished or failed while it was stopping.
-        guard let state = entries[id]?.snapshot.state, Self.canPause(state) else { return }
+        guard entries[id]?.snapshot.state.isFetching == true else { return }
         update(id) {
             $0.state = .paused
             $0.bytesPerSecond = 0
@@ -96,13 +96,6 @@ public actor DownloadEngine {
         guard let entry = entries[id], entry.snapshot.state == .paused, let run = entry.run else { return }
         update(id) { $0.state = .downloading }
         entries[id]?.task = Task { await run.run(resuming: true) }
-    }
-
-    private static func canPause(_ state: DownloadState) -> Bool {
-        switch state {
-        case .probing, .downloading, .retrying: true
-        default: false
-        }
     }
 
     /// The download's current snapshot, then one snapshot per change. The stream ends after a

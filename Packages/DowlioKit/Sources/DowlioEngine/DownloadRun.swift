@@ -493,12 +493,7 @@ struct DownloadRun: Sendable {
     private func publishRetryState() async {
         let retries = retries
         await changeSnapshot { snapshot in
-            switch snapshot.state {
-            case .probing, .downloading, .retrying:
-                snapshot.state = retries.state ?? .downloading
-            default:
-                break
-            }
+            if snapshot.state.isFetching { snapshot.state = retries.state ?? .downloading }
         }
     }
 

@@ -32,6 +32,18 @@ public enum DownloadState: Equatable, Sendable {
     public var isTerminal: Bool {
         self == .completed || self == .cancelled
     }
+
+    /// Probing, Downloading or Retrying: the download's connections are fetching, or about to.
+    public var isFetching: Bool {
+        switch self {
+        case .probing, .downloading, .retrying: true
+        default: false
+        }
+    }
+
+    public var isFailed: Bool {
+        if case .failed = self { true } else { false }
+    }
 }
 
 /// Why a download failed. Each case maps to one sentence of user copy in the interface.
