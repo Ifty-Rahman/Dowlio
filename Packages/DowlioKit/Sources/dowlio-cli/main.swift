@@ -77,10 +77,9 @@ func readable(_ error: DownloadError) -> String {
     }
 }
 
-/// The newest snapshot, shared between the snapshot loop and the once-a-second printer.
-actor Latest {
-    var snapshot: DownloadSnapshot?
-    func set(_ snapshot: DownloadSnapshot) { self.snapshot = snapshot }
+enum ProgressEvent {
+    case snapshot(DownloadSnapshot)
+    case tick
 }
 
 let command = parse(Array(CommandLine.arguments.dropFirst()))
@@ -97,7 +96,6 @@ case .resume(let package):
     }
     await engine.resume(id)
 }
-let latest = Latest()
 
 // Ctrl-C pauses the download, so `resume` can continue it, and prints where its partial file is.
 signal(SIGINT, SIG_IGN)
@@ -112,27 +110,36 @@ interrupt.setEventHandler {
 }
 interrupt.resume()
 
-// One progress line a second, including while no bytes arrive.
-let printer = Task {
-    while !Task.isCancelled {
-        if let snapshot = await latest.snapshot { print(progressLine(snapshot)) }
+let (events, eventSink) = AsyncStream.makeStream(of: ProgressEvent.self)
+let snapshots = await engine.snapshots(of: id)
+Task {
+    for await snapshot in snapshots { eventSink.yield(.snapshot(snapshot)) }
+    eventSink.finish()
+}
+Task {
+    while true {
+        eventSink.yield(.tick)
         try? await Task.sleep(for: .seconds(1))
     }
 }
 
-for await snapshot in await engine.snapshots(of: id) {
-    await latest.set(snapshot)
-    switch snapshot.state {
-    case .completed:
-        printer.cancel()
-        print("Completed: \(snapshot.destinationFolder.appending(path: snapshot.fileName).path)")
-        exit(0)
-    case .failed(let error):
-        printer.cancel()
-        print("Failed: \(readable(error))")
-        exit(1)
-    default:
-        break
+var latest: DownloadSnapshot?
+for await event in events {
+    switch event {
+    case .tick:
+        if let latest { print(progressLine(latest)) }
+    case .snapshot(let snapshot):
+        latest = snapshot
+        switch snapshot.state {
+        case .completed:
+            print("Completed: \(snapshot.destinationFolder.appending(path: snapshot.fileName).path)")
+            exit(0)
+        case .failed(let error):
+            print("Failed: \(readable(error))")
+            exit(1)
+        default:
+            break
+        }
     }
 }
 fail("The download ended without finishing.")
