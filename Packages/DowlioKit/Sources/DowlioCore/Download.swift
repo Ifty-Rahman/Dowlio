@@ -43,6 +43,11 @@ public enum DownloadError: Error, Equatable, Sendable {
     case network(String)
 }
 
+/// How a download should run. Each ticket adds the options it needs (spec, engine interface).
+public struct RequestOptions: Equatable, Sendable {
+    public init() {}
+}
+
 /// What the engine reports about one download.
 public struct DownloadSnapshot: Equatable, Sendable {
     public var id: DownloadID

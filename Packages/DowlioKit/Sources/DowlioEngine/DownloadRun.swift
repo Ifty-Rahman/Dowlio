@@ -11,6 +11,7 @@ struct DownloadRun: Sendable {
 
     let url: URL
     let folder: URL
+    let options: RequestOptions
     let changeSnapshot: ChangeSnapshot
 
     func run() async {

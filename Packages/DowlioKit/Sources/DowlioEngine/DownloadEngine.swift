@@ -14,7 +14,7 @@ public actor DownloadEngine {
     public init() {}
 
     /// Starts downloading `url` into `folder` and returns the new download's identifier.
-    public func add(url: URL, to folder: URL) -> DownloadID {
+    public func add(url: URL, to folder: URL, options: RequestOptions = RequestOptions()) -> DownloadID {
         let id = DownloadID()
         let snapshot = DownloadSnapshot(
             id: id,
@@ -24,7 +24,7 @@ public actor DownloadEngine {
         )
         entries[id] = DownloadEntry(snapshot: snapshot)
 
-        let run = DownloadRun(url: url, folder: folder) { [weak self] change in
+        let run = DownloadRun(url: url, folder: folder, options: options) { [weak self] change in
             await self?.update(id, change)
         }
         entries[id]?.task = Task { await run.run() }
