@@ -196,8 +196,7 @@ final class PartialFile: @unchecked Sendable {
 
     /// "name 2.ext" for "name.ext", or "name 2" for a name without an extension.
     private static func numbered(_ fileName: String, _ number: Int) -> String {
-        let ext = (fileName as NSString).pathExtension
-        let base = (fileName as NSString).deletingPathExtension
+        let (base, ext) = FileNaming.split(fileName)
         return ext.isEmpty ? "\(base) \(number)" : "\(base) \(number).\(ext)"
     }
 }

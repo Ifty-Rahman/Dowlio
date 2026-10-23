@@ -12,7 +12,7 @@ enum FileNaming {
             name = suggested
         }
         name = clean(name)
-        if (name as NSString).pathExtension.isEmpty, let ext = fileExtension(for: response) {
+        if split(name).ext.isEmpty, let ext = fileExtension(for: response) {
             name += ".\(ext)"
         }
         return capped(name)
@@ -24,13 +24,17 @@ enum FileNaming {
     /// it's short enough to leave room for a name.
     static func capped(_ name: String) -> String {
         guard name.utf8.count > maximumBytes else { return name }
-        let ext = (name as NSString).pathExtension
+        let (nameBase, ext) = split(name)
         let suffix = ext.isEmpty || ext.utf8.count > 20 ? "" : ".\(ext)"
-        var base = Substring(suffix.isEmpty ? name : (name as NSString).deletingPathExtension)
+        var base = Substring(suffix.isEmpty ? name : nameBase)
         while base.utf8.count + suffix.utf8.count > maximumBytes {
             base = base.dropLast()
         }
         return String(base) + suffix
+    }
+
+    static func split(_ name: String) -> (base: String, ext: String) {
+        ((name as NSString).deletingPathExtension, (name as NSString).pathExtension)
     }
 
     /// Removes `/`, `:` and control characters, then leading dots, so a name from a server can't
