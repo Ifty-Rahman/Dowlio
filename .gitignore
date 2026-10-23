@@ -23,3 +23,6 @@ xcuserdata/
 dist/
 
 dist-secrets/
+
+# Agent worktrees
+.claude/worktrees/
