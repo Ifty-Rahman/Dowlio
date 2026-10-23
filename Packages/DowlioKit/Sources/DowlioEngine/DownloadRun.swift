@@ -17,11 +17,12 @@ struct DownloadRun: Sendable {
     func run() async {
         do {
             let probed = try await probe()
-            let fileName = FileNaming.name(for: probed.finalURL)
+            let fileName = FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
             await changeSnapshot {
                 $0.state = .downloading
                 $0.fileName = fileName
                 $0.totalBytes = probed.totalBytes
+                $0.isNotSecure = probed.finalURL.isPlainHTTP || url.isPlainHTTP
             }
 
             let partial = try PartialFile.create(for: fileName, in: folder)
@@ -56,8 +57,8 @@ struct DownloadRun: Sendable {
                reading.receivedBytes != expected || (!reading.segments.isEmpty && !board.coversEverySegment) {
                 throw DownloadError.incompleteFile
             }
-            try partial.finish(as: folder.appending(path: fileName))
-            await changeSnapshot { $0.state = .completed }
+            let finishedName = try partial.finish(named: fileName, in: folder, policy: options.nameConflictPolicy, source: url)
+            await changeSnapshot { $0.fileName = finishedName; $0.state = .completed }
         } catch let error as DownloadError {
             await changeSnapshot { $0.state = .failed(error) }
         } catch {
@@ -193,6 +194,8 @@ struct DownloadRun: Sendable {
         let body: ProbedBody
         let finalURL: URL
         let totalBytes: Int64?
+        /// The probe's response, whose headers name the file.
+        let probeResponse: HTTPURLResponse
     }
 
     /// Sends `Range: bytes=0-0` (architecture.md, probe). A 206 means the server supports ranges
@@ -204,7 +207,7 @@ struct DownloadRun: Sendable {
         switch response.statusCode {
         case 200:
             let total = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
-            return Probed(body: .whole(probe), finalURL: finalURL, totalBytes: total)
+            return Probed(body: .whole(probe), finalURL: finalURL, totalBytes: total, probeResponse: response)
         case 206:
             probe.cancel()
             guard let reply = ContentRange(response), reply.start == 0, reply.end == 0 else {
@@ -213,7 +216,8 @@ struct DownloadRun: Sendable {
             return Probed(
                 body: .ranges(total: reply.total, validator: Self.validator(of: response)),
                 finalURL: finalURL,
-                totalBytes: reply.total
+                totalBytes: reply.total,
+                probeResponse: response
             )
         default:
             probe.cancel()

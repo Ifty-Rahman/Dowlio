@@ -1,3 +1,4 @@
+import CoreServices
 import DowlioCore
 import Foundation
 
@@ -79,18 +80,59 @@ final class PartialFile: @unchecked Sendable {
         }
     }
 
-    /// Flushes the data, moves it to `destination` in one atomic rename and deletes the package.
-    /// Throws `DownloadError.fileExists`, and leaves the package in place, if `destination` exists.
-    func finish(as destination: URL) throws {
+    /// Flushes the data, moves it into `folder` as `fileName` in one atomic rename, deletes the
+    /// package and returns the name the finished file got. If `fileName` is taken, `policy` decides.
+    func finish(named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL) throws -> String {
         try handle.synchronize()
         try handle.close()
         isClosed = true
-        // RENAME_EXCL makes the rename fail instead of replacing an existing file, atomically.
-        guard renamex_np(dataURL.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
-            let code = errno
-            if code == EEXIST { throw DownloadError.fileExists }
-            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        try markAsDownloaded(from: source)
+
+        if policy == .replace {
+            // A plain rename replaces an existing file atomically.
+            guard rename(dataURL.path, folder.appending(path: fileName).path) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            try FileManager.default.removeItem(at: packageURL)
+            return fileName
         }
-        try FileManager.default.removeItem(at: packageURL)
+
+        var number = 1
+        while true {
+            let name = number == 1 ? fileName : Self.numbered(fileName, number)
+            // RENAME_EXCL makes the rename fail instead of replacing an existing file, atomically.
+            if renamex_np(dataURL.path, folder.appending(path: name).path, UInt32(RENAME_EXCL)) == 0 {
+                try FileManager.default.removeItem(at: packageURL)
+                return name
+            }
+            let code = errno
+            guard code == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
+            if policy == .skip {
+                try FileManager.default.removeItem(at: packageURL)
+                return name
+            }
+            number += 1
+        }
+    }
+
+    /// Sets the quarantine attribute a browser sets on its downloads, with Dowlio as the agent, so
+    /// macOS checks a downloaded app or disk image before it first opens. It's set before the
+    /// rename, so the finished file never exists without it.
+    private func markAsDownloaded(from source: URL) throws {
+        var values = URLResourceValues()
+        values.quarantineProperties = [
+            kLSQuarantineAgentNameKey as String: "Dowlio",
+            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
+            kLSQuarantineDataURLKey as String: source,
+        ]
+        var url = dataURL
+        try url.setResourceValues(values)
+    }
+
+    /// "name 2.ext" for "name.ext", or "name 2" for a name without an extension.
+    private static func numbered(_ fileName: String, _ number: Int) -> String {
+        let ext = (fileName as NSString).pathExtension
+        let base = (fileName as NSString).deletingPathExtension
+        return ext.isEmpty ? "\(base) \(number)" : "\(base) \(number).\(ext)"
     }
 }

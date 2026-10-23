@@ -80,7 +80,8 @@ struct OneConnectionDownloadTests {
 
     @Test func anExistingFileIsNeverOverwritten() async throws {
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024)), at: "/report.pdf")
+        let data = TestServer.makeData(size: 1024 * 1024)
+        server.serve(.init(data: data), at: "/report.pdf")
         let folder = try TestFiles.makeFolder()
         let existing = folder.appending(path: "report.pdf")
         let original = Data("the user's own report".utf8)
@@ -90,8 +91,10 @@ struct OneConnectionDownloadTests {
         let id = await engine.add(url: server.url(for: "/report.pdf"), to: folder)
         let finished = try await engine.finished(id)
 
-        #expect(finished.state == .failed(.fileExists))
+        #expect(finished.state == .completed)
+        #expect(finished.fileName == "report 2.pdf")
         #expect(try Data(contentsOf: existing) == original)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "report 2.pdf")) == TestFiles.sha256(data))
     }
 
     @Test func aShortFileIsNeverPutInPlace() async throws {

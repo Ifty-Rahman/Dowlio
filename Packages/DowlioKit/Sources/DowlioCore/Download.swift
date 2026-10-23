@@ -28,9 +28,6 @@ public enum DownloadState: Equatable, Sendable {
 
 /// Why a download failed. Each case maps to one sentence of user copy in the interface.
 public enum DownloadError: Error, Equatable, Sendable {
-    /// A file with the finished file's name already exists. Ticket 09 replaces this with the
-    /// name conflict policy.
-    case fileExists
     case destinationNotWritable
     /// The server's range reply didn't match what Dowlio asked for. Ticket 05 falls back to one
     /// connection instead of failing.
@@ -50,6 +47,19 @@ public struct RequestOptions: Equatable, Sendable {
     public var openExtraConnections: OpenExtraConnections = .afterFirstConnectionStarts
 
     public init() {}
+
+    /// What happens when a file with the finished file's name already exists.
+    public var nameConflictPolicy: NameConflictPolicy = .keepBoth
+}
+
+/// What to do when the destination already has a file with the finished file's name.
+public enum NameConflictPolicy: Equatable, Sendable {
+    /// Save the new file as "name 2.ext", "name 3.ext" and so on.
+    case keepBoth
+    /// Overwrite the existing file. The interface confirms this first.
+    case replace
+    /// Keep the existing file. The download completes without moving the new file in.
+    case skip
 }
 
 /// When a download opens its connections after the first one.
@@ -94,6 +104,8 @@ public struct DownloadSnapshot: Equatable, Sendable {
     public var bytesPerSecond: Int64 = 0
     /// Seconds left at the current speed. `nil` while the size or the speed is unknown.
     public var timeRemaining: TimeInterval?
+    /// The download uses plain HTTP, so its bytes travel unencrypted (ADR 0003).
+    public var isNotSecure: Bool
 
     public init(
         id: DownloadID,
@@ -101,7 +113,8 @@ public struct DownloadSnapshot: Equatable, Sendable {
         fileName: String,
         destinationFolder: URL,
         receivedBytes: Int64 = 0,
-        totalBytes: Int64? = nil
+        totalBytes: Int64? = nil,
+        isNotSecure: Bool = false
     ) {
         self.id = id
         self.state = state
@@ -109,5 +122,6 @@ public struct DownloadSnapshot: Equatable, Sendable {
         self.destinationFolder = destinationFolder
         self.receivedBytes = receivedBytes
         self.totalBytes = totalBytes
+        self.isNotSecure = isNotSecure
     }
 }

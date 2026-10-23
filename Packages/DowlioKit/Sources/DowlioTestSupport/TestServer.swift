@@ -21,6 +21,9 @@ public final class TestServer: @unchecked Sendable {
         public var eTag: String?
         /// Sent as the `Last-Modified` header on every reply, when set.
         public var lastModified: String?
+        /// Extra headers sent with every 200 and 206 reply, such as `Content-Disposition` or
+        /// `Content-Type`.
+        public var headers: [String: String]
 
         public init(
             data: Data,
@@ -29,7 +32,8 @@ public final class TestServer: @unchecked Sendable {
             shortRangeBodiesBy: Int = 0,
             misreportRangeStartBy: Int = 0,
             eTag: String? = nil,
-            lastModified: String? = nil
+            lastModified: String? = nil,
+            headers: [String: String] = [:]
         ) {
             self.data = data
             self.supportsRanges = supportsRanges
@@ -38,6 +42,7 @@ public final class TestServer: @unchecked Sendable {
             self.misreportRangeStartBy = misreportRangeStartBy
             self.eTag = eTag
             self.lastModified = lastModified
+            self.headers = headers
         }
 
         /// The `ETag` and `Last-Modified` headers this file's replies carry.
@@ -192,7 +197,7 @@ public final class TestServer: @unchecked Sendable {
                 headers: file.validatorHeaders.merging([
                     "Content-Range": "bytes \(range.lowerBound + (range.count > 1 ? file.misreportRangeStartBy : 0))-\(range.upperBound - 1)/\(total)",
                     "Accept-Ranges": "bytes",
-                ]) { $1 },
+                ].merging(file.headers) { current, _ in current }) { $1 },
                 body: body,
                 hold: file.holdAfterBytes,
                 on: connection
@@ -200,7 +205,9 @@ public final class TestServer: @unchecked Sendable {
         } else {
             send(
                 status: "200 OK",
-                headers: file.validatorHeaders.merging(file.supportsRanges ? ["Accept-Ranges": "bytes"] : [:]) { $1 },
+                headers: file.validatorHeaders
+                    .merging(file.supportsRanges ? ["Accept-Ranges": "bytes"] : [:]) { $1 }
+                    .merging(file.headers) { current, _ in current },
                 body: file.data,
                 hold: file.holdAfterBytes,
                 on: connection
