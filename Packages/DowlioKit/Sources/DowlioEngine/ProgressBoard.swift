@@ -20,6 +20,12 @@ final class ProgressBoard: @unchecked Sendable {
         self.segments = segments.map { SegmentProgress(start: $0.start, end: $0.end) }
     }
 
+    /// A board for segments that already hold `received` bytes each, from a restored manifest.
+    convenience init(segments: [ByteRange], received: [Int64]) {
+        self.init(segments: segments)
+        for (index, count) in received.enumerated() { add(count, to: index) }
+    }
+
     /// Adds `bytes` to segment `index`, or to the unsegmented count when the size is unknown.
     func add(_ bytes: Int64, to index: Int?) {
         lock.withLock {

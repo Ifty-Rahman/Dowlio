@@ -146,6 +146,12 @@ struct DownloadRun: Sendable {
     /// The probe's result and the partial file. Retry continues an earlier run's state as it is.
     /// Resume asks the server again first, because the file may have changed while paused.
     private func prepare(resuming: Bool) async throws -> Prepared {
+        // A partial file deleted in the meantime, for example in Finder, means starting over in a
+        // new one. The download doesn't fail for it (architecture.md, files on disk).
+        if let prepared = state.prepared, prepared.partial.isMissing {
+            state.forget()
+            partialFile.url = nil
+        }
         if let prepared = state.prepared {
             if resuming { return try await revalidate(prepared) }
             await changeSnapshot { $0.state = .downloading }
@@ -540,6 +546,15 @@ struct DownloadRun: Sendable {
     }
 }
 
+extension DownloadRun {
+    /// Continues from a restored partial file instead of probing first. Resume then revalidates
+    /// it with the server, as for any paused download.
+    func adopt(_ prepared: Prepared) {
+        partialFile.url = prepared.partial.packageURL
+        state.store(prepared, probeConnection: nil)
+    }
+}
+
 /// A segment request's validator no longer matched, so the file changed on the server.
 struct FileChangedOnServer: Error {}
 
@@ -589,6 +604,14 @@ final class RunState: @unchecked Sendable {
         lock.withLock {
             defer { probeConnection = nil }
             return probeConnection
+        }
+    }
+
+    /// Drops the prepared state, so the next run starts the download as new.
+    func forget() {
+        lock.withLock {
+            stored = nil
+            probeConnection = nil
         }
     }
 }

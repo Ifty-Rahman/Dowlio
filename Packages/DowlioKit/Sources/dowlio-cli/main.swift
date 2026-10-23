@@ -6,9 +6,13 @@ import Foundation
 
 let usage = """
 usage: dowlio-cli get <url> [-c <connections>] [-o <folder>]
+       dowlio-cli resume <partial file>
 
-  get   Download <url> into <folder> (default: the current folder) over up to
-        <connections> connections (default: 8, at most 16).
+  get     Download <url> into <folder> (default: the current folder) over up to
+          <connections> connections (default: 8, at most 16).
+  resume  Continue the download held by a .dowlio partial file.
+
+  Ctrl-C pauses the download and prints its partial file, for resume.
 """
 
 // Progress lines must reach a pipe as they're printed, not when the tool exits.
@@ -19,22 +23,34 @@ func fail(_ message: String) -> Never {
     exit(64)
 }
 
-let arguments = Array(CommandLine.arguments.dropFirst())
-guard arguments.first == "get", arguments.count >= 2, let url = URL(string: arguments[1]), url.scheme != nil else {
-    fail(usage)
+enum Command {
+    case get(URL, folder: URL, options: RequestOptions)
+    case resume(URL)
 }
 
-var folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-var options = RequestOptions()
-var rest = arguments.dropFirst(2)
-while let option = rest.popFirst() {
-    switch option {
-    case "-o":
-        guard let path = rest.popFirst() else { fail(usage) }
-        folder = URL(fileURLWithPath: path, isDirectory: true)
-    case "-c":
-        guard let count = rest.popFirst().flatMap({ Int($0) }) else { fail(usage) }
-        options.connections = count
+func parse(_ arguments: [String]) -> Command {
+    switch arguments.first {
+    case "get":
+        guard arguments.count >= 2, let url = URL(string: arguments[1]), url.scheme != nil else { fail(usage) }
+        var folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        var options = RequestOptions()
+        var rest = arguments.dropFirst(2)
+        while let option = rest.popFirst() {
+            switch option {
+            case "-o":
+                guard let path = rest.popFirst() else { fail(usage) }
+                folder = URL(fileURLWithPath: path, isDirectory: true)
+            case "-c":
+                guard let count = rest.popFirst().flatMap({ Int($0) }) else { fail(usage) }
+                options.connections = count
+            default:
+                fail(usage)
+            }
+        }
+        return .get(url, folder: folder, options: options)
+    case "resume":
+        guard arguments.count == 2 else { fail(usage) }
+        return .resume(URL(fileURLWithPath: arguments[1], isDirectory: true))
     default:
         fail(usage)
     }
@@ -60,9 +76,34 @@ actor Latest {
     func set(_ snapshot: DownloadSnapshot) { self.snapshot = snapshot }
 }
 
+let command = parse(Array(CommandLine.arguments.dropFirst()))
 let engine = DownloadEngine()
-let id = await engine.add(url: url, to: folder, options: options)
+let id: DownloadID
+switch command {
+case .get(let url, let folder, let options):
+    id = await engine.add(url: url, to: folder, options: options)
+case .resume(let package):
+    do {
+        id = try await engine.restore(partialFile: package)
+    } catch {
+        fail("Can't resume \(package.path): its manifest is missing or unreadable.")
+    }
+    await engine.resume(id)
+}
 let latest = Latest()
+
+// Ctrl-C pauses the download, so `resume` can continue it, and prints where its partial file is.
+signal(SIGINT, SIG_IGN)
+let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+interrupt.setEventHandler {
+    Task {
+        await engine.pause(id)
+        let package = await engine.partialFile(of: id)
+        print("Paused: \(package?.path ?? "no partial file yet")")
+        exit(130)
+    }
+}
+interrupt.resume()
 
 // One progress line a second, including while no bytes arrive.
 let printer = Task {
@@ -77,7 +118,7 @@ for await snapshot in await engine.snapshots(of: id) {
     switch snapshot.state {
     case .completed:
         printer.cancel()
-        print("Completed: \(folder.appending(path: snapshot.fileName).path)")
+        print("Completed: \(snapshot.destinationFolder.appending(path: snapshot.fileName).path)")
         exit(0)
     case .failed(let error):
         printer.cancel()

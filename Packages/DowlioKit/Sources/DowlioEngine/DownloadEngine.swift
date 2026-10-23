@@ -6,6 +6,12 @@ extension URL {
     var isPlainHTTP: Bool { scheme?.lowercased() == "http" }
 }
 
+/// Why a partial file couldn't be restored.
+public enum RestoreError: Error, Equatable, Sendable {
+    /// The partial file has no manifest, or one this version of Dowlio can't read.
+    case unreadableManifest
+}
+
 /// Owns every download and is the only way in: add a download, then follow its snapshots.
 public actor DownloadEngine {
     private struct DownloadEntry {
@@ -123,6 +129,66 @@ public actor DownloadEngine {
         }
         update(id) { $0.state = .cancelled }
         entries[id] = nil
+    }
+
+    /// Adds the download held by the partial file at `package` as Paused, with the bytes it has,
+    /// so Resume continues it. Returns the download's identifier. A partial file the engine already
+    /// has returns that download. Throws `RestoreError.unreadableManifest`, and leaves the partial
+    /// file alone, when its manifest is missing or unreadable.
+    public func restore(partialFile package: URL) throws -> DownloadID {
+        let package = package.standardizedFileURL
+        if let known = entries.first(where: { $0.value.partialFile.url?.standardizedFileURL == package }) {
+            return known.key
+        }
+        let manifest = try PartialFile.readManifest(in: package)
+        let partial = try PartialFile.openExisting(package)
+
+        let id = UUID(uuidString: manifest.downloadID).map(DownloadID.init(rawValue:)) ?? DownloadID()
+        let folder = package.deletingLastPathComponent()
+        var options = RequestOptions()
+        options.connections = manifest.connections
+        options.referrer = manifest.referrer
+        options.userAgent = manifest.userAgent
+
+        let segments = manifest.segments.map { ByteRange(start: $0.start, end: $0.end) }
+        let prepared = Prepared(
+            fileName: manifest.fileName,
+            finalURL: manifest.finalURL,
+            totalBytes: manifest.totalBytes,
+            layout: segments.isEmpty || manifest.totalBytes == nil ? .whole : .ranges(validator: manifest.validator),
+            segments: segments,
+            partial: partial,
+            board: ProgressBoard(segments: segments, received: manifest.segments.map(\.received))
+        )
+
+        var snapshot = DownloadSnapshot(
+            id: id,
+            state: .paused,
+            fileName: manifest.fileName,
+            destinationFolder: folder,
+            totalBytes: manifest.totalBytes,
+            isNotSecure: manifest.originalURL.isPlainHTTP || manifest.finalURL.isPlainHTTP
+        )
+        snapshot.apply(prepared.board.reading)
+        snapshot.canResume = prepared.canResume
+
+        let entry = DownloadEntry(snapshot: snapshot)
+        entries[id] = entry
+        let run = DownloadRun(
+            id: id, url: manifest.originalURL, folder: folder, options: options,
+            partialFile: entry.partialFile, configuration: configuration
+        ) { [weak self] change in
+            await self?.update(id, change)
+        }
+        run.adopt(prepared)
+        entries[id]?.run = run
+        return id
+    }
+
+    /// Where the download's partial file is, or `nil` before it exists, after the file is
+    /// finished, and for an unknown download.
+    public func partialFile(of id: DownloadID) -> URL? {
+        entries[id]?.partialFile.url
     }
 
     private func update(_ id: DownloadID, _ change: @Sendable (inout DownloadSnapshot) -> Void) {

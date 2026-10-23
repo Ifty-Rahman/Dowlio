@@ -162,6 +162,29 @@ final class PartialFile: @unchecked Sendable {
         try url.setResourceValues(values)
     }
 
+    /// Reads the manifest of the package at `package`. Throws `RestoreError.unreadableManifest`
+    /// when it's missing or isn't a manifest this version understands.
+    static func readManifest(in package: URL) throws -> PartialFileManifest {
+        guard let data = try? Data(contentsOf: package.appending(path: "manifest.json")),
+              let manifest = try? JSONDecoder().decode(PartialFileManifest.self, from: data),
+              manifest.formatVersion == PartialFileManifest.currentFormatVersion else {
+            throw RestoreError.unreadableManifest
+        }
+        return manifest
+    }
+
+    /// Opens the data file of an existing package for writing, keeping its bytes.
+    static func openExisting(_ package: URL) throws -> PartialFile {
+        let dataURL = package.appending(path: "data")
+        guard let handle = try? FileHandle(forUpdating: dataURL) else { throw RestoreError.unreadableManifest }
+        return PartialFile(packageURL: package, dataURL: dataURL, handle: handle)
+    }
+
+    /// Whether the package's data file is gone from disk, for example deleted in Finder.
+    var isMissing: Bool {
+        !FileManager.default.fileExists(atPath: dataURL.path)
+    }
+
     /// "name 2.ext" for "name.ext", or "name 2" for a name without an extension.
     private static func numbered(_ fileName: String, _ number: Int) -> String {
         let ext = (fileName as NSString).pathExtension
