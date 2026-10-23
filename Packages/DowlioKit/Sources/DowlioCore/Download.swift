@@ -133,6 +133,10 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// ranges, the size is unknown, or the server sent no strong `ETag` or `Last-Modified`, so the
     /// interface can warn before a pause starts it over.
     public var canResume: Bool = false
+    /// The download completed without moving its file in, because the name conflict policy is skip
+    /// and a file with its name already existed. `fileName` is the download's own planned name,
+    /// which the existing file has.
+    public var wasSkipped: Bool = false
 
     public init(
         id: DownloadID,

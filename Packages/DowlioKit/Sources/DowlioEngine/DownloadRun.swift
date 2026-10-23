@@ -98,11 +98,15 @@ struct DownloadRun: Sendable {
                 throw DownloadError.incompleteFile
             }
             try Task.checkCancellation()
-            let finishedName = try prepared.partial.finish(
+            let finished = try prepared.partial.finish(
                 named: prepared.fileName, in: folder, policy: options.nameConflictPolicy, source: url
             )
             partialFile.url = nil
-            await changeSnapshot { $0.fileName = finishedName; $0.state = .completed }
+            await changeSnapshot {
+                $0.fileName = finished.name
+                $0.wasSkipped = finished.wasSkipped
+                $0.state = .completed
+            }
         } catch where Task.isCancelled {
             // Stopped by the engine for Pause or Cancel. The engine reports the new state. The last
             // reading goes out first, so a paused download shows exactly the bytes it keeps.

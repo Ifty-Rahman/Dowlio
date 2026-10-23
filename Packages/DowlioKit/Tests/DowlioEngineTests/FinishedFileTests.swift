@@ -128,6 +128,42 @@ struct FinishedFileTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["song.mp3"])
     }
 
+    @Test func skipReportsTheDownloadsOwnNameAndThatItWasSkipped() async throws {
+        let folder = try TestFiles.makeFolder()
+        try Data("mine".utf8).write(to: folder.appending(path: "Song.mp3"))
+        var options = RequestOptions()
+        options.nameConflictPolicy = .skip
+        let file = TestServer.File(data: TestServer.makeData(size: 1024), headers: ["Content-Disposition": #"attachment; filename="Song.mp3""#])
+
+        let finished = try await download(file, at: "/track", into: folder, options: options)
+
+        #expect(finished.state == .completed)
+        #expect(finished.fileName == "Song.mp3")
+        #expect(finished.wasSkipped)
+    }
+
+    @Test(arguments: [NameConflictPolicy.keepBoth, .replace, .skip])
+    func aDownloadWithoutANameConflictIsNotSkipped(policy: NameConflictPolicy) async throws {
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.nameConflictPolicy = policy
+
+        let finished = try await download(.init(data: TestServer.makeData(size: 1024)), at: "/new.txt", into: folder, options: options)
+
+        #expect(finished.state == .completed)
+        #expect(!finished.wasSkipped)
+    }
+
+    @Test func keepBothIsNotSkipped() async throws {
+        let folder = try TestFiles.makeFolder()
+        try Data("one".utf8).write(to: folder.appending(path: "clip.mov"))
+
+        let finished = try await download(.init(data: TestServer.makeData(size: 1024)), at: "/clip.mov", into: folder)
+
+        #expect(finished.fileName == "clip 2.mov")
+        #expect(!finished.wasSkipped)
+    }
+
     @Test func aFinishedFileIsMarkedAsDownloadedFromTheInternetByDowlio() async throws {
         let server = try await TestServer()
         server.serve(.init(data: TestServer.makeData(size: 1024)), at: "/Installer.dmg")

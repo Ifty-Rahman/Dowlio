@@ -113,9 +113,17 @@ final class PartialFile: @unchecked Sendable {
         }
     }
 
+    /// What `finish` did with the data file.
+    struct Finished: Equatable {
+        /// The name the finished file got. With the skip policy, the download's own planned name.
+        let name: String
+        /// The skip policy kept an existing file with that name, so the new file was thrown away.
+        let wasSkipped: Bool
+    }
+
     /// Flushes the data, moves it into `folder` as `fileName` in one atomic rename, deletes the
     /// package and returns the name the finished file got. If `fileName` is taken, `policy` decides.
-    func finish(named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL) throws -> String {
+    func finish(named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL) throws -> Finished {
         try handle.synchronize()
         try handle.close()
         isClosed = true
@@ -127,7 +135,7 @@ final class PartialFile: @unchecked Sendable {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
             try FileManager.default.removeItem(at: packageURL)
-            return fileName
+            return Finished(name: fileName, wasSkipped: false)
         }
 
         var number = 1
@@ -136,13 +144,13 @@ final class PartialFile: @unchecked Sendable {
             // RENAME_EXCL makes the rename fail instead of replacing an existing file, atomically.
             if renamex_np(dataURL.path, folder.appending(path: name).path, UInt32(RENAME_EXCL)) == 0 {
                 try FileManager.default.removeItem(at: packageURL)
-                return name
+                return Finished(name: name, wasSkipped: false)
             }
             let code = errno
             guard code == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
             if policy == .skip {
                 try FileManager.default.removeItem(at: packageURL)
-                return name
+                return Finished(name: fileName, wasSkipped: true)
             }
             number += 1
         }
