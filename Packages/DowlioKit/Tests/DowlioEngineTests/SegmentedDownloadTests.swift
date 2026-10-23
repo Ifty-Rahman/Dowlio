@@ -48,11 +48,15 @@ struct SegmentedDownloadTests {
 
         #expect(last?.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "three.bin")) == TestFiles.sha256(data))
-        // Three segments, each asked for once. Stealing adds requests later, but never a fourth
-        // connection at the same time.
-        let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }
-        for range in ["bytes=0-4194303", "bytes=4194304-8388607", "bytes=8388608-12582911"] {
-            #expect(segmentRanges.filter { $0 == range }.count == 1)
+        // Three segments, each asked for once. A segment's end can shrink before its connection
+        // opens, because a free connection may already have taken half of it, so requests are
+        // matched by their start. Stealing starts at a midpoint, never at a planned start, and
+        // never opens a fourth connection at the same time.
+        let starts = server.requests.dropFirst().compactMap { $0.headers["range"] }.map {
+            $0.dropFirst("bytes=".count).prefix { $0 != "-" }
+        }
+        for start in ["0", "4194304", "8388608"] {
+            #expect(starts.filter { $0 == start }.count == 1)
         }
         #expect(mostConnections <= 3)
     }
