@@ -29,10 +29,14 @@ struct CancelAndDiskSpaceTests {
         for await snapshot in await engine.snapshots(of: id) { later.append(snapshot) }
         #expect(later.isEmpty)
 
-        // The connection is gone, so releasing the server's response writes nothing.
+        // The connection is gone, so releasing the server's response writes nothing, and nothing
+        // more is asked for. Another whole download through the same engine and server comes
+        // first, so the check follows real requests rather than a fixed wait.
+        let requestsWhenCancelled = server.requests.count { $0.path == "/movie.mkv" }
         server.releaseHeldResponses()
-        try await Task.sleep(for: .milliseconds(300))
+        try await engine.runOtherDownload(on: server)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+        #expect(server.requests.count { $0.path == "/movie.mkv" } == requestsWhenCancelled)
     }
 
     @Test func theFullSizeIsReservedBeforeTheBytesArrive() async throws {

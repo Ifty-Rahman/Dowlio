@@ -69,15 +69,20 @@ struct SegmentedDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/ramp.bin"), to: folder)
+        let (log, following) = await SnapshotLog.follow(id, in: engine)
         try await waitUntil { server.requests.count >= 2 }
-        // The first connection has no data yet, so no other connection may open.
-        try await Task.sleep(for: .milliseconds(500))
+        // The first connection has no data yet, so no other connection may open. Two manifest
+        // saves mean the download ran at least 4 progress ticks in this state.
+        try await EngineEvents.waitForManifestSaves(2, in: folder.appending(path: "ramp.bin.dowlio"))
         #expect(server.requests.count == 2)
+        #expect(log.snapshots.allSatisfy { $0.activeConnections <= 1 })
 
         server.releaseHeldResponses()
-        let finished = try await engine.finished(id)
-        #expect(finished.state == .completed)
+        await following.value
+        #expect(log.snapshots.last?.state == .completed)
         #expect(server.requests.count == 9)
+        // Every snapshot from before the first data shows at most the first connection.
+        #expect(log.snapshots.filter { $0.receivedBytes == 0 }.allSatisfy { $0.activeConnections <= 1 })
     }
 
     @Test func allAtOnceOpensEveryConnectionWithoutWaiting() async throws {

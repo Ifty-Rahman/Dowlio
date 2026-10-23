@@ -113,6 +113,37 @@ struct OneConnectionDownloadTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "short.bin")) == TestFiles.sha256(data))
     }
 
+    /// Story 40: a download that ends with bytes missing never puts its file in place. Every reply
+    /// drops partway, so the retries run out long before the last byte arrives.
+    @Test(arguments: [true, false])
+    func aDownloadThatEndsWithBytesMissingNeverPutsItsFileInPlace(rangesSupported: Bool) async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 51)
+        let dropEveryReply = TestServer.BodyFault(afterBytes: 64 * 1024, count: .max)
+        server.serve(.init(data: data, supportsRanges: rangesSupported, dropFirst: dropEveryReply), at: "/half.iso")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.connections = 2
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/half.iso"), to: folder, options: options)
+        var states: [DownloadState] = []
+        var last: DownloadSnapshot?
+        for await snapshot in await engine.snapshots(of: id) {
+            states.append(snapshot.state)
+            last = snapshot
+            if case .failed = snapshot.state { break }
+        }
+
+        let failed = try #require(last)
+        #expect(failed.state == .failed(.tooManyRetries))
+        #expect(failed.receivedBytes < Int64(data.count))
+        #expect(!states.contains(.finalizing))
+        #expect(!states.contains(.completed))
+        // No finished file, and the partial file stays for Retry.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["half.iso.dowlio"])
+    }
+
     @Test func theSnapshotStreamEndsAfterCompleted() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 1024 * 1024)

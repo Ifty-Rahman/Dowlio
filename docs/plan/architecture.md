@@ -159,6 +159,6 @@ These hold in every phase.
 ## Testing
 
 - `swift test` runs unit tests for every module.
-- A test server in `Tests/Support`, built on Network.framework, serves files with or without range support. It can throttle, drop connections, change the file mid-download, send wrong `Content-Range` values and return `429` with `Retry-After`. Engine tests run against it.
+- A test server in the `DowlioTestSupport` target, built on Network.framework, serves files with or without range support. It can throttle, drop connections, change the file mid-download, send wrong `Content-Range` values and return `429` with `Retry-After`. Engine tests run against it.
 - The extension's logic lives in plain ES modules that Node's built-in test runner tests without a browser.
 - Each phase lists manual checks for anything that needs a real browser or a real Mac session.

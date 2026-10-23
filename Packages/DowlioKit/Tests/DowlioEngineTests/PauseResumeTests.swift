@@ -50,21 +50,29 @@ struct PauseResumeTests {
         #expect(paused.activeConnections == 0)
         #expect(paused.receivedBytes == Int64(2 * Self.held))
 
-        // Nothing more is asked for while paused, even once the server could send more.
-        let requestsWhenPaused = server.requests.count
+        // Nothing more is asked for or received while paused, even once the server could send
+        // more. Another whole download through the same engine and server comes first, so the
+        // check follows real requests rather than a fixed wait.
+        let requestsWhenPaused = server.requests.count { $0.path == "/big.iso" }
         server.releaseHeldResponses()
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(server.requests.count == requestsWhenPaused)
+        try await engine.runOtherDownload(on: server)
+        #expect(server.requests.count { $0.path == "/big.iso" } == requestsWhenPaused)
+        let stillPaused = try await engine.firstSnapshot(of: id) { _ in true }
+        #expect(stillPaused.state == .paused)
+        #expect(stillPaused.receivedBytes == Int64(2 * Self.held))
 
         await engine.resume(id)
         let finished = try await engine.finished(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
+        // Resume sends exactly one probe, then asks for each segment's missing part once.
         let half = Self.size / 2
-        let resumedRanges = server.requests[requestsWhenPaused...].compactMap { $0.headers["range"] }
-            .filter { $0 != "bytes=0-0" }
-        #expect(Set(resumedRanges) == [
+        let resumed = server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused)
+            .map { $0.headers["range"] }
+        #expect(resumed.first == "bytes=0-0")
+        #expect(resumed.count == 3)
+        #expect(Set(resumed.dropFirst()) == [
             "bytes=\(Self.held)-\(half - 1)",
             "bytes=\(half + Self.held)-\(Self.size - 1)",
         ])

@@ -112,20 +112,25 @@ extension RetryTests {
         #expect(failed.state == .failed(.tooManyRetries))
         #expect(failed.activeConnections == 0)
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "stubborn.iso.dowlio").path))
-        // Every connection stopped: no request arrives after the download failed.
-        let requestsWhenFailed = server.requests.count
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(server.requests.count == requestsWhenFailed)
+        // Every connection stopped: no request arrives after the download failed, and it stays
+        // Failed with the same bytes. Another whole download through the same engine and server
+        // comes first, so the check follows real requests rather than a fixed wait.
+        let requestsWhenFailed = server.requests.count { $0.path == "/stubborn.iso" }
+        try await engine.runOtherDownload(on: server)
+        #expect(server.requests.count { $0.path == "/stubborn.iso" } == requestsWhenFailed)
+        let stillFailed = try await engine.firstSnapshot(of: id) { _ in true }
+        #expect(stillFailed.state == .failed(.tooManyRetries))
+        #expect(stillFailed.receivedBytes == failed.receivedBytes)
 
         await engine.retry(id)
         let finished = try await engine.firstSnapshot(of: id) { $0.state == .completed }
 
         #expect(finished.receivedBytes == Int64(data.count))
         #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
-        // Retry asked only for the bytes the download didn't have when it failed.
-        let retryRange = server.requests[requestsWhenFailed...].first?.headers["range"]
+        // Retry sent one request, for only the bytes the download didn't have when it failed.
+        let afterFailure = server.requests.filter { $0.path == "/stubborn.iso" }.dropFirst(requestsWhenFailed)
         #expect(failed.receivedBytes > 0)
-        #expect(retryRange == "bytes=\(failed.receivedBytes)-\(data.count - 1)")
+        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=\(failed.receivedBytes)-\(data.count - 1)"])
     }
 }
 
