@@ -9,36 +9,16 @@ struct RestoreTests {
     static let size = 4 * 1024 * 1024
     static let held = 256 * 1024
 
-    /// Starts a two-segment download whose replies hold after `held` bytes, and waits until both
-    /// segments have their held bytes.
-    private func startHeld(
-        _ server: TestServer,
-        data: Data,
-        at path: String
-    ) async throws -> (DownloadEngine, DownloadID, URL) {
-        server.serve(.init(data: data, holdAfterBytes: Self.held, eTag: "\"v1\""), at: path)
-        let folder = try TestFiles.makeFolder()
-        var options = RequestOptions()
-        options.connections = 2
-        let engine = DownloadEngine(configuration: .fastWithHolds)
-        let id = await engine.add(url: server.url(for: path), to: folder, options: options)
-        _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes == Int64(2 * Self.held) }
-        return (engine, id, folder)
-    }
-
-    /// The one partial file in `folder`.
-    private func partialFile(in folder: URL) throws -> URL {
-        let packages = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "dowlio" }
-        return try #require(packages.count == 1 ? packages.first : nil)
+    private static func heldFile(_ data: Data) -> TestServer.File {
+        .init(data: data, holdAfterBytes: held, eTag: "\"v1\"")
     }
 
     @Test func anUnknownPartialFileIsRestoredAsPausedAndResumesWithOnlyTheMissingBytes() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 41)
-        let (engine, id, folder) = try await startHeld(server, data: data, at: "/backup.tar")
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/backup.tar")
         await engine.pause(id)
-        let package = try partialFile(in: folder)
+        let package = try TestFiles.partialFile(in: folder)
 
         let fresh = DownloadEngine(configuration: .fastWithHolds)
         let restored = try await fresh.restore(partialFile: package)
@@ -71,8 +51,8 @@ struct RestoreTests {
     @Test func aDownloadSurvivesACrashFromWhateverTheLastSaveWrote() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 43)
-        let (engine, id, folder) = try await startHeld(server, data: data, at: "/crash.dmg")
-        let package = try partialFile(in: folder)
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/crash.dmg")
+        let package = try TestFiles.partialFile(in: folder)
 
         // Wait for a periodic save that records bytes, then keep the partial file exactly as it is
         // on disk, as a crash would leave it. No pause runs, so nothing saves on the way out.
@@ -103,9 +83,9 @@ struct RestoreTests {
     @Test func aDownloadWhosePartialFileWasDeletedStartsOver() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 44)
-        let (engine, id, folder) = try await startHeld(server, data: data, at: "/gone.pkg")
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/gone.pkg")
         await engine.pause(id)
-        try FileManager.default.removeItem(at: try partialFile(in: folder))
+        try FileManager.default.removeItem(at: try TestFiles.partialFile(in: folder))
 
         server.releaseHeldResponses()
         let requestsBeforeResume = server.requests.count
@@ -128,9 +108,9 @@ struct RestoreTests {
     @Test func aPartialFileTheEngineAlreadyHasReturnsThatDownload() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 42)
-        let (engine, id, folder) = try await startHeld(server, data: data, at: "/known.iso")
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/known.iso")
 
-        let restored = try await engine.restore(partialFile: try partialFile(in: folder))
+        let restored = try await engine.restore(partialFile: try TestFiles.partialFile(in: folder))
 
         #expect(restored == id)
         // The running download carries on. It isn't replaced by a paused copy.

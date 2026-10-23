@@ -257,14 +257,3 @@ func recordStates(of id: DownloadID, in engine: DownloadEngine) async -> [Downlo
     }
     return states
 }
-
-extension EngineConfiguration {
-    /// Short waits, so retry tests finish quickly.
-    static var fast: EngineConfiguration {
-        var configuration = EngineConfiguration()
-        configuration.retry.firstDelay = .milliseconds(10)
-        configuration.retry.maximumDelay = .milliseconds(40)
-        configuration.idleTimeout = .milliseconds(500)
-        return configuration
-    }
-}

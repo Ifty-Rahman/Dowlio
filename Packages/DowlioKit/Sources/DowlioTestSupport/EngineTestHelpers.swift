@@ -5,6 +5,7 @@ import Foundation
 
 public enum EngineTestError: Error {
     case streamEnded(last: DownloadSnapshot?)
+    case notOnePartialFile(found: [URL])
 }
 
 extension DownloadEngine {

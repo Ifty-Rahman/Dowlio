@@ -78,7 +78,7 @@ extension CommandLineToolTests {
             if savedBytes(in: folder) > 0 { kill(process.processIdentifier, SIGKILL) }
         }
         #expect(killed.reason == .uncaughtSignal)
-        let package = try #require(partialFiles(in: folder).first)
+        let package = try #require(TestFiles.partialFiles(in: folder).first)
 
         server.releaseHeldResponses()
         let resumed = try await runTool(["resume", package.path])
@@ -86,7 +86,7 @@ extension CommandLineToolTests {
         #expect(resumed.status == 0)
         #expect(resumed.output.contains("Completed"))
         #expect(try TestFiles.sha256(of: folder.appending(path: "killed.iso")) == TestFiles.sha256(data))
-        #expect(partialFiles(in: folder).isEmpty)
+        #expect(TestFiles.partialFiles(in: folder).isEmpty)
     }
 
     @Test func ctrlCPausesTheDownloadAndPrintsItsPartialFile() async throws {
@@ -103,7 +103,7 @@ extension CommandLineToolTests {
             process.interrupt()
         }
 
-        let package = try #require(partialFiles(in: folder).first)
+        let package = try #require(TestFiles.partialFiles(in: folder).first)
         #expect(result.reason == .exit)
         #expect(result.status == 130)
         let printed = result.output.split(separator: "\n").first { $0.hasPrefix("Paused: ") }?.dropFirst("Paused: ".count)
@@ -121,15 +121,9 @@ private struct ToolResult {
     let output: String
 }
 
-/// The partial files in `folder`.
-private func partialFiles(in folder: URL) -> [URL] {
-    ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
-        .filter { $0.pathExtension == "dowlio" }
-}
-
 /// The bytes the saved manifest of the partial file in `folder` records, or 0 before a save.
 private func savedBytes(in folder: URL) -> Int64 {
-    guard let package = partialFiles(in: folder).first,
+    guard let package = TestFiles.partialFiles(in: folder).first,
           let data = try? Data(contentsOf: package.appending(path: "manifest.json")),
           let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let segments = manifest["segments"] as? [[String: Any]] else { return 0 }

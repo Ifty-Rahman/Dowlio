@@ -4,39 +4,10 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-extension EngineConfiguration {
-    /// Fast retries, but an idle timeout longer than any held reply in these tests, so a held reply
-    /// isn't mistaken for a stalled connection.
-    static var fastWithHolds: EngineConfiguration {
-        var configuration = EngineConfiguration.fast
-        configuration.idleTimeout = .seconds(30)
-        return configuration
-    }
-}
-
 @Suite(.timeLimit(.minutes(1)))
 struct PauseResumeTests {
     static let size = 4 * 1024 * 1024
     static let held = 256 * 1024
-
-    /// Starts a two-segment download whose replies hold after `held` bytes, and waits until both
-    /// segments have their held bytes.
-    private func startHeld(
-        _ server: TestServer,
-        file: TestServer.File,
-        at path: String,
-        start: String? = nil,
-        options: RequestOptions = RequestOptions()
-    ) async throws -> (DownloadEngine, DownloadID, URL) {
-        server.serve(file, at: path)
-        let folder = try TestFiles.makeFolder()
-        var options = options
-        options.connections = 2
-        let engine = DownloadEngine(configuration: .fastWithHolds)
-        let id = await engine.add(url: server.url(for: start ?? path), to: folder, options: options)
-        _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes == Int64(2 * Self.held) }
-        return (engine, id, folder)
-    }
 
     @Test func pauseStopsEveryConnectionAndResumeFetchesOnlyTheMissingBytes() async throws {
         let server = try await TestServer()

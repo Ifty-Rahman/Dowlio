@@ -38,7 +38,7 @@ public actor DownloadEngine {
         self.init(configuration: configuration)
     }
 
-    init(configuration: EngineConfiguration) {
+    package init(configuration: EngineConfiguration) {
         self.configuration = configuration
     }
 

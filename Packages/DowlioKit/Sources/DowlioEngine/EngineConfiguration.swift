@@ -2,26 +2,28 @@ import Foundation
 
 /// How the engine times its retries. Tests inject shorter waits, a fixed clock and fixed jitter.
 /// The app uses the defaults.
-struct EngineConfiguration: Sendable {
-    var retry = RetryPolicy()
+package struct EngineConfiguration: Sendable {
+    package var retry = RetryPolicy()
     /// A connection that receives nothing for this long counts as failed, and is retried.
-    var idleTimeout: Duration = .seconds(60)
+    package var idleTimeout: Duration = .seconds(60)
     /// The current time, for the next try's time in Retrying and for `Retry-After` dates.
     var now: @Sendable () -> Date = { Date() }
     /// A random number in the range, for jitter.
     var random: @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }
     /// The connection limits learned per host, shared by every download of the engine.
     var hostLimits: any HostLimitStore = InMemoryHostLimitStore()
+
+    package init() {}
 }
 
 /// When to try a failed connection again (spec, retry policy).
-struct RetryPolicy: Sendable {
+package struct RetryPolicy: Sendable {
     /// Failures of one segment before the whole download becomes Failed.
     var maximumFailures = 5
     /// The wait before the first retry. Each later wait doubles.
-    var firstDelay: Duration = .seconds(1)
+    package var firstDelay: Duration = .seconds(1)
     /// The longest wait between two tries, after jitter.
-    var maximumDelay: Duration = .seconds(30)
+    package var maximumDelay: Duration = .seconds(30)
     /// How far each wait may vary either way, as a fraction of it.
     var jitter = 0.2
     /// The longest wait a server's `Retry-After` can ask for.

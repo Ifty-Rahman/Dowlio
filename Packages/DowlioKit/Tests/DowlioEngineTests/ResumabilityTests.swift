@@ -11,13 +11,6 @@ struct ResumabilityTests {
     static let size = 4 * 1024 * 1024
     static let held = 256 * 1024
 
-    /// The one partial file in `folder`.
-    private func partialFile(in folder: URL) throws -> URL {
-        let packages = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "dowlio" }
-        return try #require(packages.count == 1 ? packages.first : nil)
-    }
-
     @Test func aRestoredDownloadFromAServerWithoutRangesCantResumeAndStartsOver() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 51)
@@ -29,7 +22,7 @@ struct ResumabilityTests {
         #expect(downloading.totalBytes == Int64(Self.size))
         #expect(!downloading.canResume)
         await engine.pause(id)
-        let package = try partialFile(in: folder)
+        let package = try TestFiles.partialFile(in: folder)
 
         let fresh = DownloadEngine(configuration: .fastWithHolds)
         let restored = try await fresh.restore(partialFile: package)
@@ -112,7 +105,7 @@ struct ResumabilityTests {
         await engine.pause(id)
 
         let fresh = DownloadEngine(configuration: .fastWithHolds)
-        let restored = try await fresh.restore(partialFile: try partialFile(in: folder))
+        let restored = try await fresh.restore(partialFile: try TestFiles.partialFile(in: folder))
         let snapshot = try await fresh.firstSnapshot(of: restored) { _ in true }
 
         #expect(!snapshot.canResume)
