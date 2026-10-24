@@ -22,7 +22,11 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     public var receivedBytes: Int64
     /// `nil` while the size is unknown.
     public var totalBytes: Int64?
+    /// The real segments, split by work stealing. The inspector and detail window show these.
     public var segments: [SegmentProgress]
+    /// The segments the download started with, filled by every part inside each. The download
+    /// list and the menu bar show these, so stealing never changes the bar.
+    public var displaySegments: [SegmentProgress]
     public var activeConnections: Int
     public var bytesPerSecond: Int64
     public var timeRemaining: TimeInterval?
@@ -47,6 +51,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         receivedBytes: Int64,
         totalBytes: Int64?,
         segments: [SegmentProgress],
+        displaySegments: [SegmentProgress]? = nil,
         activeConnections: Int,
         bytesPerSecond: Int64,
         timeRemaining: TimeInterval?,
@@ -67,6 +72,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         self.receivedBytes = receivedBytes
         self.totalBytes = totalBytes
         self.segments = segments
+        self.displaySegments = displaySegments ?? segments
         self.activeConnections = activeConnections
         self.bytesPerSecond = bytesPerSecond
         self.timeRemaining = timeRemaining
@@ -76,6 +82,12 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         self.completedAt = completedAt
         self.isFileMissing = isFileMissing
         self.wasSkipped = wasSkipped
+    }
+
+    /// "4 planned, 2 added" once work stealing has split segments, otherwise the count.
+    public var segmentCountText: String {
+        let added = segments.count - displaySegments.count
+        return added > 0 ? "\(displaySegments.count) planned, \(added) added" : "\(segments.count)"
     }
 
     /// How far the download is, from 0 to 1, or `nil` while the size is unknown.

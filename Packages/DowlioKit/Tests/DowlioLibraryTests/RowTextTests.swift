@@ -148,6 +148,20 @@ struct RowTextTests {
         #expect(Self.row(state: state).detailLine == line)
     }
 
+    @Test func theInspectorSaysHowManySegmentsStealingAdded() {
+        var row = Self.row(state: .downloading)
+        let planned = [SegmentProgress(start: 0, end: 99), SegmentProgress(start: 100, end: 199)]
+        row.segments = planned
+        row.displaySegments = planned
+        #expect(row.segmentCountText == "2")
+
+        row.segments = planned + [SegmentProgress(start: 150, end: 199)]
+        #expect(row.segmentCountText == "2 planned, 1 added")
+
+        row.segments = planned + [SegmentProgress(start: 150, end: 199), SegmentProgress(start: 75, end: 99)]
+        #expect(row.segmentCountText == "2 planned, 2 added")
+    }
+
     private static func row(state: DownloadRow.State) -> DownloadRow {
         DownloadRow(
             id: DownloadID(), state: state, fileName: "file.zip", sourceURL: URL(string: "https://example.com/file.zip")!,

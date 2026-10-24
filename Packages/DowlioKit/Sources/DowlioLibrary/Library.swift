@@ -292,7 +292,12 @@ public actor Library {
             || record.folder != snapshot.destinationFolder || record.totalBytes != snapshot.totalBytes
             || record.wasSkipped != snapshot.wasSkipped || (record.partialFile == nil && state == .downloading)
             || (snapshot.category != nil && snapshot.category != record.category)
-        if changed {
+        let layoutStarted = !snapshot.segments.isEmpty
+            && !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
+        if changed || layoutStarted {
+            if layoutStarted {
+                record.plannedSegments = snapshot.plannedSegments.isEmpty ? SegmentLayout.bounds(of: snapshot.segments) : snapshot.plannedSegments
+            }
             record.state = state
             record.fileName = snapshot.fileName
             record.folder = snapshot.destinationFolder
@@ -359,6 +364,7 @@ public actor Library {
             receivedBytes: live?.receivedBytes ?? record.receivedBytes,
             totalBytes: live?.totalBytes ?? record.totalBytes,
             segments: live?.segments ?? [],
+            displaySegments: SegmentLayout.shown(planned: record.plannedSegments ?? [], current: live?.segments ?? []),
             activeConnections: live?.activeConnections ?? 0,
             bytesPerSecond: live?.bytesPerSecond ?? 0,
             timeRemaining: live?.timeRemaining,

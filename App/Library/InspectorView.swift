@@ -25,7 +25,9 @@ struct InspectorView: View {
                     }
                     if !row.segments.isEmpty {
                         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
-                            Text("Segments").font(DowlioDesign.TypeRole.caption).foregroundStyle(.secondary)
+                            Text("Segments · \(row.segmentCountText)")
+                                .font(DowlioDesign.TypeRole.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
                             ForEach(Array(row.segments.enumerated()), id: \.offset) { _, segment in
                                 SegmentedBar(segments: [segment], fraction: nil, tint: segment.isActive ? row.state.tone : .secondary, height: 4)
                             }

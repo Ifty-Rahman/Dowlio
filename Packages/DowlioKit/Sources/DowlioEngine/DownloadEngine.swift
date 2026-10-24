@@ -218,6 +218,7 @@ public actor DownloadEngine {
         snapshot.apply(plan.board.reading)
         snapshot.canResume = plan.canResume
         snapshot.category = FileCategory(fileName: fileName, contentType: nil)
+        snapshot.plannedSegments = segments.map { SegmentBounds(start: $0.start, end: $0.end) }
 
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry

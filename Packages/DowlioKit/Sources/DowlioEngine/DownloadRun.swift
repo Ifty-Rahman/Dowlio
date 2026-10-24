@@ -147,7 +147,11 @@ struct DownloadRun: Sendable {
             probed.cancelConnection()
             throw error
         }
-        await changeSnapshot { $0.canResume = plan.canResume }
+        let planned = plan.segments.map { SegmentBounds(start: $0.start, end: $0.end) }
+        await changeSnapshot {
+            $0.canResume = plan.canResume
+            $0.plannedSegments = planned
+        }
         return plan
     }
 
@@ -177,10 +181,12 @@ struct DownloadRun: Sendable {
             throw error
         }
         let reading = restarted.board.reading
+        let planned = restarted.segments.map { SegmentBounds(start: $0.start, end: $0.end) }
         await changeSnapshot {
             $0.state = .downloading
             $0.totalBytes = restarted.totalBytes
             $0.canResume = restarted.canResume
+            $0.plannedSegments = planned
             $0.apply(reading)
         }
         return restarted

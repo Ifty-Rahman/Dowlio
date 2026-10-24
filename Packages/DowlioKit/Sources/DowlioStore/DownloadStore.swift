@@ -44,6 +44,9 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     /// The name the user typed in the New Download sheet, kept so a download that starts later
     /// still gets it.
     public var chosenName: String?
+    /// The segments the download started with, which the download list keeps showing while work
+    /// stealing splits them.
+    public var plannedSegments: [SegmentBounds]?
 
     public init(
         id: UUID,
@@ -153,6 +156,11 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("chosen name") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "chosenName", .text)
+            }
+        }
+        migrator.registerMigration("planned segments") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "plannedSegments", .text)
             }
         }
         return migrator

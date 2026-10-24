@@ -99,7 +99,7 @@ private struct PopoverRow: View {
                         .font(DowlioDesign.TypeRole.caption.monospacedDigit())
                         .foregroundStyle(row.state.tone)
                 }
-                SegmentedBar(segments: row.segments, fraction: row.fractionDone, tint: row.state.tone, height: 3)
+                SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone, height: 3)
             }
             if row.canPause {
                 Button("Pause", systemImage: "pause.fill") { model.pause(row) }

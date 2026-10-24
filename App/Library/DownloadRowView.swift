@@ -31,7 +31,7 @@ struct DownloadRowView: View {
                         .foregroundStyle(Color(nsColor: .systemOrange))
                 }
             }
-            SegmentedBar(segments: row.segments, fraction: row.fractionDone, tint: row.state.tone)
+            SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone)
             HStack {
                 Text(row.detailLine)
                 Spacer(minLength: DowlioDesign.Spacing.sm)

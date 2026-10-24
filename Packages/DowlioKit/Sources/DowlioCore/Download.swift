@@ -179,6 +179,9 @@ public struct DownloadSnapshot: Equatable, Sendable {
     public var totalBytes: Int64?
     /// One entry per segment, in file order. Empty while the size is unknown.
     public var segments: [SegmentProgress] = []
+    /// The segments as planned when the download started or last started over. Work stealing
+    /// splits `segments`, never these.
+    public var plannedSegments: [SegmentBounds] = []
     public var activeConnections: Int = 0
     /// Speed smoothed over the last 5 seconds.
     public var bytesPerSecond: Int64 = 0
@@ -219,5 +222,16 @@ public struct DownloadSnapshot: Equatable, Sendable {
         self.totalBytes = totalBytes
         self.isNotSecure = isNotSecure
         self.displayHost = displayHost
+    }
+}
+
+/// Where one segment starts and ends, without its progress. Bytes from `start` to `end` inclusive.
+public struct SegmentBounds: Codable, Equatable, Hashable, Sendable {
+    public var start: Int64
+    public var end: Int64
+
+    public init(start: Int64, end: Int64) {
+        self.start = start
+        self.end = end
     }
 }

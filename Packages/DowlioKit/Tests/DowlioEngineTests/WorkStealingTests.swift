@@ -56,6 +56,10 @@ struct WorkStealingTests {
             starts.contains(segment.start) && segment.receivedBytes == segment.end - segment.start + 1
         })
         #expect(completed.segments.count > 4)
+        // The plan stays what the download started with, so the interface can keep showing it.
+        let planned = (0..<4).map { SegmentBounds(start: Int64($0 * 8 * Self.mebibyte), end: Int64(($0 + 1) * 8 * Self.mebibyte - 1)) }
+        #expect(snapshots.filter { !$0.plannedSegments.isEmpty }.allSatisfy { $0.plannedSegments == planned })
+        #expect(completed.plannedSegments == planned)
     }
 
     /// After a split, the manifest describes the new segments, every byte it counts is in the
