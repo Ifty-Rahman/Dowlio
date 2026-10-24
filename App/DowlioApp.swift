@@ -1,29 +1,13 @@
-import DowlioCore
 import SwiftUI
 
 @main
 struct DowlioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        Window("Dowlio", id: "library") {
+            LibraryWindow(model: model)
         }
-    }
-}
-
-struct ContentView: View {
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    }
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Text(AppIdentity.name)
-                .font(.largeTitle.weight(.bold))
-            Text("Version \(version)")
-                .foregroundStyle(.secondary)
-        }
-        .frame(minWidth: 480, minHeight: 320)
     }
 }

@@ -36,6 +36,55 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     /// was Skip.
     public var wasSkipped: Bool
 
+    public init(
+        id: DownloadID,
+        state: State,
+        fileName: String,
+        sourceURL: URL,
+        host: String?,
+        folder: URL,
+        category: FileCategory?,
+        receivedBytes: Int64,
+        totalBytes: Int64?,
+        segments: [SegmentProgress],
+        activeConnections: Int,
+        bytesPerSecond: Int64,
+        timeRemaining: TimeInterval?,
+        isNotSecure: Bool,
+        canResume: Bool,
+        addedAt: Date,
+        completedAt: Date?,
+        isFileMissing: Bool,
+        wasSkipped: Bool
+    ) {
+        self.id = id
+        self.state = state
+        self.fileName = fileName
+        self.sourceURL = sourceURL
+        self.host = host
+        self.folder = folder
+        self.category = category
+        self.receivedBytes = receivedBytes
+        self.totalBytes = totalBytes
+        self.segments = segments
+        self.activeConnections = activeConnections
+        self.bytesPerSecond = bytesPerSecond
+        self.timeRemaining = timeRemaining
+        self.isNotSecure = isNotSecure
+        self.canResume = canResume
+        self.addedAt = addedAt
+        self.completedAt = completedAt
+        self.isFileMissing = isFileMissing
+        self.wasSkipped = wasSkipped
+    }
+
+    /// How far the download is, from 0 to 1, or `nil` while the size is unknown.
+    public var fractionDone: Double? {
+        guard let totalBytes else { return nil }
+        guard totalBytes > 0 else { return state == .completed ? 1 : 0 }
+        return min(Double(receivedBytes) / Double(totalBytes), 1)
+    }
+
     /// The extension in capitals, for the file-type badge. Empty when the name has none.
     public var badge: String {
         (fileName as NSString).pathExtension.uppercased()

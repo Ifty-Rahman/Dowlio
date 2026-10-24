@@ -23,6 +23,12 @@ targets:
     dependencies:
       - package: DowlioKit
         product: DowlioCore
+      - package: DowlioKit
+        product: DowlioEngine
+      - package: DowlioKit
+        product: DowlioStore
+      - package: DowlioKit
+        product: DowlioLibrary
     info:
       path: App/Info.plist
       properties:
@@ -40,6 +46,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio
         PRODUCT_NAME: Dowlio
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         # Scripts sign the app, so Xcode doesn't.
         CODE_SIGNING_ALLOWED: NO

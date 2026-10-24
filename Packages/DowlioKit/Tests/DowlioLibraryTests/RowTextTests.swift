@@ -88,6 +88,18 @@ struct RowTextTests {
         #expect(Self.row(state: .retrying(attempt: 2, nextTry: Date())).stateWord == "Retrying")
     }
 
+    @Test func theFractionDoneComesFromTheBytesAndIsUnknownWithoutASize() {
+        var row = Self.row(state: .downloading)
+        #expect(row.fractionDone == nil)
+        row.receivedBytes = 250
+        row.totalBytes = 1000
+        #expect(row.fractionDone == 0.25)
+        row.totalBytes = 0
+        #expect(row.fractionDone == 0)
+        row.state = .completed
+        #expect(row.fractionDone == 1)
+    }
+
     private static func row(state: DownloadRow.State) -> DownloadRow {
         DownloadRow(
             id: DownloadID(), state: state, fileName: "file.zip", sourceURL: URL(string: "https://example.com/file.zip")!,
