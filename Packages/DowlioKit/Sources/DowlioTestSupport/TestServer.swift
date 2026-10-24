@@ -196,6 +196,7 @@ public final class TestServer: @unchecked Sendable {
     private var peakInFlight: [String: Int] = [:]
     private var refusedCount: [String: Int] = [:]
     private var released = false
+    private var openCount: [String: Int] = [:]
     private var heldSends: [@Sendable () -> Void] = []
 
     public private(set) var port: UInt16 = 0
@@ -264,6 +265,12 @@ public final class TestServer: @unchecked Sendable {
         lock.withLock { peakInFlight[path, default: 0] }
     }
 
+    /// How many connections that asked for `path` are still open: neither the server nor the
+    /// client has closed them yet.
+    public func openConnections(at path: String) -> Int {
+        lock.withLock { openCount[path, default: 0] }
+    }
+
     /// Lets every held response, and every later one, send the rest of its body.
     public func releaseHeldResponses() {
         let sends: [@Sendable () -> Void] = lock.withLock {
@@ -323,6 +330,7 @@ public final class TestServer: @unchecked Sendable {
             recorded.append(request)
             return (files[request.path], redirects[request.path])
         }
+        watchClose(of: connection, for: request.path)
 
         if let redirect {
             return send(status: "302 Found", headers: ["Location": redirect], body: Data(), hold: nil, on: connection)
@@ -423,6 +431,33 @@ public final class TestServer: @unchecked Sendable {
                 onClose: leave,
                 on: connection
             )
+        }
+    }
+
+    private func watchClose(of connection: NWConnection, for path: String) {
+        lock.withLock { openCount[path, default: 0] += 1 }
+        let closed = LockedFlag()
+        let close: @Sendable () -> Void = { [weak self] in
+            guard let self, closed.set() else { return }
+            self.lock.withLock { self.openCount[path, default: 1] -= 1 }
+        }
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .cancelled, .failed: close()
+            default: break
+            }
+        }
+        waitForEnd(of: connection, then: close)
+    }
+
+    /// The client sends nothing after its request, so a receive ends only when it goes away.
+    private func waitForEnd(of connection: NWConnection, then close: @escaping @Sendable () -> Void) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] _, _, isComplete, error in
+            if isComplete || error != nil {
+                close()
+            } else {
+                self?.waitForEnd(of: connection, then: close)
+            }
         }
     }
 

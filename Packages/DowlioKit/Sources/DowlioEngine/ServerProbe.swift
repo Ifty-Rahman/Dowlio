@@ -20,6 +20,11 @@ extension Probed {
             probeResponse: response
         )
     }
+
+    /// Closes the probe's own connection, for a probe whose reply the download won't read.
+    func cancelConnection() {
+        if case .whole(let connection) = body { connection.cancel() }
+    }
 }
 
 struct ServerProbe: Sendable {

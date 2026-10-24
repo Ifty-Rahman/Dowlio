@@ -139,6 +139,7 @@ public actor DownloadEngine {
         await entry.task?.value
         // The download may have finished while it was stopping. A finished file stays.
         guard entries[id]?.snapshot.state != .completed else { return }
+        entry.run?.discard()
         if let package = entry.partialFile.url {
             try? FileManager.default.removeItem(at: package)
         }

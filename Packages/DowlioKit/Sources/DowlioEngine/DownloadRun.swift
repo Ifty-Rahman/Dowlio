@@ -94,6 +94,11 @@ struct DownloadRun: Sendable {
         planStore.store(plan, probeConnection: nil)
     }
 
+    /// Lets go of everything the download holds, for a download that's cancelled.
+    func discard() {
+        planStore.forget()
+    }
+
     private func prepare(resuming: Bool) async throws -> DownloadPlan {
         if let plan = planStore.plan, plan.partial.isMissing {
             planStore.forget()
@@ -114,9 +119,15 @@ struct DownloadRun: Sendable {
             $0.isNotSecure = probed.finalURL.isPlainHTTP || url.isPlainHTTP
         }
 
-        let partial = try PartialFile.create(for: fileName, in: folder)
-        partialFile.url = partial.packageURL
-        let plan = try layOut(probed, fileName: fileName, in: partial)
+        let plan: DownloadPlan
+        do {
+            let partial = try PartialFile.create(for: fileName, in: folder)
+            partialFile.url = partial.packageURL
+            plan = try layOut(probed, fileName: fileName, in: partial)
+        } catch {
+            probed.cancelConnection()
+            throw error
+        }
         await changeSnapshot { $0.canResume = plan.canResume }
         return plan
     }
@@ -137,8 +148,14 @@ struct DownloadRun: Sendable {
     }
 
     private func startOver(_ plan: DownloadPlan, with probed: Probed) async throws -> DownloadPlan {
-        try plan.partial.discardData()
-        let restarted = try layOut(probed, fileName: plan.fileName, in: plan.partial)
+        let restarted: DownloadPlan
+        do {
+            try plan.partial.discardData()
+            restarted = try layOut(probed, fileName: plan.fileName, in: plan.partial)
+        } catch {
+            probed.cancelConnection()
+            throw error
+        }
         let reading = restarted.board.reading
         await changeSnapshot {
             $0.state = .downloading

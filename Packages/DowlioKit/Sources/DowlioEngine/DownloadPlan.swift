@@ -30,10 +30,14 @@ final class PlanStore: @unchecked Sendable {
     var plan: DownloadPlan? { lock.withLock { stored } }
 
     func store(_ plan: DownloadPlan, probeConnection: Connection?) {
-        lock.withLock {
-            stored = plan
-            self.probeConnection = probeConnection
+        let dropped: Connection? = lock.withLock {
+            defer {
+                stored = plan
+                self.probeConnection = probeConnection
+            }
+            return self.probeConnection === probeConnection ? nil : self.probeConnection
         }
+        dropped?.cancel()
     }
 
     func takeProbeConnection() -> Connection? {
@@ -44,9 +48,13 @@ final class PlanStore: @unchecked Sendable {
     }
 
     func forget() {
-        lock.withLock {
-            stored = nil
-            probeConnection = nil
+        let dropped: Connection? = lock.withLock {
+            defer {
+                stored = nil
+                probeConnection = nil
+            }
+            return probeConnection
         }
+        dropped?.cancel()
     }
 }

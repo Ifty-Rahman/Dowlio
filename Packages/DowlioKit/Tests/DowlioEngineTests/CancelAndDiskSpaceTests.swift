@@ -89,6 +89,26 @@ struct CancelAndDiskSpaceTests {
         #expect(finished.state == .failed(.destinationNotWritable))
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
     }
+
+    /// Without ranges, the probe's reply is the download. A folder that can't hold the partial
+    /// file fails the download before that reply is read, and its connection must still close.
+    @Test func aProbeReplyTheDownloadNeverReadsIsClosed() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024), supportsRanges: false, holdAfterBytes: 64 * 1024), at: "/stream.bin")
+        let folder = try TestFiles.makeFolder()
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+        // Longer than the suite's time limit, so only closing the connection can end it in time.
+        var configuration = EngineConfiguration.fast
+        configuration.idleTimeout = .seconds(600)
+
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/stream.bin"), to: folder)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .failed(.destinationNotWritable))
+        try await waitUntil { server.openConnections(at: "/stream.bin") == 0 }
+    }
 }
 
 /// A small HFS+ volume, mounted for one test, to run out of space for real.
