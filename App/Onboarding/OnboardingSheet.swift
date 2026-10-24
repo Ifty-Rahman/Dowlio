@@ -22,6 +22,9 @@ struct OnboardingSheet: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
+            if page == .welcome {
+                FillingBar()
+            }
             HStack {
                 PageDots(current: page.rawValue, count: Page.allCases.count)
                 Spacer()
@@ -44,9 +47,6 @@ struct OnboardingSheet: View {
 private struct WelcomePage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
-            FillingBar()
-                .padding(.top, DowlioDesign.Spacing.xl)
-                .padding(.bottom, DowlioDesign.Spacing.lg)
             Text("Welcome to Dowlio")
                 .font(.largeTitle.weight(.bold))
                 .accessibilityAddTraits(.isHeader)
