@@ -2,7 +2,6 @@ import DowlioCore
 import DowlioLibrary
 import Foundation
 
-/// Where each setting lives in the user defaults.
 enum SettingsKey {
     static let downloadFolder = "downloadFolder"
     static let sortsIntoCategoryFolders = "sortsIntoCategoryFolders"

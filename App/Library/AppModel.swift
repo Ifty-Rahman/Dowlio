@@ -114,12 +114,13 @@ final class AppModel {
         }
     }
 
-    /// Shows Dowlio in the Dock, the menu bar or both, as Settings › General says.
-    func applyPresence() {
+    /// Shows Dowlio in the Dock, the menu bar or both, as Settings › General says. A start at login
+    /// doesn't take focus.
+    func applyPresence(activating: Bool = true) {
         let presence = UserDefaults.standard.presence
         menuBar?.isVisible = presence.menuBar
         NSApp.setActivationPolicy(presence.dock ? .regular : .accessory)
-        if presence.dock { NSApp.activate() }
+        if activating { NSApp.activate() }
     }
 
     func applyDownloadsAtOnce() {

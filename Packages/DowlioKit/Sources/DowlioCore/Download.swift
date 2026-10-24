@@ -113,8 +113,8 @@ public struct RequestOptions: Equatable, Sendable {
     /// signed-in visitor. Held in memory only: they never go into the partial file, so a restored
     /// download has none.
     public var cookies: [Cookie] = []
-    /// How many failed attempts in a row one segment may have before the download is Failed, 0 to
-    /// 10. `nil` uses the engine's own default of 5.
+    /// How many failed attempts in a row one segment may have before the download is Failed, up
+    /// to 11, which is ten retries. `nil` uses the engine's own default of 5.
     public var maximumFailures: Int?
     /// The name the user chose for the finished file. Unsafe characters are removed. `nil` takes
     /// the name the server or the link gives.

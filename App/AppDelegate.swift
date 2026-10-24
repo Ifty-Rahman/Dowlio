@@ -2,7 +2,6 @@ import AppKit
 import DowlioLibrary
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Set by the app once its model exists.
     @MainActor static var model: AppModel?
     /// Launched by macOS at login, so the library window stays hidden.
     @MainActor static private(set) var launchedAtLogin = false
@@ -11,10 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let event = NSAppleEventManager.shared().currentAppleEvent
         Self.launchedAtLogin = event?.eventID == kAEOpenApplication
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
-    }
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        Self.model?.applyPresence()
+        Self.model?.applyPresence(activating: !Self.launchedAtLogin)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -38,7 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
         Task { @MainActor in
-            await model.stopForQuit()
+            // Partial files are saved every second anyway, so a stuck pause never keeps Dowlio open.
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await model.stopForQuit() }
+                group.addTask { try? await Task.sleep(for: .seconds(5)) }
+                await group.next()
+                group.cancelAll()
+            }
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

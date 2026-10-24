@@ -10,7 +10,6 @@ public struct DownloadSettings: Equatable, Sendable {
     public var connections = 8
     public var downloadsAtOnce = 3
     public var openExtraConnections = OpenExtraConnections.afterFirstConnectionStarts
-    /// "Retry a failed connection", 0 to 10.
     public var retries = 5
 
     public init(folder: URL) {

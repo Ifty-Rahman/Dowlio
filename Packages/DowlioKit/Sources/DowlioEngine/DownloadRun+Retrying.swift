@@ -38,7 +38,7 @@ extension DownloadRun {
     }
 
     private var maximumFailures: Int {
-        options.maximumFailures.map { min(max($0, 0), 10) } ?? configuration.retry.maximumFailures
+        options.maximumFailures.map { min(max($0, 0), 11) } ?? configuration.retry.maximumFailures
     }
 
     private func lowerLimit(of host: URL) {
