@@ -65,12 +65,12 @@ public actor DownloadEngine {
         return id
     }
 
-    /// Retries a Failed download (`GLOSSARY.md`): continues it from the bytes it has. Does nothing
-    /// for a download that isn't Failed.
+    /// Retries a Failed download (`GLOSSARY.md`): continues it from the bytes it has, checked
+    /// against the server the way Resume checks them. Does nothing for a download that isn't Failed.
     public func retry(_ id: DownloadID) {
         guard let entry = entries[id], entry.snapshot.state.isFailed, let run = entry.run else { return }
         update(id) { $0.state = .downloading }
-        entries[id]?.task = Task { await run.run() }
+        entries[id]?.task = Task { await run.run(resuming: true) }
     }
 
     /// Pauses a download (`GLOSSARY.md`): stops every connection and keeps the bytes it has.

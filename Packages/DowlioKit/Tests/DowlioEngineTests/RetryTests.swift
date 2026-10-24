@@ -100,7 +100,7 @@ extension RetryTests {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 22)
         let cut = 128 * 1024
-        server.serve(.init(data: data, dropFirst: .init(afterBytes: cut, count: 5)), at: "/stubborn.iso")
+        server.serve(.init(data: data, eTag: "\"st1\"", dropFirst: .init(afterBytes: cut, count: 5)), at: "/stubborn.iso")
         let folder = try TestFiles.makeFolder()
 
         var options = RequestOptions()
@@ -127,10 +127,70 @@ extension RetryTests {
 
         #expect(finished.receivedBytes == Int64(data.count))
         #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
-        // Retry sent one request, for only the bytes the download didn't have when it failed.
+        // Retry probed the link again, then asked for only the bytes the download didn't have
+        // when it failed.
         let afterFailure = server.requests.filter { $0.path == "/stubborn.iso" }.dropFirst(requestsWhenFailed)
         #expect(failed.receivedBytes > 0)
-        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=\(failed.receivedBytes)-\(data.count - 1)"])
+        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=0-0", "bytes=\(failed.receivedBytes)-\(data.count - 1)"])
+    }
+}
+
+extension RetryTests {
+    static let size = 4 * 1024 * 1024
+    static let held = 256 * 1024
+
+    @Test func retryAfterLinkExpiredAsksForTheOriginalLinkAgainAndKeepsTheBytes() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 27)
+        server.redirect("/once", to: "/signed.bin")
+        let file = TestServer.File(data: data, holdAfterBytes: Self.held, eTag: "\"e1\"")
+        let (engine, id, folder) = try await startHeld(server, file: file, at: "/signed.bin", start: "/once")
+        await engine.pause(id)
+        server.remove("/once")
+        server.remove("/signed.bin")
+        server.releaseHeldResponses()
+        await engine.resume(id)
+        #expect(try await engine.completedOrFailed(id).state == .failed(.linkExpired))
+
+        // The original link works again and leads to a new signed link for the same file.
+        server.serve(file, at: "/signed-2.bin")
+        server.redirect("/once", to: "/signed-2.bin")
+        let requestsWhenFailed = server.requests.count
+        await engine.retry(id)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "signed.bin")) == TestFiles.sha256(data))
+        let afterFailure = server.requests[requestsWhenFailed...]
+        #expect(afterFailure.first?.path == "/once")
+        #expect(!afterFailure.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true && $0.headers["range"] != "bytes=0-0" })
+    }
+
+    @Test func retryAfterTheFileChangedStartsOver() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: Self.size, seed: 28), newETagEveryRequest: true), at: "/live.log")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.connections = 2
+        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let id = await engine.add(url: server.url(for: "/live.log"), to: folder, options: options)
+        #expect(try await engine.completedOrFailed(id).state == .failed(.serverChangedFile))
+
+        let settled = TestServer.makeData(size: Self.size, seed: 29)
+        server.serve(.init(data: settled, eTag: "\"settled\""), at: "/live.log")
+        let requestsWhenFailed = server.requests.count
+        await engine.retry(id)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "live.log")) == TestFiles.sha256(settled))
+        // Retry probed first, then asked for the new version from byte 0 and never with the
+        // validator of the version that kept changing.
+        let afterFailure = server.requests[requestsWhenFailed...]
+        #expect(afterFailure.first?.headers["range"] == "bytes=0-0")
+        let segmentRequests = afterFailure.dropFirst()
+        #expect(segmentRequests.contains { $0.headers["range"] == "bytes=0-\(Self.size / 2 - 1)" })
+        #expect(segmentRequests.allSatisfy { $0.headers["if-range"] == "\"settled\"" })
     }
 }
 
