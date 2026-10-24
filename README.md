@@ -1,4 +1,5 @@
-# <img src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Dowlio" width="64" height="64" style="vertical-align: middle;">&nbsp;&nbsp;Dowlio
+# <img src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Dowlio" width="64" height="64" style="vertical-align: middle;">&nbsp;&nbsp;
+Dowlio
 
 *A fast, private, native download manager for Mac*
 
