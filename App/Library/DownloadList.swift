@@ -28,7 +28,9 @@ struct DownloadList: View {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         if index > 0 {
-                            Divider().padding(.leading, DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.xxl)
+                            Divider()
+                                .padding(.leading, DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.xxl)
+                                .opacity(touchesSelection(rows[index - 1], row) ? 0 : 1)
                         }
                         line(row)
                     }
@@ -80,6 +82,11 @@ struct DownloadList: View {
     }
 
     private var ids: [DownloadID] { rows.map(\.id) }
+
+    /// A line next to a selected row would cut into its highlight, so it gives way and only its space stays.
+    private func touchesSelection(_ above: DownloadRow, _ below: DownloadRow) -> Bool {
+        selection.contains(above.id) || selection.contains(below.id)
+    }
 
     /// A right-click on a selected row acts on the whole selection, and on that row alone otherwise.
     private func menuRows(for row: DownloadRow) -> [DownloadRow] {
