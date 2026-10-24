@@ -5,12 +5,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var model: AppModel?
     /// Launched by macOS at login, so the library window stays hidden.
     @MainActor static private(set) var launchedAtLogin = false
+    /// Whether the first library window of this launch has been shown or hidden. Only that one
+    /// can be hidden, so a window opened later always shows.
+    @MainActor static var launchWindowDecided = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         let event = NSAppleEventManager.shared().currentAppleEvent
         Self.launchedAtLogin = event?.eventID == kAEOpenApplication
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
-        Self.model?.applyPresence(activating: !Self.launchedAtLogin)
+        Self.model?.applyPresence(activating: UserDefaults.standard.presence.opensWindowAtLaunch(launchedAtLogin: Self.launchedAtLogin))
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

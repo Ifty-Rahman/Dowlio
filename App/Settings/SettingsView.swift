@@ -88,6 +88,7 @@ struct PresenceToggles: View {
     let model: AppModel
     @AppStorage(SettingsKey.showsInMenuBar) private var menuBar = true
     @AppStorage(SettingsKey.showsInDock) private var dock = true
+    @AppStorage(SettingsKey.startsInMenuBar) private var startsInMenuBar = false
     @State private var presenceNote: String?
     @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginProblem: String?
@@ -97,17 +98,30 @@ struct PresenceToggles: View {
         if let loginProblem {
             Text(loginProblem).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }
+        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+            Toggle("Start in the menu bar", isOn: Binding(get: { startsInMenuBar }, set: { set(.startsInMenuBar, $0) }))
+            Text("Dowlio opens with no window. Open Dowlio in the menu bar brings it up.")
+                .font(DowlioDesign.TypeRole.detail)
+                .foregroundStyle(.secondary)
+        }
         Toggle("Show in menu bar", isOn: Binding(get: { menuBar }, set: { set(.menuBar, $0) }))
+            .disabled(!presence.canChangeMenuBar)
+            .help(presence.canChangeMenuBar ? "" : "Dowlio starts in the menu bar, so its icon stays there.")
         Toggle("Show in Dock", isOn: Binding(get: { dock }, set: { set(.dock, $0) }))
         if let presenceNote {
             Text(presenceNote).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }
     }
 
+    private var presence: Presence {
+        Presence(menuBar: menuBar, dock: dock, startsInMenuBar: startsInMenuBar)
+    }
+
     private func set(_ which: Presence.Switch, _ isOn: Bool) {
-        let result = Presence(menuBar: menuBar, dock: dock).setting(which, to: isOn)
+        let result = presence.setting(which, to: isOn)
         menuBar = result.presence.menuBar
         dock = result.presence.dock
+        startsInMenuBar = result.presence.startsInMenuBar
         presenceNote = result.note
         model.applyPresence()
     }

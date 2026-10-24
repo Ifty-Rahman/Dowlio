@@ -12,6 +12,7 @@ enum SettingsKey {
     static let retries = "retries"
     static let showsInMenuBar = "showsInMenuBar"
     static let showsInDock = "showsInDock"
+    static let startsInMenuBar = "startsInMenuBar"
     static let notifiesWhenFinished = "notifiesWhenFinished"
     static let thenAction = "thenAction"
     static let hasSeenWelcome = "hasSeenWelcome"
@@ -31,7 +32,11 @@ extension UserDefaults {
     }
 
     var presence: Presence {
-        Presence(menuBar: flag(SettingsKey.showsInMenuBar) ?? true, dock: flag(SettingsKey.showsInDock) ?? true)
+        Presence(
+            menuBar: flag(SettingsKey.showsInMenuBar) ?? true,
+            dock: flag(SettingsKey.showsInDock) ?? true,
+            startsInMenuBar: flag(SettingsKey.startsInMenuBar) ?? false
+        )
     }
 
     /// `nil` when unset. Values can arrive as text, as from a launch argument, so the defaults

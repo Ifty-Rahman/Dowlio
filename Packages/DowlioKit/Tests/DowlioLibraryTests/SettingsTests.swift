@@ -69,6 +69,35 @@ struct SettingsTests {
         #expect((result.note != nil) == explains)
     }
 
+    @Test func startingInTheMenuBarKeepsTheMenuBarIconOn() {
+        let result = Presence(menuBar: false, dock: true).setting(.startsInMenuBar, to: true)
+        #expect(result.presence == Presence(menuBar: true, dock: true, startsInMenuBar: true))
+        #expect(result.note == nil)
+    }
+
+    @Test func theMenuBarIconCantBeTurnedOffWhileDowlioStartsThere() {
+        let starting = Presence(menuBar: true, dock: true, startsInMenuBar: true)
+        #expect(starting.setting(.menuBar, to: false).presence == starting)
+        #expect(!starting.canChangeMenuBar)
+        #expect(Presence(menuBar: true, dock: true).canChangeMenuBar)
+    }
+
+    @Test func turningOffStartInTheMenuBarLeavesTheIconAsItIs() {
+        let result = Presence(menuBar: true, dock: false, startsInMenuBar: true).setting(.startsInMenuBar, to: false)
+        #expect(result.presence == Presence(menuBar: true, dock: false, startsInMenuBar: false))
+    }
+
+    @Test(arguments: [
+        (false, false, true),
+        (true, false, false),
+        (false, true, false),
+        (true, true, false),
+    ])
+    func theWindowOpensAtLaunchUnlessDowlioStartsInTheMenuBarOrAtLogin(startsInMenuBar: Bool, atLogin: Bool, opens: Bool) {
+        let presence = Presence(menuBar: true, dock: true, startsInMenuBar: startsInMenuBar)
+        #expect(presence.opensWindowAtLaunch(launchedAtLogin: atLogin) == opens)
+    }
+
     @Test(arguments: [
         (2, "Stop 2 downloads and quit?"),
         (1, "Stop 1 download and quit?"),

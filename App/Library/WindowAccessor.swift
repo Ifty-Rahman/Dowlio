@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Hands the library window to `AppModel`. After a start at login it hides the window before it
-/// first shows, so a quiet start never flashes it.
+/// Hands the library window to `AppModel`. When Dowlio starts in the menu bar or at login, it
+/// hides the window before it first shows, so the start never flashes it.
 struct LibraryWindowAccessor: NSViewRepresentable {
     let model: AppModel
 
@@ -14,7 +14,6 @@ struct LibraryWindowAccessor: NSViewRepresentable {
 
     private final class Probe: NSView {
         let model: AppModel
-        private var hidOnce = false
 
         init(model: AppModel) {
             self.model = model
@@ -28,8 +27,9 @@ struct LibraryWindowAccessor: NSViewRepresentable {
             guard let window else { return }
             MainActor.assumeIsolated {
                 model.libraryWindow = window
-                guard AppDelegate.launchedAtLogin, !hidOnce else { return }
-                hidOnce = true
+                guard !AppDelegate.launchWindowDecided else { return }
+                AppDelegate.launchWindowDecided = true
+                guard !UserDefaults.standard.presence.opensWindowAtLaunch(launchedAtLogin: AppDelegate.launchedAtLogin) else { return }
                 window.alphaValue = 0
                 DispatchQueue.main.async {
                     window.orderOut(nil)
