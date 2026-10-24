@@ -82,11 +82,17 @@ final class AppModel {
         }
     }
 
+    /// "Sort into category folders", set in Settings › Downloads. Off by default.
+    static let sortsIntoCategoryFoldersKey = "sortsIntoCategoryFolders"
+
     func add(_ draft: NewDownloadDraft) {
         let options = draft.options
+        let destination: Destination = UserDefaults.standard.bool(forKey: Self.sortsIntoCategoryFoldersKey)
+            ? .categoryFolders(under: draft.folder)
+            : .folder(draft.folder)
         perform { library in
             for url in draft.links {
-                await library.add(url, destination: .folder(draft.folder), options: options, startImmediately: draft.startImmediately)
+                await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately)
             }
         }
     }

@@ -144,7 +144,7 @@ struct DownloadCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Download") {
-            let library = LibraryView(rows: model.rows, filter: .all, search: "")
+            let library = LibraryView(rows: model.rows, selection: .filter(.all), search: "")
             Button("Pause All") { model.pauseAll() }
                 .keyboardShortcut("p", modifiers: [.option, .command])
                 .disabled(!library.canPauseAll)

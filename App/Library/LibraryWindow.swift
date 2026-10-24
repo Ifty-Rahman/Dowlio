@@ -14,7 +14,7 @@ struct LibraryWindow: View {
     @State private var confirmation: Confirmation?
     @State private var quickLookFile: URL?
     @State private var search = ""
-    @AppStorage("libraryFilter") private var filter = LibraryFilter.all
+    @AppStorage("librarySelection") private var selectionInSidebar = LibrarySelection.filter(.all)
     @AppStorage("showsInspector") private var showsInspector = false
     @AppStorage("showsSidebar") private var showsSidebar = true
     @Environment(\.openWindow) private var openWindow
@@ -25,7 +25,7 @@ struct LibraryWindow: View {
     }
 
     private var view: LibraryView {
-        LibraryView(rows: model.rows, filter: filter, search: search)
+        LibraryView(rows: model.rows, selection: selectionInSidebar, search: search)
     }
 
     private var selectedRow: DownloadRow? {
@@ -35,7 +35,7 @@ struct LibraryWindow: View {
     var body: some View {
         HStack(spacing: 0) {
             if showsSidebar {
-                LibrarySidebar(counts: view.counts, selection: $filter, freeSpace: model.freeSpace)
+                LibrarySidebar(view: view, selection: $selectionInSidebar, freeSpace: model.freeSpace)
                     .frame(width: Self.sidebarWidth)
                     .transition(.move(edge: .leading))
                 Divider()
@@ -51,7 +51,7 @@ struct LibraryWindow: View {
         .clipped()
         .windowGlass()
         .frame(minWidth: minimumWidth, minHeight: 420)
-        .navigationTitle(filter.title)
+        .navigationTitle(selectionInSidebar.title)
         .navigationSubtitle(view.summary)
         .searchable(text: $search, placement: .toolbar, prompt: "Search downloads")
         .modifier(SearchFocus(isFocused: $isSearching))
@@ -148,7 +148,7 @@ struct LibraryWindow: View {
             }
         } else if view.rows.isEmpty {
             if search.trimmingCharacters(in: .whitespaces).isEmpty {
-                ContentUnavailableView(filter.emptyText, systemImage: filter.symbolName)
+                ContentUnavailableView(selectionInSidebar.emptyText, systemImage: selectionInSidebar.symbolName)
             } else {
                 ContentUnavailableView.search(text: search)
             }
@@ -163,7 +163,7 @@ struct LibraryWindow: View {
     /// keeps every button out of the overflow menu.
     private static let toolbarMinimumWidth: CGFloat = 700
     private static let listMinimumWidth: CGFloat = 360
-    private static let sidebarWidth: CGFloat = 210
+    private static let sidebarWidth: CGFloat = 230
     private static let inspectorWidth: CGFloat = 280
 
     /// Opening a panel in a narrow window widens the window instead of squeezing the list.
@@ -197,24 +197,25 @@ struct LibraryWindow: View {
 /// Plain rows in a scroll view, styled like a macOS sidebar. A sidebar `List` gets special
 /// treatment next to the title bar, which made the toolbar redraw while the sidebar slid away.
 private struct LibrarySidebar: View {
-    let counts: [LibraryFilter: Int]
-    @Binding var selection: LibraryFilter
+    let view: LibraryView
+    @Binding var selection: LibrarySelection
     let freeSpace: Int64?
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Library")
-                    .font(DowlioDesign.TypeRole.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, DowlioDesign.Spacing.sm)
-                    .padding(.bottom, DowlioDesign.Spacing.xs)
+            VStack(alignment: .leading, spacing: 1) {
+                heading("Library")
                 ForEach(LibraryFilter.allCases, id: \.self) { filter in
-                    item(filter)
+                    item(.filter(filter), count: view.counts[filter] ?? 0)
+                }
+                heading("Categories").padding(.top, DowlioDesign.Spacing.sm)
+                ForEach(FileCategory.allCases, id: \.self) { category in
+                    item(.category(category), count: view.categoryCounts[category] ?? 0)
                 }
             }
             .padding(DowlioDesign.Spacing.sm)
         }
+        .scrollIndicators(.never)
         .modifier(NoScrollEdgeEffect())
         .safeAreaInset(edge: .bottom) {
             if let freeSpace {
@@ -229,9 +230,16 @@ private struct LibrarySidebar: View {
         }
     }
 
-    private func item(_ filter: LibraryFilter) -> some View {
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .font(DowlioDesign.TypeRole.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, DowlioDesign.Spacing.sm)
+            .padding(.bottom, DowlioDesign.Spacing.xs)
+    }
+
+    private func item(_ filter: LibrarySelection, count: Int) -> some View {
         let isSelected = selection == filter
-        let count = counts[filter] ?? 0
         return Button { selection = filter } label: {
             HStack(spacing: DowlioDesign.Spacing.sm) {
                 Image(systemName: filter.symbolName)
@@ -239,6 +247,8 @@ private struct LibrarySidebar: View {
                     .frame(width: 20)
                 Text(filter.title)
                     .fontWeight(isSelected ? .semibold : .regular)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: DowlioDesign.Spacing.sm)
                 if count > 0 {
                     Text("\(count)").monospacedDigit().foregroundStyle(.secondary)
@@ -246,7 +256,7 @@ private struct LibrarySidebar: View {
             }
             .font(DowlioDesign.TypeRole.body)
             .padding(.horizontal, DowlioDesign.Spacing.sm)
-            .padding(.vertical, 6)
+            .padding(.vertical, DowlioDesign.Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 if isSelected {
@@ -270,6 +280,34 @@ struct NoScrollEdgeEffect: ViewModifier {
             content.scrollEdgeEffectHidden(true, for: .top)
         } else {
             content
+        }
+    }
+}
+
+extension LibrarySelection {
+    var symbolName: String {
+        switch self {
+        case .filter(let filter): filter.symbolName
+        case .category(let category): category.symbolName
+        }
+    }
+
+    var emptyText: String {
+        switch self {
+        case .filter(let filter): filter.emptyText
+        case .category(let category): "No \(category.folderName.lowercased()) yet"
+        }
+    }
+}
+
+extension FileCategory {
+    var symbolName: String {
+        switch self {
+        case .video: "film"
+        case .audio: "music.note"
+        case .documents: "doc.text"
+        case .archives: "archivebox"
+        case .appsAndDiskImages: "shippingbox"
         }
     }
 }

@@ -289,6 +289,7 @@ public actor Library {
         let changed = record.state != state || record.fileName != snapshot.fileName
             || record.folder != snapshot.destinationFolder || record.totalBytes != snapshot.totalBytes
             || record.wasSkipped != snapshot.wasSkipped || (record.partialFile == nil && state == .downloading)
+            || (snapshot.category != nil && snapshot.category != record.category)
         if changed {
             record.state = state
             record.fileName = snapshot.fileName
@@ -297,7 +298,7 @@ public actor Library {
             record.receivedBytes = snapshot.receivedBytes
             record.wasSkipped = snapshot.wasSkipped
             record.isNotSecure = snapshot.isNotSecure
-            record.category = FileCategory(fileName: snapshot.fileName, contentType: nil)
+            record.category = snapshot.category ?? record.category ?? FileCategory(fileName: snapshot.fileName, contentType: nil)
             if state == .completed {
                 record.completedAt = now()
                 record.partialFile = nil

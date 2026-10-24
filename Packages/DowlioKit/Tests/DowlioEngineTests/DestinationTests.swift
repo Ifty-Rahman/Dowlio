@@ -54,3 +54,24 @@ struct DestinationTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["blob.dat"])
     }
 }
+
+extension DestinationTests {
+    /// The snapshot says which Category the engine decided on, from the name and the content type.
+    @Test(arguments: [
+        ("/Report.pdf", [String: String](), FileCategory?.some(.documents)),
+        ("/get", ["Content-Disposition": #"attachment; filename="clip""#, "Content-Type": "video/mp4"], .video),
+        ("/blob.dat", [:], nil),
+    ])
+    func theSnapshotCarriesTheCategory(path: String, headers: [String: String], category: FileCategory?) async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 104), eTag: "\"d4\"", headers: headers), at: path)
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: path), to: folder)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.category == category)
+    }
+}

@@ -217,6 +217,7 @@ public actor DownloadEngine {
         )
         snapshot.apply(plan.board.reading)
         snapshot.canResume = plan.canResume
+        snapshot.category = FileCategory(fileName: fileName, contentType: nil)
 
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry

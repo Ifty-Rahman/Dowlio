@@ -30,27 +30,69 @@ public enum LibraryFilter: String, CaseIterable, Hashable, Sendable {
     }
 }
 
+/// What the sidebar has chosen: a state in the Library group or one of the Categories. It's
+/// saved as text, such as "filter.paused" or "category.video".
+public enum LibrarySelection: Hashable, Sendable, RawRepresentable {
+    case filter(LibraryFilter)
+    case category(FileCategory)
+
+    public init?(rawValue: String) {
+        let parts = rawValue.split(separator: ".", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "filter": guard let filter = LibraryFilter(rawValue: parts[1]) else { return nil }; self = .filter(filter)
+        case "category": guard let category = FileCategory(rawValue: parts[1]) else { return nil }; self = .category(category)
+        default: return nil
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .filter(let filter): "filter.\(filter.rawValue)"
+        case .category(let category): "category.\(category.rawValue)"
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .filter(let filter): filter.title
+        case .category(let category): category.folderName
+        }
+    }
+
+    public func includes(_ row: DownloadRow) -> Bool {
+        switch self {
+        case .filter(let filter): filter.includes(row)
+        case .category(let category): row.category == category
+        }
+    }
+}
+
 /// The library list as the window shows it: filtered by the sidebar, then by search.
 public struct LibraryView: Equatable, Sendable {
     public let all: [DownloadRow]
-    public let filter: LibraryFilter
+    public let selection: LibrarySelection
     public let search: String
 
-    public init(rows: [DownloadRow], filter: LibraryFilter, search: String) {
+    public init(rows: [DownloadRow], selection: LibrarySelection, search: String) {
         all = rows
-        self.filter = filter
+        self.selection = selection
         self.search = search
     }
 
     public var rows: [DownloadRow] {
         let query = search.trimmingCharacters(in: .whitespaces)
         return all.filter { row in
-            filter.includes(row) && (query.isEmpty || Self.matches(row, query))
+            selection.includes(row) && (query.isEmpty || Self.matches(row, query))
         }
     }
 
     public var counts: [LibraryFilter: Int] {
         Dictionary(uniqueKeysWithValues: LibraryFilter.allCases.map { filter in (filter, all.count { filter.includes($0) }) })
+    }
+
+    public var categoryCounts: [FileCategory: Int] {
+        Dictionary(uniqueKeysWithValues: FileCategory.allCases.map { category in (category, all.count { $0.category == category }) })
     }
 
     /// "3 downloads · 12.4 MB/s": the rows shown, then the speed of every download, shown or not.

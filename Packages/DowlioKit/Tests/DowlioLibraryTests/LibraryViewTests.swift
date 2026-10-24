@@ -24,11 +24,11 @@ struct LibraryViewTests {
         (.completed, ["Résumé.docx"]),
     ])
     func eachFilterKeepsItsStatesInOrder(filter: LibraryFilter, names: [String]) {
-        #expect(LibraryView(rows: rows, filter: filter, search: "").rows.map(\.fileName) == names)
+        #expect(LibraryView(rows: rows, selection: .filter(filter), search: "").rows.map(\.fileName) == names)
     }
 
     @Test func theSidebarCountsEveryFilter() {
-        let counts = LibraryView(rows: rows, filter: .all, search: "").counts
+        let counts = LibraryView(rows: rows, selection: .filter(.all), search: "").counts
         #expect(counts == [.all: 7, .downloading: 3, .paused: 1, .queued: 1, .failed: 1, .completed: 1])
     }
 
@@ -42,31 +42,60 @@ struct LibraryViewTests {
         ("  ubuntu  ", 1),
     ])
     func searchMatchesTheNameOrTheHostIgnoringCaseAndAccents(search: String, count: Int) {
-        #expect(LibraryView(rows: rows, filter: .all, search: search).rows.count == count)
+        #expect(LibraryView(rows: rows, selection: .filter(.all), search: search).rows.count == count)
     }
 
     @Test func searchCombinesWithTheFilter() {
-        #expect(LibraryView(rows: rows, filter: .completed, search: "files.example").rows.map(\.fileName) == ["Résumé.docx"])
-        #expect(LibraryView(rows: rows, filter: .paused, search: "files.example").rows.isEmpty)
+        #expect(LibraryView(rows: rows, selection: .filter(.completed), search: "files.example").rows.map(\.fileName) == ["Résumé.docx"])
+        #expect(LibraryView(rows: rows, selection: .filter(.paused), search: "files.example").rows.isEmpty)
     }
 
     @Test func theToolbarSummaryCountsTheShownItemsAndAddsUpEverySpeed() {
-        #expect(LibraryView(rows: rows, filter: .all, search: "").summary == "7 downloads · 5.50 MB/s")
-        #expect(LibraryView(rows: rows, filter: .completed, search: "").summary == "1 download · 5.50 MB/s")
-        #expect(LibraryView(rows: [row("a.zip", host: nil, state: .paused)], filter: .all, search: "").summary == "1 download")
-        #expect(LibraryView(rows: [], filter: .all, search: "").summary == "0 downloads")
+        #expect(LibraryView(rows: rows, selection: .filter(.all), search: "").summary == "7 downloads · 5.50 MB/s")
+        #expect(LibraryView(rows: rows, selection: .filter(.completed), search: "").summary == "1 download · 5.50 MB/s")
+        #expect(LibraryView(rows: [row("a.zip", host: nil, state: .paused)], selection: .filter(.all), search: "").summary == "1 download")
+        #expect(LibraryView(rows: [], selection: .filter(.all), search: "").summary == "0 downloads")
     }
 
     @Test func pauseAllAndResumeAllAreOffWithNothingToDo() {
-        let view = LibraryView(rows: rows, filter: .all, search: "")
+        let view = LibraryView(rows: rows, selection: .filter(.all), search: "")
         #expect(view.canPauseAll)
         #expect(view.canResumeAll)
         #expect(view.canClearCompleted)
 
-        let failedOnly = LibraryView(rows: [row("gone.dmg", host: nil, state: .failed(.notFound))], filter: .all, search: "")
+        let failedOnly = LibraryView(rows: [row("gone.dmg", host: nil, state: .failed(.notFound))], selection: .filter(.all), search: "")
         #expect(!failedOnly.canPauseAll)
         #expect(!failedOnly.canResumeAll)
         #expect(!failedOnly.canClearCompleted)
+    }
+
+    @Test func aCategoryKeepsOnlyItsFilesAndCountsThem() {
+        let categorised = [
+            row("a.mp4", host: nil, state: .completed, category: .video),
+            row("b.mkv", host: nil, state: .downloading, category: .video),
+            row("c.pdf", host: nil, state: .paused, category: .documents),
+            row("d.dat", host: nil, state: .completed, category: nil),
+        ]
+        let video = LibraryView(rows: categorised, selection: .category(.video), search: "")
+
+        #expect(video.rows.map(\.fileName) == ["a.mp4", "b.mkv"])
+        #expect(video.categoryCounts == [.video: 2, .audio: 0, .documents: 1, .archives: 0, .appsAndDiskImages: 0])
+        #expect(LibraryView(rows: categorised, selection: .category(.audio), search: "").rows.isEmpty)
+        #expect(LibraryView(rows: categorised, selection: .filter(.all), search: "").rows.count == 4)
+    }
+
+    @Test(arguments: [
+        (LibrarySelection.filter(.all), "All Downloads"),
+        (.filter(.failed), "Failed"),
+        (.category(.appsAndDiskImages), "Apps & Disk Images"),
+    ])
+    func aSidebarChoiceIsSavedAsTextAndComesBackTheSame(selection: LibrarySelection, title: String) {
+        #expect(LibrarySelection(rawValue: selection.rawValue) == selection)
+        #expect(selection.title == title)
+    }
+
+    @Test func anUnknownSavedChoiceIsNotAChoice() {
+        #expect(LibrarySelection(rawValue: "nonsense") == nil)
     }
 
     @Test func freeSpaceReadsLikeFinder() {
@@ -75,10 +104,12 @@ struct LibraryViewTests {
     }
 }
 
-private func row(_ name: String, host: String?, state: DownloadRow.State, speed: Int64 = 0) -> DownloadRow {
+private func row(
+    _ name: String, host: String?, state: DownloadRow.State, speed: Int64 = 0, category: FileCategory? = nil
+) -> DownloadRow {
     DownloadRow(
         id: DownloadID(), state: state, fileName: name, sourceURL: URL(string: "https://example.com/\(name)")!,
-        host: host, folder: URL(filePath: "/tmp"), category: nil, receivedBytes: 0, totalBytes: nil,
+        host: host, folder: URL(filePath: "/tmp"), category: category, receivedBytes: 0, totalBytes: nil,
         segments: [], activeConnections: 0, bytesPerSecond: speed, timeRemaining: nil, isNotSecure: false,
         canResume: true, addedAt: Date(), completedAt: nil, isFileMissing: false, wasSkipped: false
     )

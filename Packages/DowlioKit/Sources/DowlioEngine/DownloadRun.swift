@@ -119,10 +119,13 @@ struct DownloadRun: Sendable {
         let probed = try await probeWithRetries(url)
         let fileName = options.fileName.map(FileNaming.chosen)
             ?? FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
-        let folder = destination.folder(forFileNamed: fileName, contentType: probed.probeResponse.contentTypeHeader)
+        let contentType = probed.probeResponse.contentTypeHeader
+        let folder = destination.folder(forFileNamed: fileName, contentType: contentType)
+        let category = FileCategory(fileName: fileName, contentType: contentType)
         await changeSnapshot {
             $0.state = .downloading
             $0.fileName = fileName
+            $0.category = category
             $0.destinationFolder = folder
             $0.totalBytes = probed.totalBytes
             $0.isNotSecure = probed.finalURL.isPlainHTTP || url.isPlainHTTP

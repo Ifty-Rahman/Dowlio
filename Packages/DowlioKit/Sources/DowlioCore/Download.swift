@@ -194,6 +194,9 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// and a file with its name already existed. `fileName` is the download's own planned name,
     /// which the existing file has.
     public var wasSkipped: Bool = false
+    /// What kind of file it is, from its name and the server's content type. `nil` until the probe
+    /// answers, and for a file that matches no Category.
+    public var category: FileCategory?
     /// The original link's host, lowercased, for showing where the download comes from. It stays
     /// the same when redirects lead elsewhere. `nil` for a link without a host.
     public var displayHost: String?
