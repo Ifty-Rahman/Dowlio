@@ -35,9 +35,6 @@ final class AppModel {
             return
         }
         Task { await follow() }
-        IncomingLinks.shared.deliver { [weak self] urls in
-            self?.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
-        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -113,29 +110,6 @@ final class AppModel {
         await library.start()
         for await rows in await library.rows() {
             self.rows = rows
-        }
-    }
-}
-
-/// Links macOS hands to Dowlio from outside, such as one dropped on the Dock icon. They wait here
-/// until the model is ready for them.
-@MainActor
-final class IncomingLinks {
-    static let shared = IncomingLinks()
-
-    private var waiting: [URL] = []
-    private var handler: (([URL]) -> Void)?
-
-    func receive(_ urls: [URL]) {
-        guard let handler else { return waiting.append(contentsOf: urls) }
-        handler(urls)
-    }
-
-    func deliver(to handler: @escaping ([URL]) -> Void) {
-        self.handler = handler
-        if !waiting.isEmpty {
-            handler(waiting)
-            waiting = []
         }
     }
 }
