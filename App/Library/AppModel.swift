@@ -30,6 +30,7 @@ final class AppModel {
     /// as after a quiet start at login.
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
+    private let notifier = FinishNotifier()
     private(set) var freeSpace: Int64?
 
     private let library: Library?
@@ -149,6 +150,7 @@ final class AppModel {
     }
 
     func add(_ draft: NewDownloadDraft) {
+        notifier.askPermissionIfNeeded()
         let settings = settings
         let chosen = draft.options
         var options = settings.options(connections: chosen.connections)
@@ -213,6 +215,7 @@ final class AppModel {
         await library.setMaximumActive(settings.downloadsAtOnce)
         for await rows in await library.rows() {
             self.rows = rows
+            notifier.update(rows)
         }
     }
 }

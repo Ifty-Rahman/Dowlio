@@ -12,6 +12,9 @@ enum SettingsKey {
     static let retries = "retries"
     static let showsInMenuBar = "showsInMenuBar"
     static let showsInDock = "showsInDock"
+    static let notifiesWhenFinished = "notifiesWhenFinished"
+    static let thenAction = "thenAction"
+    static let hasSeenWelcome = "hasSeenWelcome"
 }
 
 extension UserDefaults {

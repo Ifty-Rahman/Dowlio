@@ -17,6 +17,7 @@ struct LibraryWindow: View {
     @AppStorage("librarySelection") private var selectionInSidebar = LibrarySelection.filter(.all)
     @AppStorage("showsInspector") private var showsInspector = false
     @AppStorage("showsSidebar") private var showsSidebar = true
+    @AppStorage(SettingsKey.hasSeenWelcome) private var hasSeenWelcome = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -41,7 +42,12 @@ struct LibraryWindow: View {
                     .transition(.move(edge: .leading))
                 Divider()
             }
-            detail.frame(minWidth: Self.listMinimumWidth, maxWidth: .infinity, maxHeight: .infinity)
+            detail
+                .frame(minWidth: Self.listMinimumWidth, maxWidth: .infinity, maxHeight: .infinity)
+                .sheet(isPresented: Binding(get: { !hasSeenWelcome }, set: { if !$0 { hasSeenWelcome = true } })) {
+                    OnboardingSheet(model: model) { hasSeenWelcome = true }
+                        .interactiveDismissDisabled()
+                }
             if showsInspector {
                 Divider()
                 InspectorView(row: selectedRow, actions: actions)

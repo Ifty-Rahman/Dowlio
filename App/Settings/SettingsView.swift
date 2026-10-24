@@ -2,6 +2,7 @@ import DowlioCore
 import DowlioLibrary
 import ServiceManagement
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     let model: AppModel
@@ -27,6 +28,64 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     let model: AppModel
+    @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
+    @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing.rawValue
+    @AppStorage(SettingsKey.hasSeenWelcome) private var hasSeenWelcome = false
+    @State private var notificationsDenied = false
+
+    var body: some View {
+        Form {
+            Section {
+                PresenceToggles(model: model)
+            }
+            Section("When a download finishes") {
+                Toggle("Show a notification", isOn: $notifies)
+                if notifies, notificationsDenied {
+                    HStack {
+                        Text("macOS isn't letting Dowlio show notifications.")
+                            .font(DowlioDesign.TypeRole.detail)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open System Settings…") { openNotificationSettings() }
+                    }
+                }
+                Picker("Then", selection: $thenAction) {
+                    ForEach(ThenAction.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
+            }
+            Section {
+                LabeledContent("Welcome") {
+                    Button("Show Welcome Again") {
+                        hasSeenWelcome = false
+                        model.showLibraryWindow()
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollIndicators(.never)
+        .task { await checkNotifications() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await checkNotifications() }
+        }
+    }
+
+    private func checkNotifications() async {
+        notificationsDenied = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
+    }
+
+    private func openNotificationSettings() {
+        let id = Bundle.main.bundleIdentifier ?? ""
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+/// Open at login, Show in menu bar and Show in Dock, shared by Settings and onboarding so the
+/// "never both off" rule holds in both.
+struct PresenceToggles: View {
+    let model: AppModel
     @AppStorage(SettingsKey.showsInMenuBar) private var menuBar = true
     @AppStorage(SettingsKey.showsInDock) private var dock = true
     @State private var presenceNote: String?
@@ -34,19 +93,15 @@ private struct GeneralSettings: View {
     @State private var loginProblem: String?
 
     var body: some View {
-        Form {
-            Toggle("Open Dowlio at login", isOn: Binding(get: { opensAtLogin }, set: setOpensAtLogin))
-            if let loginProblem {
-                Text(loginProblem).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
-            }
-            Toggle("Show in menu bar", isOn: Binding(get: { menuBar }, set: { set(.menuBar, $0) }))
-            Toggle("Show in Dock", isOn: Binding(get: { dock }, set: { set(.dock, $0) }))
-            if let presenceNote {
-                Text(presenceNote).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
-            }
+        Toggle("Open Dowlio at login", isOn: Binding(get: { opensAtLogin }, set: setOpensAtLogin))
+        if let loginProblem {
+            Text(loginProblem).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        Toggle("Show in menu bar", isOn: Binding(get: { menuBar }, set: { set(.menuBar, $0) }))
+        Toggle("Show in Dock", isOn: Binding(get: { dock }, set: { set(.dock, $0) }))
+        if let presenceNote {
+            Text(presenceNote).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+        }
     }
 
     private func set(_ which: Presence.Switch, _ isOn: Bool) {
