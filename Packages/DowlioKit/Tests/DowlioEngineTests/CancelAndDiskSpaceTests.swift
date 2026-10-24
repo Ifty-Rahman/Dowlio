@@ -62,7 +62,7 @@ struct CancelAndDiskSpaceTests {
 
     @Test func aFileThatCantFitFailsBeforeAnyDataIsRequested() async throws {
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 32 * 1024 * 1024)), at: "/huge.dmg")
+        server.serve(.init(data: TestServer.makeData(size: 16 * 1024 * 1024)), at: "/huge.dmg")
         let volume = try DiskImage(megabytes: 8)
         defer { volume.detach() }
 
