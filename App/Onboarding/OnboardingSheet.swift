@@ -1,4 +1,6 @@
+import AppKit
 import DowlioCore
+import DowlioLibrary
 import SwiftUI
 
 /// The welcome a fresh install shows: two pages, each with Skip. Later phases add the browser and
@@ -46,15 +48,22 @@ struct OnboardingSheet: View {
 
 private struct WelcomePage: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
+        VStack(spacing: DowlioDesign.Spacing.lg) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 96, height: 96)
+                .accessibilityHidden(true)
             Text("Welcome to Dowlio")
                 .font(.largeTitle.weight(.bold))
                 .accessibilityAddTraits(.isHeader)
             Text("A fast, reliable, native download manager for your Mac. Download fast with multiple connections, categorize into folders, capture from browser or send to the app.")
                 .font(DowlioDesign.TypeRole.body)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, DowlioDesign.Spacing.lg)
     }
 }
 
@@ -106,18 +115,28 @@ private struct PageDots: View {
     }
 }
 
+/// A pretend download: eight segments finishing at their own random pace within eight seconds,
+/// then the bar turns green for two, and a new download starts. Still and full with Reduce Motion.
 private struct FillingBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private static let speeds: [Double] = [1.0, 0.8, 1.15, 0.7, 0.95, 1.25, 0.85, 1.05]
-    private static let cycle: TimeInterval = 4
+    private static let cycle: TimeInterval = 10
+    private static let fillTime: TimeInterval = 8
+    private static let count = 8
 
     var body: some View {
         Group {
             if reduceMotion {
-                bar(at: Self.cycle)
+                SegmentedBar(segments: Self.segments(filled: Array(repeating: 1, count: Self.count)), fraction: nil, tint: DowlioDesign.brandAccent, height: 8)
             } else {
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                    bar(at: context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.cycle))
+                    let time = context.date.timeIntervalSinceReferenceDate
+                    let filled = Self.fills(round: Int(time / Self.cycle), at: time.truncatingRemainder(dividingBy: Self.cycle))
+                    let done = filled.allSatisfy { $0 >= 1 }
+                    SegmentedBar(
+                        segments: Self.segments(filled: filled), fraction: nil,
+                        tint: done ? DownloadRow.State.completed.tone : DowlioDesign.brandAccent, height: 8
+                    )
+                    .animation(.easeInOut(duration: 0.3), value: done)
                 }
             }
         }
@@ -125,12 +144,43 @@ private struct FillingBar: View {
         .accessibilityLabel("A download split across eight connections")
     }
 
-    private func bar(at time: TimeInterval) -> some View {
-        let segments = Self.speeds.enumerated().map { index, speed in
-            let start = Int64(index * 100)
-            let filled = min(time / (Self.cycle * 0.75) * speed, 1)
-            return SegmentProgress(start: start, end: start + 99, receivedBytes: Int64(filled * 100), isActive: filled < 1)
+    /// Each round gets its own random finish time and pace per segment, the same every time that
+    /// round is drawn.
+    private static func fills(round: Int, at time: TimeInterval) -> [Double] {
+        var random = SplitMix(seed: UInt64(truncatingIfNeeded: round))
+        return (0..<count).map { _ in
+            let finish = 2.5 + random.next() * (fillTime - 2.5)
+            let pace = 0.55 + random.next() * 1.1
+            return pow(min(time / finish, 1), pace)
         }
-        return SegmentedBar(segments: segments, fraction: nil, tint: DowlioDesign.brandAccent, height: 8)
+    }
+
+    private static func segments(filled: [Double]) -> [SegmentProgress] {
+        filled.enumerated().map { index, fill in
+            let start = Int64(index * 1000)
+            return SegmentProgress(start: start, end: start + 999, receivedBytes: Int64(fill * 1000), isActive: fill < 1)
+        }
+    }
+}
+
+/// A tiny seeded random generator, so a round of the animation looks the same frame to frame.
+private struct SplitMix {
+    private var state: UInt64
+
+    /// The seed is scrambled first, so neighbouring rounds don't share their numbers.
+    init(seed: UInt64) {
+        state = Self.mix(seed)
+    }
+
+    mutating func next() -> Double {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        return Double(Self.mix(state) >> 11) / Double(1 << 53)
+    }
+
+    private static func mix(_ value: UInt64) -> UInt64 {
+        var z = value
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
     }
 }
