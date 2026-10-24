@@ -20,16 +20,19 @@ struct LibraryFixture {
         try await self.init(databaseURL: base.appending(path: "Dowlio.sqlite"), folder: folder, trash: trash)
     }
 
-    private init(databaseURL: URL, folder: URL, trash: @escaping @Sendable (URL) throws -> Void) async throws {
+    private init(
+        databaseURL: URL, folder: URL, trash: @escaping @Sendable (URL) throws -> Void, maximumFailures: Int? = nil
+    ) async throws {
         self.databaseURL = databaseURL
         self.folder = folder
         engine = DownloadEngine(configuration: .fast)
         library = Library(engine: engine, store: try DownloadStore(databaseAt: databaseURL), trash: trash)
-        await library.start()
+        await library.start(maximumFailures: maximumFailures)
     }
 
-    func relaunched() async throws -> LibraryFixture {
-        try await LibraryFixture(databaseURL: databaseURL, folder: folder, trash: { _ in })
+    /// The same Mac after quitting. `maximumFailures` is the retry setting in force at launch.
+    func relaunched(maximumFailures: Int? = nil) async throws -> LibraryFixture {
+        try await LibraryFixture(databaseURL: databaseURL, folder: folder, trash: { _ in }, maximumFailures: maximumFailures)
     }
 
     func add(_ url: URL, options: RequestOptions = RequestOptions(), startImmediately: Bool = true) async -> DownloadID {

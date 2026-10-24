@@ -40,14 +40,16 @@ public actor Library {
     }
 
     /// Reads History and brings every unfinished download back Paused. Call it once, at launch.
-    public func start() async {
+    /// `maximumFailures` is the retry setting in force now, for every unfinished download.
+    public func start(maximumFailures: Int? = nil) async {
         for var record in (try? store.all()) ?? [] {
             let id = DownloadID(rawValue: record.id)
+            if let maximumFailures, record.state != .completed { record.maximumFailures = maximumFailures }
             switch record.state {
             case .completed:
                 if !Self.finishedFileExists(record) { missingFiles.insert(id) }
             case .queued:
-                break
+                save(record)
             case .paused, .downloading, .failed:
                 if await restore(record) {
                     inEngine.insert(id)

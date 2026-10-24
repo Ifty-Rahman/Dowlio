@@ -25,6 +25,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         })
         item.button?.target = self
         item.button?.action = #selector(toggle)
+        model.menuBar = self
+        item.isVisible = UserDefaults.standard.presence.menuBar
         follow()
         if DebugLaunch.opensPopover {
             Task { @MainActor [weak self] in
@@ -32,6 +34,14 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
                 self?.toggle()
                 if DebugLaunch.quickAddLink != nil { self?.panel.showsQuickAdd = true }
             }
+        }
+    }
+
+    var isVisible: Bool {
+        get { item.isVisible }
+        set {
+            if !newValue { popover.performClose(nil) }
+            item.isVisible = newValue
         }
     }
 

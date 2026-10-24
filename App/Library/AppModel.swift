@@ -18,7 +18,18 @@ final class AppModel {
     /// that arrives while it's closed can open it again.
     var openLibraryWindow: (() -> Void)?
 
-    let downloadsFolder = DebugLaunch.downloadsFolder ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    var settings: DownloadSettings {
+        var settings = UserDefaults.standard.downloadSettings
+        if let folder = DebugLaunch.downloadsFolder { settings.folder = folder }
+        return settings
+    }
+
+    var downloadsFolder: URL { settings.folder }
+
+    /// The library window, kept so Open Dowlio can bring it back even when it has never shown,
+    /// as after a quiet start at login.
+    weak var libraryWindow: NSWindow?
+    weak var menuBar: MenuBarController?
     private(set) var freeSpace: Int64?
 
     private let library: Library?
@@ -83,21 +94,50 @@ final class AppModel {
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
         guard let library else { return nil }
-        return NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
+        let model = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
             try await library.inspect(url, options: options)
         }
+        model.draft.connections = settings.connections
+        return model
     }
 
     var isLibraryWindowOpen = false
 
     func showLibraryWindow() {
         NSApp.activate()
-        openLibraryWindow?()
+        if let libraryWindow, libraryWindow.isVisible || libraryWindow.isMiniaturized {
+            libraryWindow.makeKeyAndOrderFront(nil)
+        } else if let libraryWindow, openLibraryWindow == nil {
+            libraryWindow.makeKeyAndOrderFront(nil)
+        } else {
+            openLibraryWindow?()
+        }
     }
+
+    /// Shows Dowlio in the Dock, the menu bar or both, as Settings › General says.
+    func applyPresence() {
+        let presence = UserDefaults.standard.presence
+        menuBar?.isVisible = presence.menuBar
+        NSApp.setActivationPolicy(presence.dock ? .regular : .accessory)
+        if presence.dock { NSApp.activate() }
+    }
+
+    func applyDownloadsAtOnce() {
+        let limit = settings.downloadsAtOnce
+        perform { await $0.setMaximumActive(limit) }
+    }
+
+    /// Pauses everything, so every partial file has its latest manifest before Dowlio quits.
+    func stopForQuit() async {
+        await library?.pauseAll()
+    }
+
+    /// SwiftUI's own way to open Settings, handed over by the library window.
+    var openSettingsWindow: (() -> Void)?
 
     func showSettings() {
         NSApp.activate()
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        openSettingsWindow?()
     }
 
     func reportProblem() {
@@ -107,13 +147,14 @@ final class AppModel {
         NSWorkspace.shared.open(ProblemReport.url(appVersion: app, macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
     }
 
-    static let sortsIntoCategoryFoldersKey = "sortsIntoCategoryFolders"
-
     func add(_ draft: NewDownloadDraft) {
-        let options = draft.options
-        let destination: Destination = UserDefaults.standard.bool(forKey: Self.sortsIntoCategoryFoldersKey)
-            ? .categoryFolders(under: draft.folder)
-            : .folder(draft.folder)
+        let settings = settings
+        let chosen = draft.options
+        var options = settings.options(connections: chosen.connections)
+        options.referrer = chosen.referrer
+        options.userAgent = chosen.userAgent
+        options.fileName = chosen.fileName
+        let destination = settings.destination(in: draft.folder)
         perform { library in
             for url in draft.links {
                 await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately)
@@ -167,7 +208,8 @@ final class AppModel {
 
     private func follow() async {
         guard let library else { return }
-        await library.start()
+        await library.start(maximumFailures: settings.maximumFailures)
+        await library.setMaximumActive(settings.downloadsAtOnce)
         for await rows in await library.rows() {
             self.rows = rows
         }

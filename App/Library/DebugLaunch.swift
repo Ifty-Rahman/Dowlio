@@ -42,6 +42,7 @@ enum DebugLaunch {
     static var showsInspector: Bool { flag("DOWLIO_DEBUG_SHOW_INSPECTOR") }
     static var togglesSidebar: Bool { flag("DOWLIO_DEBUG_TOGGLE_SIDEBAR") }
     static var opensPopover: Bool { flag("DOWLIO_DEBUG_OPEN_POPOVER") }
+    static var opensSettings: Bool { flag("DOWLIO_DEBUG_OPEN_SETTINGS") }
 
     static var quickAddLink: String? {
         #if DEBUG

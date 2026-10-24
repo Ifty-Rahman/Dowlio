@@ -10,6 +10,7 @@ struct DowlioApp: App {
 
     init() {
         let model = AppModel()
+        AppDelegate.model = model
         _model = State(initialValue: model)
         _menuBar = State(initialValue: MenuBarController(model: model))
     }
@@ -33,8 +34,7 @@ struct DowlioApp: App {
         .defaultSize(width: 620, height: 520)
 
         Settings {
-            ContentUnavailableView("Settings aren't ready yet", systemImage: "gearshape")
-                .frame(width: 420, height: 240)
+            SettingsView(model: model)
         }
     }
 }

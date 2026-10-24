@@ -18,6 +18,7 @@ struct LibraryWindow: View {
     @AppStorage("showsInspector") private var showsInspector = false
     @AppStorage("showsSidebar") private var showsSidebar = true
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var actions: RowActions {
@@ -49,6 +50,7 @@ struct LibraryWindow: View {
             }
         }
         .clipped()
+        .background(LibraryWindowAccessor(model: model))
         .windowGlass()
         .frame(minWidth: minimumWidth, minHeight: 420)
         .navigationTitle(selectionInSidebar.title)
@@ -68,6 +70,7 @@ struct LibraryWindow: View {
             isFocused = true
             model.isLibraryWindowOpen = true
             model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
+            model.openSettingsWindow = { [openSettings] in openSettings() }
         }
         .onDisappear { model.isLibraryWindowOpen = false }
         .task {
@@ -75,6 +78,7 @@ struct LibraryWindow: View {
             try? await Task.sleep(for: .seconds(1))
             DebugLaunch.applyWindowWidth()
             if DebugLaunch.showsInspector { togglePanel($showsInspector) }
+            if DebugLaunch.opensSettings { model.showSettings() }
             if DebugLaunch.togglesSidebar {
                 try? await Task.sleep(for: .seconds(1))
                 togglePanel($showsSidebar)
