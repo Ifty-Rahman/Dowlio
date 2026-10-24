@@ -16,6 +16,7 @@ struct DownloadList: View {
     /// Clicking a row takes focus back from the search field, so ↑, ↓ and Space reach the list.
     let focusList: () -> Void
 
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var rowFrames: [DownloadID: CGRect] = [:]
     @State private var dragRect: CGRect?
     @State private var selectionBeforeDrag: Set<DownloadID> = []
@@ -115,7 +116,7 @@ struct DownloadList: View {
         if let dragRect {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.accentColor.opacity(0.12))
-                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor.opacity(contrast == .increased ? 1 : 0.6), lineWidth: 1))
                 .frame(width: dragRect.width, height: dragRect.height)
                 .offset(x: dragRect.minX, y: dragRect.minY)
                 .allowsHitTesting(false)

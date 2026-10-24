@@ -91,6 +91,8 @@ private struct PopoverRow: View {
                 }
                 SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone, height: 3)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(row.spokenSummary)
             if row.canPause {
                 Button("Pause", systemImage: "pause.fill") { model.pause(row) }
                     .labelStyle(.iconOnly)
@@ -103,6 +105,6 @@ private struct PopoverRow: View {
                     .help("Resume")
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
