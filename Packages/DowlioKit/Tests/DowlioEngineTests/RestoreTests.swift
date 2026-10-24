@@ -80,6 +80,36 @@ struct RestoreTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "crash.dmg")) == TestFiles.sha256(data))
     }
 
+    @Test func aRestoredDownloadUsesTheHostsLearnedLimit() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 45)
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/limited.iso")
+        await engine.pause(id)
+        let package = try TestFiles.partialFile(in: folder)
+        // From here on the server allows one reply at a time. The replies held before the pause
+        // aren't counted. The first segment's rest trickles, so a second connection opened
+        // beside it would be refused.
+        var limited = Self.heldFile(data)
+        limited.maxParallel = 1
+        limited.throttle = .init(rangeStart: Self.held, bytesPerSecond: 4 * 1024 * 1024)
+        server.serve(limited, at: "/limited.iso")
+        server.releaseHeldResponses()
+
+        let limits = InMemoryHostLimitStore()
+        limits.updateLimit(for: "127.0.0.1:\(server.port)") { _ in 1 }
+        var configuration = EngineConfiguration.fastWithHolds
+        configuration.hostLimits = limits
+        let fresh = DownloadEngine(configuration: configuration)
+        let restored = try await fresh.restore(partialFile: package)
+        await fresh.resume(restored)
+        let finished = try await fresh.completedOrFailed(restored)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "limited.iso")) == TestFiles.sha256(data))
+        #expect(server.refusals(at: "/limited.iso") == 0)
+        #expect(server.peakParallel(at: "/limited.iso") == 1)
+    }
+
     @Test func aDownloadWhosePartialFileWasDeletedStartsOver() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 44)

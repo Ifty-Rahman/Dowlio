@@ -144,6 +144,7 @@ struct DownloadRun: Sendable {
            total == plan.totalBytes, validator == saved {
             var kept = plan
             kept.finalURL = probed.finalURL
+            applyHostLimit(of: kept.finalURL)
             planStore.store(kept, probeConnection: nil)
             await changeSnapshot { $0.state = .downloading }
             return kept
