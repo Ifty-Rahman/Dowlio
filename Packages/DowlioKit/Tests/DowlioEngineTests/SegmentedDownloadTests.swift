@@ -8,7 +8,7 @@ import Testing
 struct SegmentedDownloadTests {
     @Test func aLargeFileDownloadsOverEightConnectionsByDefault() async throws {
         let server = try await TestServer()
-        let data = TestServer.makeData(size: 64 * 1024 * 1024, seed: 21)
+        let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 21)
         server.serve(.init(data: data), at: "/big.iso")
         let folder = try TestFiles.makeFolder()
 
@@ -25,9 +25,8 @@ struct SegmentedDownloadTests {
         // the others can split a segment that hasn't started, so its request changes.
         let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }
         let planned = [
-            "bytes=0-8388607", "bytes=8388608-16777215", "bytes=16777216-25165823", "bytes=25165824-33554431",
-            "bytes=33554432-41943039", "bytes=41943040-50331647", "bytes=50331648-58720255",
-            "bytes=58720256-67108863",
+            "bytes=0-1048575", "bytes=1048576-2097151", "bytes=2097152-3145727", "bytes=3145728-4194303",
+            "bytes=4194304-5242879", "bytes=5242880-6291455", "bytes=6291456-7340031", "bytes=7340032-8388607",
         ]
         #expect(planned.allSatisfy { range in segmentRanges.filter { $0 == range }.count == 1 })
     }

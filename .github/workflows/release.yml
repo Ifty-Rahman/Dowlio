@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  checks: read
 
 jobs:
   release:
@@ -17,8 +18,16 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Test
-        run: ./scripts/test.sh
+      - name: Require a passing CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          result=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name == "test") | .conclusion] | if length == 0 then "missing" elif all(. == "success") then "success" else "failed" end')
+          if [ "$result" != "success" ]; then
+            echo "::error::CI has not passed on $GITHUB_SHA ($result). Tag a commit on main after its CI run is green."
+            exit 1
+          fi
 
       - name: Import the signing certificate
         env:

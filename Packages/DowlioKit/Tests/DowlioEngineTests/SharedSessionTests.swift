@@ -8,7 +8,7 @@ import Testing
 struct SharedSessionTests {
     @Test func oneSharedSessionRunsSixteenConnectionsAtOnce() async throws {
         let server = try await TestServer()
-        let data = TestServer.makeData(size: 32 * 1024 * 1024, seed: 91)
+        let data = TestServer.makeData(size: 16 * 1024 * 1024, seed: 91)
         server.serve(.init(data: data, holdAfterBytes: 64 * 1024, maxParallel: 32), at: "/shared.iso")
         let folder = try TestFiles.makeFolder()
         var configuration = EngineConfiguration.fast
