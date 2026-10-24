@@ -164,7 +164,7 @@ final class PartialFile: @unchecked Sendable {
         values.quarantineProperties = [
             kLSQuarantineAgentNameKey as String: "Dowlio",
             kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
-            kLSQuarantineDataURLKey as String: source,
+            kLSQuarantineOriginURLKey as String: source,
         ]
         var url = dataURL
         try url.setResourceValues(values)
