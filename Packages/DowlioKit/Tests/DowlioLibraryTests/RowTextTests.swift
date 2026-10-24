@@ -136,6 +136,18 @@ struct RowTextTests {
         #expect(!Self.row(state: .completed).canCancel)
     }
 
+    /// Every row keeps the same lines from the moment it appears, so its height never changes
+    /// while the list lays it out.
+    @Test(arguments: [
+        (DownloadRow.State.downloading, "Starting…"),
+        (.queued, "Waiting for a free slot"),
+        (.paused, "Not started"),
+        (.retrying(attempt: 1, nextTry: Date()), "Waiting to try again"),
+    ])
+    func aRowWithNothingYetStillHasADetailLine(state: DownloadRow.State, line: String) {
+        #expect(Self.row(state: state).detailLine == line)
+    }
+
     private static func row(state: DownloadRow.State) -> DownloadRow {
         DownloadRow(
             id: DownloadID(), state: state, fileName: "file.zip", sourceURL: URL(string: "https://example.com/file.zip")!,

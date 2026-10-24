@@ -9,6 +9,7 @@ struct LibraryWindow: View {
 
     let model: AppModel
     @FocusState private var isFocused: Bool
+    @FocusState private var isSearching: Bool
     @State private var selection: DownloadID?
     @State private var confirmation: Confirmation?
     @State private var quickLookFile: URL?
@@ -38,6 +39,7 @@ struct LibraryWindow: View {
                 .navigationTitle(filter.title)
                 .navigationSubtitle(view.summary)
                 .searchable(text: $search, placement: .toolbar, prompt: "Search downloads")
+                .modifier(SearchFocus(isFocused: $isSearching))
                 .toolbar { toolbar }
                 .inspector(isPresented: $showsInspector) {
                     InspectorView(row: selectedRow, actions: actions)
@@ -68,6 +70,7 @@ struct LibraryWindow: View {
         .sheet(item: Bindable(model).newDownload) { sheet in
             NewDownloadSheet(sheet: sheet) { model.add($0) }
         }
+        .focusedSceneValue(\.findInLibrary, FindInLibrary { isSearching = true })
         .focusedSceneValue(\.selectedDownload, selectedRow.map {
             SelectedDownload(row: $0, actions: actions, quickLook: { quickLookFile = $0.finishedFile })
         })
@@ -192,6 +195,40 @@ extension LibraryFilter {
         case .queued: "No queued downloads"
         case .failed: "No failed downloads"
         case .completed: "No completed downloads"
+        }
+    }
+}
+
+/// Moves focus to the toolbar's search field. SwiftUI can do that only from macOS 15.
+private struct SearchFocus: ViewModifier {
+    var isFocused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.searchFocused(isFocused)
+        } else {
+            content
+        }
+    }
+}
+
+struct FindInLibrary {
+    let focusSearch: () -> Void
+}
+
+extension FocusedValues {
+    @Entry var findInLibrary: FindInLibrary?
+}
+
+/// Edit › Find (⌘F) focuses the library window's search field.
+struct FindCommands: Commands {
+    @FocusedValue(\.findInLibrary) private var find
+
+    var body: some Commands {
+        CommandGroup(after: .textEditing) {
+            Button("Find…") { find?.focusSearch() }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(find == nil)
         }
     }
 }

@@ -13,6 +13,7 @@ struct DowlioApp: App {
         .commands {
             NewDownloadCommands(model: model)
             DownloadCommands(model: model)
+            FindCommands()
             InspectorCommands()
         }
 

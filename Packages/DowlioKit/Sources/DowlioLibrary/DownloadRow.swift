@@ -151,9 +151,16 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         return "\(DurationText.string(timeRemaining)) left"
     }
 
+    /// Never empty, so a row is as tall when it appears as it is later.
     private var progressText: String {
         if let totalBytes { return "\(ByteText.string(receivedBytes)) of \(ByteText.string(totalBytes))" }
-        return receivedBytes > 0 ? ByteText.string(receivedBytes) : ""
+        if receivedBytes > 0 { return ByteText.string(receivedBytes) }
+        return switch state {
+        case .queued: "Waiting for a free slot"
+        case .paused: "Not started"
+        case .retrying: "Waiting to try again"
+        case .downloading, .failed, .completed: "Starting…"
+        }
     }
 }
 
