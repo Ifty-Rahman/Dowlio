@@ -41,14 +41,17 @@ struct DetailWindow: View {
             Table(row.segments.enumerated().map { SegmentLine(number: $0.offset + 1, segment: $0.element) }) {
                 TableColumn("Segment") { Text("\($0.number)").monospacedDigit() }
                     .width(min: 60, ideal: 70)
-                TableColumn("Range") { line in
-                    Text("\(ByteText.string(line.segment.start)) – \(ByteText.string(line.segment.end + 1))").monospacedDigit()
+                TableColumn("Starts at") { line in
+                    Text(ByteText.string(line.segment.start)).monospacedDigit()
+                }
+                TableColumn("Size") { line in
+                    Text(ByteText.string(line.size)).monospacedDigit()
                 }
                 TableColumn("Received") { line in
                     Text(ByteText.string(line.segment.receivedBytes)).monospacedDigit()
                 }
                 TableColumn("Connection") { line in
-                    Text(line.segment.isActive ? "Active" : "Idle").foregroundStyle(line.segment.isActive ? .primary : .secondary)
+                    Text(line.status).foregroundStyle(line.segment.isActive ? .primary : .secondary)
                 }
             }
         }
@@ -79,6 +82,11 @@ struct DetailWindow: View {
         let number: Int
         let segment: SegmentProgress
         var id: Int { number }
+        var size: Int64 { segment.end - segment.start + 1 }
+        var status: String {
+            if segment.isActive { return "Active" }
+            return segment.receivedBytes >= size ? "Done" : "Waiting"
+        }
     }
 
     private func sample() async {

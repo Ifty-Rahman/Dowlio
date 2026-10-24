@@ -26,7 +26,7 @@ struct RowActions {
     let confirm: (Confirmation) -> Void
 
     func pause(_ row: DownloadRow) {
-        if row.canResume || row.receivedBytes == 0 { model.pause(row) } else { confirm(.pauseStartsOver(row)) }
+        if row.pauseStartsOver { confirm(.pauseStartsOver(row)) } else { model.pause(row) }
     }
 
     func resume(_ row: DownloadRow) { model.resume(row) }
@@ -34,11 +34,15 @@ struct RowActions {
     func showInFinder(_ row: DownloadRow) { model.showInFinder(row) }
     func open(_ row: DownloadRow) { model.open(row) }
     func copyLink(_ row: DownloadRow) { model.copyLink(row) }
-    func cancel(_ row: DownloadRow) { confirm(.cancel(row)) }
+    func cancel(_ row: DownloadRow) {
+        if row.hasBytesAtStake { confirm(.cancel(row)) } else { model.cancel(row) }
+    }
+
+    func clearCompleted() { model.clearCompleted() }
     func moveToTrash(_ row: DownloadRow) { confirm(.moveToTrash(row)) }
 
     func removeFromList(_ row: DownloadRow) {
-        if row.state == .completed || row.receivedBytes == 0 { model.removeFromList(row) } else { confirm(.removePartial(row)) }
+        if row.hasBytesAtStake { confirm(.removePartial(row)) } else { model.removeFromList(row) }
     }
 
     func carryOut(_ confirmation: Confirmation) {
@@ -48,20 +52,6 @@ struct RowActions {
         case .moveToTrash(let row): model.moveToTrash(row)
         }
     }
-}
-
-extension DownloadRow {
-    var canPause: Bool {
-        switch state {
-        case .downloading, .retrying, .queued: true
-        case .paused, .failed, .completed: false
-        }
-    }
-
-    var canCancel: Bool { state != .completed }
-
-    /// Remove from List asks first when it would delete bytes downloaded so far.
-    var removeAsksFirst: Bool { state != .completed && receivedBytes > 0 }
 }
 
 extension Confirmation {
@@ -78,7 +68,7 @@ extension Confirmation {
         switch self {
         case .pauseStartsOver: ""
         case .cancel(let row), .removePartial(let row):
-            row.receivedBytes > 0 ? "The \(ByteText.string(row.receivedBytes)) downloaded so far will be deleted." : ""
+            "The \(ByteText.string(row.receivedBytes)) downloaded so far will be deleted."
         case .moveToTrash: "You can put it back from the Trash."
         }
     }
@@ -101,7 +91,6 @@ extension Confirmation {
     }
 }
 
-/// The context menu and Download menu items for one download.
 struct RowMenuItems: View {
     let row: DownloadRow
     let actions: RowActions
@@ -128,11 +117,13 @@ struct RowMenuItems: View {
         if row.canCancel {
             Button("Cancel Download…", role: .destructive) { actions.cancel(row) }
         }
-        Button(row.removeAsksFirst ? "Remove from List…" : "Remove from List") { actions.removeFromList(row) }
+        Button(row.hasBytesAtStake ? "Remove from List…" : "Remove from List") { actions.removeFromList(row) }
             .keyboardShortcut(.delete, modifiers: .command)
         Button("Move to Trash…", role: .destructive) { actions.moveToTrash(row) }
             .keyboardShortcut(.delete, modifiers: [.command, .shift])
             .disabled(row.finishedFile == nil)
+        Divider()
+        Button("Clear Completed") { actions.clearCompleted() }
     }
 }
 

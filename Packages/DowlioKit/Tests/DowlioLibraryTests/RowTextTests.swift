@@ -100,6 +100,42 @@ struct RowTextTests {
         #expect(row.fractionDone == 1)
     }
 
+    @Test(arguments: [
+        (DownloadRow.State.downloading, Int64(500), false, true),
+        (.downloading, 500, true, false),
+        (.downloading, 0, false, false),
+        (.retrying(attempt: 1, nextTry: Date()), 500, false, true),
+        (.paused, 500, false, false),
+    ])
+    func pausingAsksFirstOnlyWhenItWouldStartTheFileOver(state: DownloadRow.State, received: Int64, canResume: Bool, asks: Bool) {
+        var row = Self.row(state: state)
+        row.receivedBytes = received
+        row.canResume = canResume
+        #expect(row.pauseStartsOver == asks)
+    }
+
+    @Test(arguments: [
+        (DownloadRow.State.downloading, Int64(500), true),
+        (.paused, 500, true),
+        (.failed(.tooManyRetries), 500, true),
+        (.paused, 0, false),
+        (.queued, 0, false),
+        (.completed, 500, false),
+    ])
+    func cancelAndRemoveAskFirstOnlyWhenBytesWouldBeLost(state: DownloadRow.State, received: Int64, asks: Bool) {
+        var row = Self.row(state: state)
+        row.receivedBytes = received
+        #expect(row.hasBytesAtStake == asks)
+    }
+
+    @Test func onlyRunningDownloadsPauseAndOnlyUnfinishedOnesCancel() {
+        #expect(Self.row(state: .downloading).canPause)
+        #expect(Self.row(state: .queued).canPause)
+        #expect(!Self.row(state: .paused).canPause)
+        #expect(Self.row(state: .paused).canCancel)
+        #expect(!Self.row(state: .completed).canCancel)
+    }
+
     private static func row(state: DownloadRow.State) -> DownloadRow {
         DownloadRow(
             id: DownloadID(), state: state, fileName: "file.zip", sourceURL: URL(string: "https://example.com/file.zip")!,

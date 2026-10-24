@@ -85,6 +85,21 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         return min(Double(receivedBytes) / Double(totalBytes), 1)
     }
 
+    public var canPause: Bool {
+        switch state {
+        case .downloading, .retrying, .queued: true
+        case .paused, .failed, .completed: false
+        }
+    }
+
+    public var canCancel: Bool { state != .completed }
+
+    /// Cancel and Remove from List would delete bytes downloaded so far, so they ask first.
+    public var hasBytesAtStake: Bool { state != .completed && receivedBytes > 0 }
+
+    /// The server can't resume, so pausing throws away the bytes so far and asks first.
+    public var pauseStartsOver: Bool { canPause && !canResume && receivedBytes > 0 }
+
     /// The extension in capitals, for the file-type badge. Empty when the name has none.
     public var badge: String {
         (fileName as NSString).pathExtension.uppercased()

@@ -26,6 +26,7 @@ enum DowlioDesign {
         static var detail: Font { .callout }
         static var caption: Font { .caption.weight(.semibold) }
         static var detailMetric: Font { detail.monospacedDigit() }
+        static var heroMetric: Font { .largeTitle.weight(.bold).monospacedDigit() }
     }
 
     /// Dowlio Blue, whatever the system accent is. For brand art; controls use `Color.accentColor`.

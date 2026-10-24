@@ -14,7 +14,7 @@ struct InspectorView: View {
                 VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
                     VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                         Text(percentText(row))
-                            .font(.largeTitle.weight(.bold).monospacedDigit())
+                            .font(DowlioDesign.TypeRole.heroMetric)
                         Label(row.stateWord, systemImage: row.state.symbolName)
                             .font(DowlioDesign.TypeRole.caption)
                             .foregroundStyle(row.state.tone)

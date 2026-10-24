@@ -28,6 +28,11 @@ struct LibraryWindow: View {
             .focused($isFocused)
             .focusEffectDisabled()
             .onAppear { isFocused = true }
+            .onKeyPress(.space) {
+                guard let file = selectedRow?.finishedFile else { return .ignored }
+                quickLookFile = quickLookFile == nil ? file : nil
+                return .handled
+            }
             .onPasteCommand(of: [.url, .plainText]) { _ in
                 let pasteboard = NSPasteboard.general
                 if let text = pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) {
@@ -80,11 +85,7 @@ struct LibraryWindow: View {
             } primaryAction: { ids in
                 for id in ids { openWindow(id: DetailWindow.sceneID, value: id) }
             }
-            .onKeyPress(.space) {
-                guard let file = selectedRow?.finishedFile else { return .ignored }
-                quickLookFile = quickLookFile == nil ? file : nil
-                return .handled
-            }
+
         }
     }
 
