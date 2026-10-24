@@ -4,12 +4,13 @@ import Foundation
 
 /// The `.dowlio` package that holds an unfinished download, next to its destination.
 final class PartialFile: @unchecked Sendable {
-    // @unchecked: one download writes to it from one task at a time.
+    // @unchecked: `isClosed` and every use of `handle` are only read or written under `lock`.
 
     static let fileExtension = "dowlio"
 
     let packageURL: URL
     private let dataURL: URL
+    private let lock = NSLock()
     private let handle: FileHandle
     private var isClosed = false
 
@@ -56,45 +57,47 @@ final class PartialFile: @unchecked Sendable {
     /// starts (architecture.md, files on disk). Throws `DownloadError.notEnoughSpace` if the volume
     /// can't hold it.
     func reserve(bytes: Int64) throws {
-        var store = fstore_t(
-            fst_flags: UInt32(F_ALLOCATEALL),
-            fst_posmode: Int32(F_PEOFPOSMODE),
-            fst_offset: 0,
-            fst_length: off_t(bytes),
-            fst_bytesalloc: 0
-        )
-        guard fcntl(handle.fileDescriptor, F_PREALLOCATE, &store) != -1 else {
-            let code = errno
-            if code == ENOSPC { throw DownloadError.notEnoughSpace }
-            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        try withOpenHandle { handle in
+            var store = fstore_t(
+                fst_flags: UInt32(F_ALLOCATEALL),
+                fst_posmode: Int32(F_PEOFPOSMODE),
+                fst_offset: 0,
+                fst_length: off_t(bytes),
+                fst_bytesalloc: 0
+            )
+            guard fcntl(handle.fileDescriptor, F_PREALLOCATE, &store) != -1 else {
+                let code = errno
+                if code == ENOSPC { throw DownloadError.notEnoughSpace }
+                throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+            }
         }
     }
 
     /// Flushes the data file to disk, then writes `manifest` atomically. The caller takes the
     /// manifest's counts before calling, so the saved counts never lead the bytes on disk.
     func saveManifest(_ manifest: PartialFileManifest) throws {
-        guard !isClosed else { return }
-        try handle.synchronize()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: packageURL.appending(path: "manifest.json"), options: .atomic)
+        try lock.withLock {
+            guard !isClosed else { return }
+            try handle.synchronize()
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(manifest).write(to: packageURL.appending(path: "manifest.json"), options: .atomic)
+        }
     }
 
     func append(_ data: Data) throws {
-        try handle.write(contentsOf: data)
+        try withOpenHandle { try $0.write(contentsOf: data) }
     }
 
     /// Empties the data file, so a download from a server that can't resume starts over.
     func discardData() throws {
-        try handle.truncate(atOffset: 0)
+        try withOpenHandle { try $0.truncate(atOffset: 0) }
     }
-
-    private let writeLock = NSLock()
 
     /// Writes `data` at `offset` in the data file. Segments call this from several connections,
     /// and the lock makes it the one serial writer the spec asks for.
     func write(_ data: Data, at offset: Int64) throws {
-        try writeLock.withLock {
+        try withOpenHandle { handle in
             try data.withUnsafeBytes { buffer in
                 var done = 0
                 while done < buffer.count {
@@ -125,13 +128,23 @@ final class PartialFile: @unchecked Sendable {
     /// package and returns the name the finished file got. If `fileName` is taken, `policy` decides.
     /// The data file stays open until it's in place, so a download whose move failed can retry.
     func finish(named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL) throws -> Finished {
-        try handle.synchronize()
-        try markAsDownloaded(from: source)
-        let finished = try moveIntoPlace(named: fileName, in: folder, policy: policy)
-        try? handle.close()
-        isClosed = true
-        try FileManager.default.removeItem(at: packageURL)
-        return finished
+        try withOpenHandle { handle in
+            try handle.synchronize()
+            try markAsDownloaded(from: source)
+            let finished = try moveIntoPlace(named: fileName, in: folder, policy: policy)
+            try? handle.close()
+            isClosed = true
+            try FileManager.default.removeItem(at: packageURL)
+            return finished
+        }
+    }
+
+    /// Runs `body` under `lock` with the data file's handle. Throws once the file is finished.
+    private func withOpenHandle<T>(_ body: (FileHandle) throws -> T) throws -> T {
+        try lock.withLock {
+            guard !isClosed else { throw POSIXError(.EBADF) }
+            return try body(handle)
+        }
     }
 
     private func moveIntoPlace(named fileName: String, in folder: URL, policy: NameConflictPolicy) throws -> Finished {
