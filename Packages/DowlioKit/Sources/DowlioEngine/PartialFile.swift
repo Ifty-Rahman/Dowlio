@@ -123,18 +123,23 @@ final class PartialFile: @unchecked Sendable {
 
     /// Flushes the data, moves it into `folder` as `fileName` in one atomic rename, deletes the
     /// package and returns the name the finished file got. If `fileName` is taken, `policy` decides.
+    /// The data file stays open until it's in place, so a download whose move failed can retry.
     func finish(named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL) throws -> Finished {
         try handle.synchronize()
-        try handle.close()
-        isClosed = true
         try markAsDownloaded(from: source)
+        let finished = try moveIntoPlace(named: fileName, in: folder, policy: policy)
+        try? handle.close()
+        isClosed = true
+        try FileManager.default.removeItem(at: packageURL)
+        return finished
+    }
 
+    private func moveIntoPlace(named fileName: String, in folder: URL, policy: NameConflictPolicy) throws -> Finished {
         if policy == .replace {
             // A plain rename replaces an existing file atomically.
             guard rename(dataURL.path, folder.appending(path: fileName).path) == 0 else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
-            try FileManager.default.removeItem(at: packageURL)
             return Finished(name: fileName, wasSkipped: false)
         }
 
@@ -143,15 +148,11 @@ final class PartialFile: @unchecked Sendable {
             let name = number == 1 ? fileName : Self.numbered(fileName, number)
             // RENAME_EXCL makes the rename fail instead of replacing an existing file, atomically.
             if renamex_np(dataURL.path, folder.appending(path: name).path, UInt32(RENAME_EXCL)) == 0 {
-                try FileManager.default.removeItem(at: packageURL)
                 return Finished(name: name, wasSkipped: false)
             }
             let code = errno
             guard code == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
-            if policy == .skip {
-                try FileManager.default.removeItem(at: packageURL)
-                return Finished(name: fileName, wasSkipped: true)
-            }
+            if policy == .skip { return Finished(name: fileName, wasSkipped: true) }
             number += 1
         }
     }

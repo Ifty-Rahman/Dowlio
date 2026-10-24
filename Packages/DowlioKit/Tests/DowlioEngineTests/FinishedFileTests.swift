@@ -181,6 +181,32 @@ struct FinishedFileTests {
         #expect(quarantine[kLSQuarantineAgentNameKey as String] as? String == "Dowlio")
     }
 
+    @Test func aDownloadWhoseFileCantBeMovedInFailsAndRetryFinishesIt() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 512 * 1024, seed: 91)
+        server.serve(.init(data: data, holdAfterBytes: 64 * 1024, eTag: "\"m1\""), at: "/notes.zip")
+        let folder = try TestFiles.makeFolder()
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+
+        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let id = await engine.add(url: server.url(for: "/notes.zip"), to: folder)
+        _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
+        // The partial file stays writable, but the folder can't take the finished file.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+        server.releaseHeldResponses()
+        let failed = try await engine.completedOrFailed(id)
+        #expect(failed.state.isFailed)
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "notes.zip").path))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        await engine.retry(id)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "notes.zip")) == TestFiles.sha256(data))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["notes.zip"])
+    }
+
     @Test func aPlainHTTPDownloadIsMarkedNotSecure() async throws {
         let folder = try TestFiles.makeFolder()
 
