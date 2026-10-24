@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The sidebar's frosted material, behind a whole window, so the desktop shows softly through
-/// every part of it. It dims like a sidebar does when the window isn't active.
 private struct WindowGlass: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()

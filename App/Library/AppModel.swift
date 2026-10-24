@@ -82,7 +82,6 @@ final class AppModel {
         }
     }
 
-    /// "Sort into category folders", set in Settings › Downloads. Off by default.
     static let sortsIntoCategoryFoldersKey = "sortsIntoCategoryFolders"
 
     func add(_ draft: NewDownloadDraft) {

@@ -2,15 +2,16 @@ import DowlioCore
 import DowlioLibrary
 import SwiftUI
 
-/// The library's rows in a plain scrolling stack. `List` sits on a table that keeps each row's
-/// first measured height, so rows added while the list was busy could stay squashed. Here every
-/// row is measured each time it's drawn.
+/// Not a `List`: its table keeps each row's first measured height, so rows added while it was
+/// busy could stay squashed.
 struct DownloadList: View {
     let rows: [DownloadRow]
     @Binding var selection: DownloadID?
     let actions: RowActions
     let quickLook: (DownloadRow) -> Void
     let open: (DownloadRow) -> Void
+    /// Clicking a row takes focus back from the search field, so ↑, ↓ and Space reach the list.
+    let focusList: () -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -18,7 +19,7 @@ struct DownloadList: View {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         if index > 0 {
-                            Divider().padding(.leading, DowlioDesign.Spacing.md + 44 + DowlioDesign.Spacing.md)
+                            Divider().padding(.leading, DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.xxl)
                         }
                         line(row)
                     }
@@ -37,20 +38,20 @@ struct DownloadList: View {
         return DownloadRowView(row: row, actions: actions)
             .padding(.horizontal, DowlioDesign.Spacing.md)
             .padding(.vertical, DowlioDesign.Spacing.xs)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested)
-                        .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
-                }
-            }
+            .selectionBackground(isSelected)
             .contentShape(Rectangle())
-            .onTapGesture { selection = row.id }
+            .onTapGesture {
+                selection = row.id
+                focusList()
+            }
             .simultaneousGesture(TapGesture(count: 2).onEnded { open(row) })
             .contextMenu {
                 RowMenuItems(row: row, actions: actions, quickLook: quickLook)
                     .onAppear { selection = row.id }
             }
             .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityAction { selection = row.id }
+            .accessibilityAction(named: "Show Details") { open(row) }
             .id(row.id)
     }
 }

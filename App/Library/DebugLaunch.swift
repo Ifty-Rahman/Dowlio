@@ -6,7 +6,6 @@ enum DebugLaunch {
     static var supportFolder: URL? { folder("DOWLIO_DEBUG_SUPPORT_FOLDER") }
     static var downloadsFolder: URL? { folder("DOWLIO_DEBUG_DOWNLOADS_FOLDER") }
 
-    /// Hands over `DOWLIO_DEBUG_ADD_LINKS` two seconds after launch, as if the user added them.
     @MainActor
     static func addLinks(_ add: @escaping @MainActor (String) -> Void) {
         #if DEBUG
@@ -18,8 +17,6 @@ enum DebugLaunch {
         #endif
     }
 
-    /// Opens the New Download sheet with `DOWLIO_DEBUG_SHEET_LINKS` six seconds after launch, then
-    /// presses Download two seconds later.
     @MainActor
     static func useSheet(open: @escaping @MainActor (String) -> Void, download: @escaping @MainActor () -> Void) {
         #if DEBUG
@@ -33,10 +30,18 @@ enum DebugLaunch {
         #endif
     }
 
+    /// Whether any debug switch is set, so release builds skip the launch-time checks entirely.
+    static var isOn: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment.keys.contains { $0.hasPrefix("DOWLIO_DEBUG_") }
+        #else
+        false
+        #endif
+    }
+
     static var showsInspector: Bool { flag("DOWLIO_DEBUG_SHOW_INSPECTOR") }
     static var togglesSidebar: Bool { flag("DOWLIO_DEBUG_TOGGLE_SIDEBAR") }
 
-    /// Sets the library window's width from `DOWLIO_DEBUG_WINDOW_WIDTH`, as a drag would.
     @MainActor
     static func applyWindowWidth() {
         #if DEBUG

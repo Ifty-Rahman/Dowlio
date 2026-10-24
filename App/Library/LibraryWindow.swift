@@ -69,6 +69,7 @@ struct LibraryWindow: View {
             model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
         }
         .task {
+            guard DebugLaunch.isOn else { return }
             try? await Task.sleep(for: .seconds(1))
             DebugLaunch.applyWindowWidth()
             if DebugLaunch.showsInspector { togglePanel($showsInspector) }
@@ -95,7 +96,7 @@ struct LibraryWindow: View {
         .sheet(item: Bindable(model).newDownload) { sheet in
             NewDownloadSheet(sheet: sheet) { model.add($0) }
         }
-        .focusedSceneValue(\.findInLibrary, FindInLibrary { isSearching = true })
+        .focusedSceneValue(\.findInLibrary, SearchFocus.isAvailable ? FindInLibrary { isSearching = true } : nil)
         .focusedSceneValue(\.selectedDownload, selectedRow.map {
             SelectedDownload(row: $0, actions: actions, quickLook: { quickLookFile = $0.finishedFile })
         })
@@ -153,9 +154,12 @@ struct LibraryWindow: View {
                 ContentUnavailableView.search(text: search)
             }
         } else {
-            DownloadList(rows: view.rows, selection: $selection, actions: actions) { quickLookFile = $0.finishedFile } open: {
-                openWindow(id: DetailWindow.sceneID, value: $0.id)
-            }
+            DownloadList(
+                rows: view.rows, selection: $selection, actions: actions,
+                quickLook: { quickLookFile = $0.finishedFile },
+                open: { openWindow(id: DetailWindow.sceneID, value: $0.id) },
+                focusList: { isFocused = true }
+            )
         }
     }
 
@@ -194,8 +198,8 @@ struct LibraryWindow: View {
     }
 }
 
-/// Plain rows in a scroll view, styled like a macOS sidebar. A sidebar `List` gets special
-/// treatment next to the title bar, which made the toolbar redraw while the sidebar slid away.
+/// Not a sidebar `List`: macOS treats one specially next to the title bar, which made the toolbar
+/// redraw while the sidebar slid away.
 private struct LibrarySidebar: View {
     let view: LibraryView
     @Binding var selection: LibrarySelection
@@ -203,7 +207,7 @@ private struct LibrarySidebar: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 heading("Library")
                 ForEach(LibraryFilter.allCases, id: \.self) { filter in
                     item(.filter(filter), count: view.counts[filter] ?? 0)
@@ -236,16 +240,17 @@ private struct LibrarySidebar: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, DowlioDesign.Spacing.sm)
             .padding(.bottom, DowlioDesign.Spacing.xs)
+            .accessibilityAddTraits(.isHeader)
     }
 
-    private func item(_ filter: LibrarySelection, count: Int) -> some View {
-        let isSelected = selection == filter
-        return Button { selection = filter } label: {
+    private func item(_ choice: LibrarySelection, count: Int) -> some View {
+        let isSelected = selection == choice
+        return Button { selection = choice } label: {
             HStack(spacing: DowlioDesign.Spacing.sm) {
-                Image(systemName: filter.symbolName)
+                Image(systemName: choice.symbolName)
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 20)
-                Text(filter.title)
+                    .frame(width: DowlioDesign.Spacing.xl)
+                Text(choice.title)
                     .fontWeight(isSelected ? .semibold : .regular)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -258,16 +263,11 @@ private struct LibrarySidebar: View {
             .padding(.horizontal, DowlioDesign.Spacing.sm)
             .padding(.vertical, DowlioDesign.Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested)
-                        .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
-                }
-            }
+            .selectionBackground(isSelected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(count > 0 ? "\(filter.title), \(count)" : filter.title)
+        .accessibilityLabel(count > 0 ? "\(choice.title), \(count)" : choice.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -295,7 +295,7 @@ extension LibrarySelection {
     var emptyText: String {
         switch self {
         case .filter(let filter): filter.emptyText
-        case .category(let category): "No \(category.folderName.lowercased()) yet"
+        case .category(let category): "Nothing in \(category.folderName) yet"
         }
     }
 }
@@ -336,9 +336,13 @@ extension LibraryFilter {
     }
 }
 
-/// Moves focus to the toolbar's search field. SwiftUI can do that only from macOS 15.
+/// SwiftUI can move focus to the search field only from macOS 15, so ⌘F is off before that.
 private struct SearchFocus: ViewModifier {
     var isFocused: FocusState<Bool>.Binding
+
+    static var isAvailable: Bool {
+        if #available(macOS 15, *) { true } else { false }
+    }
 
     func body(content: Content) -> some View {
         if #available(macOS 15, *) {
@@ -357,7 +361,6 @@ extension FocusedValues {
     @Entry var findInLibrary: FindInLibrary?
 }
 
-/// Edit › Find (⌘F) focuses the library window's search field.
 struct FindCommands: Commands {
     @FocusedValue(\.findInLibrary) private var find
 
@@ -381,7 +384,6 @@ extension FocusedValues {
     @Entry var panelToggles: PanelToggles?
 }
 
-/// View › Show Sidebar (⌃⌘S) and Show Inspector (⌃⌘I).
 struct PanelCommands: Commands {
     @FocusedValue(\.panelToggles) private var panels
 
