@@ -89,6 +89,11 @@ struct DownloadRun: Sendable {
         }
     }
 
+    /// The connection setting, clamped to 1 to 16.
+    var connectionSetting: Int {
+        min(max(options.connections, 1), SegmentPlanner.maximumConnections)
+    }
+
     func adopt(_ plan: DownloadPlan) {
         partialFile.url = plan.partial.packageURL
         planStore.store(plan, probeConnection: nil)

@@ -38,8 +38,9 @@ extension DownloadRun {
 
     private func lowerLimit(of host: URL) {
         guard let key = host.hostLimitKey else { return }
-        let connections = options.connections
-        configuration.hostLimits.updateLimit(for: key) { SegmentPlanner.lowered($0 ?? connections) }
+        let setting = connectionSetting
+        let used = planStore.plan.map { min(max($0.segments.count, 1), setting) } ?? setting
+        configuration.hostLimits.updateLimit(for: key) { SegmentPlanner.lowered($0 ?? used) }
     }
 
     private func publishRetryState() async {

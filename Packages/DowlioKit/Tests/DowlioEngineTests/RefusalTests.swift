@@ -120,6 +120,27 @@ struct RefusalTests {
         #expect(limits.limit(for: Self.host(of: server)) == learned)
     }
 
+    /// 3 MiB plans three segments, so a download set to 8 connections uses three, and a reset
+    /// lowers the host's limit from those three.
+    @Test func aRefusalLowersTheLimitFromTheConnectionsTheDownloadUses() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 3 * 1024 * 1024, seed: 54)
+        server.serve(.init(data: data, dropFirst: .init(afterBytes: 64 * 1024, count: 1)), at: "/small.bin")
+        let folder = try TestFiles.makeFolder()
+        let limits = InMemoryHostLimitStore()
+        var configuration = EngineConfiguration.fast
+        configuration.hostLimits = limits
+
+        let engine = DownloadEngine(configuration: configuration)
+        var options = RequestOptions()
+        options.connections = 8
+        let id = await engine.add(url: server.url(for: "/small.bin"), to: folder, options: options)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(limits.limit(for: Self.host(of: server)) == 2)
+    }
+
     /// Downloads a file whose server behaves as `file` describes, and checks that it completes
     /// with the served bytes, the last request asking for the whole file without a range.
     private func downloadFallsBackToOneConnection(_ file: TestServer.File, name: String) async throws -> TestServer {
