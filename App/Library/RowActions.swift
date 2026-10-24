@@ -139,10 +139,18 @@ extension FocusedValues {
 
 /// The Download menu, acting on the selected download in the library window.
 struct DownloadCommands: Commands {
+    let model: AppModel
     @FocusedValue(\.selectedDownload) private var selected
 
     var body: some Commands {
         CommandMenu("Download") {
+            let library = LibraryView(rows: model.rows, filter: .all, search: "")
+            Button("Pause All") { model.pauseAll() }
+                .keyboardShortcut("p", modifiers: [.option, .command])
+                .disabled(!library.canPauseAll)
+            Button("Resume All") { model.resumeAll() }
+                .disabled(!library.canResumeAll)
+            Divider()
             if let selected {
                 RowMenuItems(row: selected.row, actions: selected.actions, quickLook: selected.quickLook)
             } else {

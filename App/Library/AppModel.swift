@@ -19,6 +19,8 @@ final class AppModel {
     var openLibraryWindow: (() -> Void)?
 
     let downloadsFolder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    /// Free space on the download folder's disk, for the sidebar footer.
+    private(set) var freeSpace: Int64?
 
     private let library: Library?
 
@@ -38,7 +40,16 @@ final class AppModel {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.perform { await $0.checkFinishedFiles() } }
+            MainActor.assumeIsolated {
+                self?.perform { await $0.checkFinishedFiles() }
+                self?.measureFreeSpace()
+            }
+        }
+        Task { [weak self] in
+            while !Task.isCancelled {
+                self?.measureFreeSpace()
+                try? await Task.sleep(for: .seconds(30))
+            }
         }
     }
 
@@ -74,6 +85,13 @@ final class AppModel {
     func cancel(_ row: DownloadRow) { perform { await $0.cancel(row.id) } }
     func removeFromList(_ row: DownloadRow) { perform { await $0.removeFromList(row.id) } }
     func clearCompleted() { perform { await $0.clearCompleted() } }
+    func pauseAll() { perform { await $0.pauseAll() } }
+    func resumeAll() { perform { await $0.resumeAll() } }
+
+    private func measureFreeSpace() {
+        let values = try? downloadsFolder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        freeSpace = values?.volumeAvailableCapacityForImportantUsage
+    }
 
     func moveToTrash(_ row: DownloadRow) {
         perform { [weak self] library in

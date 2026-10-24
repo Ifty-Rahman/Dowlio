@@ -21,6 +21,7 @@ public actor Library {
     private var observers: [UUID: AsyncStream<[DownloadRow]>.Continuation] = [:]
     private var published: [DownloadRow]?
     private var following: Task<Void, Never>?
+    private var maximumActive = 3
 
     public init(
         engine: DownloadEngine,
@@ -85,34 +86,93 @@ public actor Library {
         let id = DownloadID()
         let record = StoredDownload(
             id: id.rawValue, sourceURL: url, destination: destination, options: options,
-            state: startImmediately ? .downloading : .paused, addedAt: now()
+            state: .paused, addedAt: now()
         )
         records[id] = record
         save(record)
         if !options.cookies.isEmpty { waitingCookies[id] = options.cookies }
         publish()
-        if startImmediately { await startInEngine(id) }
+        if startImmediately { await runOrQueue(id) }
         return id
     }
 
-    public func pause(_ id: DownloadID) async {
-        guard inEngine.contains(id) else { return }
-        await engine.pause(id)
+    /// How many downloads run at once. The rest wait Queued, oldest first. Raising it starts
+    /// waiting downloads at once. Lowering it lets running downloads finish.
+    public func setMaximumActive(_ limit: Int) async {
+        maximumActive = max(limit, 1)
+        await fillSlots()
     }
 
-    /// Continues a Paused download. One that never reached the engine, or whose partial file is
-    /// gone, starts from its link.
-    public func resume(_ id: DownloadID) async {
-        guard let record = records[id] else { return }
-        if inEngine.contains(id) {
-            await engine.resume(id)
-        } else if record.state == .paused || record.state == .queued {
-            await startInEngine(id)
+    /// Stops a download, or takes a Queued one off the queue.
+    public func pause(_ id: DownloadID) async {
+        guard var record = records[id] else { return }
+        if record.state == .queued {
+            record.state = .paused
+            records[id] = record
+            save(record)
+            publish()
+        } else if inEngine.contains(id) {
+            await engine.pause(id)
         }
     }
 
+    /// Continues a Paused download, or queues it when the limit is reached. One that never reached
+    /// the engine, or whose partial file is gone, starts from its link.
+    public func resume(_ id: DownloadID) async {
+        guard records[id]?.state == .paused else { return }
+        await runOrQueue(id)
+    }
+
+    /// Continues a Failed download, or queues it when the limit is reached.
     public func retry(_ id: DownloadID) async {
-        await engine.retry(id)
+        guard records[id]?.state == .failed else { return }
+        await runOrQueue(id)
+    }
+
+    /// Pauses every download that runs or waits. Failed downloads stay as they are.
+    public func pauseAll() async {
+        for (id, record) in records where record.state == .downloading || record.state == .queued {
+            await pause(id)
+        }
+    }
+
+    /// Resumes every Paused download, oldest first. Those beyond the limit wait Queued.
+    public func resumeAll() async {
+        let paused = records.values.filter { $0.state == .paused }.sorted { $0.addedAt < $1.addedAt }
+        for record in paused { await resume(DownloadID(rawValue: record.id)) }
+    }
+
+    private var activeCount: Int {
+        records.values.count { $0.state == .downloading }
+    }
+
+    private func runOrQueue(_ id: DownloadID) async {
+        guard var record = records[id] else { return }
+        guard activeCount < maximumActive else {
+            record.state = .queued
+            records[id] = record
+            save(record)
+            publish()
+            return
+        }
+        await run(id)
+    }
+
+    private func run(_ id: DownloadID) async {
+        guard inEngine.contains(id), var record = records[id] else { return await startInEngine(id) }
+        let failed = snapshots[id]?.state.isFailed ?? false
+        record.state = .downloading
+        records[id] = record
+        save(record)
+        publish()
+        if failed { await engine.retry(id) } else { await engine.resume(id) }
+    }
+
+    private func fillSlots() async {
+        while activeCount < maximumActive,
+              let next = records.values.filter({ $0.state == .queued }).min(by: { $0.addedAt < $1.addedAt }) {
+            await run(DownloadID(rawValue: next.id))
+        }
     }
 
     /// What `url` gives, without adding it. Throws `DownloadError`.
@@ -131,6 +191,7 @@ public actor Library {
         publish()
         await engine.cancel(id)
         if let package = record.partialFile { try? FileManager.default.removeItem(at: package) }
+        await fillSlots()
     }
 
     /// Takes the row off the list. A Completed download's file stays. Anything with a partial
@@ -209,7 +270,9 @@ public actor Library {
         }
         snapshots[id] = snapshot
 
-        let state = Self.storedState(for: snapshot.state)
+        let wasActive = record.state == .downloading
+        var state = Self.storedState(for: snapshot.state)
+        if record.state == .queued, state != .downloading, state != .completed { state = .queued }
         let changed = record.state != state || record.fileName != snapshot.fileName
             || record.folder != snapshot.destinationFolder || record.totalBytes != snapshot.totalBytes
             || record.wasSkipped != snapshot.wasSkipped || (record.partialFile == nil && state == .downloading)
@@ -233,6 +296,7 @@ public actor Library {
             save(record)
         }
         publish()
+        if wasActive, state != .downloading { await fillSlots() }
     }
 
     private static func storedState(for state: DownloadState) -> StoredDownload.State {
@@ -270,7 +334,7 @@ public actor Library {
         let live = snapshots[id]
         return DownloadRow(
             id: id,
-            state: live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state),
+            state: record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state),
             fileName: live?.fileName ?? record.fileName,
             sourceURL: record.sourceURL,
             host: live?.displayHost ?? record.displayHost,
