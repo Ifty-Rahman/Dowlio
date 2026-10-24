@@ -33,6 +33,9 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: Copyright © 2026 Dowlio contributors.
+        # Plain http:// downloads are allowed and marked "Not secure" (docs/adr/0003).
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio
