@@ -2,6 +2,14 @@ import DowlioCore
 import Foundation
 
 extension HTTPURLResponse {
+    /// The `Content-Type` header without its parameters, lowercased. Unlike `mimeType`, never a
+    /// type the URL loading system guessed.
+    var contentTypeHeader: String? {
+        value(forHTTPHeaderField: "Content-Type")
+            .flatMap { $0.split(separator: ";").first }
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+    }
+
     var knownLength: Int64? {
         expectedContentLength >= 0 ? expectedContentLength : nil
     }

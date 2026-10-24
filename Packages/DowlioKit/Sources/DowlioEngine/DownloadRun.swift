@@ -6,7 +6,7 @@ struct DownloadRun: Sendable {
 
     let id: DownloadID
     let url: URL
-    let folder: URL
+    let destination: Destination
     let options: RequestOptions
     let partialFile: PartialFileLocation
     let configuration: EngineConfiguration
@@ -20,7 +20,7 @@ struct DownloadRun: Sendable {
     init(
         id: DownloadID,
         url: URL,
-        folder: URL,
+        destination: Destination,
         options: RequestOptions,
         partialFile: PartialFileLocation,
         configuration: EngineConfiguration,
@@ -28,7 +28,7 @@ struct DownloadRun: Sendable {
     ) {
         self.id = id
         self.url = url
-        self.folder = folder
+        self.destination = destination
         self.options = options
         self.partialFile = partialFile
         self.configuration = configuration
@@ -118,15 +118,24 @@ struct DownloadRun: Sendable {
 
         let probed = try await probeWithRetries(url)
         let fileName = FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
+        let folder = destination.folder(forFileNamed: fileName, contentType: probed.probeResponse.contentTypeHeader)
         await changeSnapshot {
             $0.state = .downloading
             $0.fileName = fileName
+            $0.destinationFolder = folder
             $0.totalBytes = probed.totalBytes
             $0.isNotSecure = probed.finalURL.isPlainHTTP || url.isPlainHTTP
         }
 
         let plan: DownloadPlan
         do {
+            if folder != destination.root {
+                do {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                } catch {
+                    throw DownloadError.destinationNotWritable
+                }
+            }
             let partial = try PartialFile.create(for: fileName, in: folder)
             partialFile.url = partial.packageURL
             plan = try layOut(probed, fileName: fileName, in: partial)

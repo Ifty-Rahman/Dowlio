@@ -317,3 +317,32 @@ func recordStates(of id: DownloadID, in engine: DownloadEngine) async -> [Downlo
     }
     return states
 }
+
+extension RetryTests {
+    /// The retry setting is per download, so a change applies to downloads added or restored
+    /// afterwards.
+    @Test func aDownloadGivesUpAfterItsOwnNumberOfFailures() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 27)
+        server.serve(.init(data: data, eTag: "\"own1\"", dropFirst: .init(afterBytes: 128 * 1024, count: 5)), at: "/flaky.iso")
+        let folder = try TestFiles.makeFolder()
+
+        var options = RequestOptions()
+        options.connections = 1
+        options.maximumFailures = 2
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/flaky.iso"), to: folder, options: options)
+        let failed = try await engine.completedOrFailed(id)
+
+        #expect(failed.state == .failed(.tooManyRetries))
+        #expect(server.requests.count { $0.path == "/flaky.iso" && $0.headers["range"] != "bytes=0-0" } == 2)
+
+        let restoring = DownloadEngine(configuration: .fast)
+        let restored = try await restoring.restore(partialFile: TestFiles.partialFile(in: folder), maximumFailures: 3)
+        await restoring.resume(restored)
+        let failedAgain = try await restoring.completedOrFailed(restored)
+
+        #expect(failedAgain.state == .failed(.tooManyRetries))
+        #expect(server.requests.count { $0.path == "/flaky.iso" && $0.headers["range"] != "bytes=0-0" } == 5)
+    }
+}

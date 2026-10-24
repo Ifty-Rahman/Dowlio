@@ -30,7 +30,7 @@ public actor DownloadEngine {
 
     private var entries: [DownloadID: DownloadEntry] = [:]
     private var allObservers: [UUID: AsyncStream<DownloadSnapshot>.Continuation] = [:]
-    private let configuration: EngineConfiguration
+    let configuration: EngineConfiguration
 
     /// An engine whose learned host limits live in `hostLimits`. The default keeps them in memory.
     public init(hostLimits: any HostLimitStore = InMemoryHostLimitStore()) {
@@ -45,12 +45,17 @@ public actor DownloadEngine {
 
     /// Starts downloading `url` into `folder` and returns the new download's identifier.
     public func add(url: URL, to folder: URL, options: RequestOptions = RequestOptions()) -> DownloadID {
+        add(url: url, destination: .folder(folder), options: options)
+    }
+
+    /// Starts downloading `url` into `destination` and returns the new download's identifier.
+    public func add(url: URL, destination: Destination, options: RequestOptions = RequestOptions()) -> DownloadID {
         let id = DownloadID()
         let snapshot = DownloadSnapshot(
             id: id,
             state: .probing,
             fileName: FileNaming.name(for: url),
-            destinationFolder: folder,
+            destinationFolder: destination.root,
             isNotSecure: url.isPlainHTTP,
             displayHost: url.displayHost
         )
@@ -59,7 +64,8 @@ public actor DownloadEngine {
         publishToAll(snapshot)
 
         let run = DownloadRun(
-            id: id, url: url, folder: folder, options: options, partialFile: entry.partialFile, configuration: configuration
+            id: id, url: url, destination: destination, options: options, partialFile: entry.partialFile,
+            configuration: configuration
         ) { [weak self] change in
             await self?.update(id, change)
         }
@@ -154,7 +160,9 @@ public actor DownloadEngine {
     /// so Resume continues it. Returns the download's identifier. A partial file the engine already
     /// has returns that download. Throws `RestoreError`, and leaves the partial file alone, when its
     /// manifest is missing, unreadable or describes segments that don't fit the file.
-    public func restore(partialFile package: URL) throws -> DownloadID {
+    /// `maximumFailures` is the retry setting at the time of the restore, since the manifest doesn't
+    /// keep it.
+    public func restore(partialFile package: URL, maximumFailures: Int? = nil) throws -> DownloadID {
         let package = package.standardizedFileURL
         if let known = entries.first(where: { $0.value.partialFile.url?.standardizedFileURL == package }) {
             return known.key
@@ -171,6 +179,7 @@ public actor DownloadEngine {
         options.referrer = manifest.referrer
         options.userAgent = manifest.userAgent
         options.nameConflictPolicy = manifest.nameConflictPolicy ?? .keepBoth
+        options.maximumFailures = maximumFailures
 
         let segments = manifest.segments.map { ByteRange(start: $0.start, end: $0.end) }
         let plan = DownloadPlan(
@@ -199,7 +208,7 @@ public actor DownloadEngine {
         entries[id] = entry
         publishToAll(snapshot)
         let run = DownloadRun(
-            id: id, url: manifest.originalURL, folder: folder, options: options,
+            id: id, url: manifest.originalURL, destination: .folder(folder), options: options,
             partialFile: entry.partialFile, configuration: configuration
         ) { [weak self] change in
             await self?.update(id, change)
