@@ -38,9 +38,9 @@ public struct MenuBarSummary: Equatable, Sendable {
 
     public var canPauseAll: Bool { !running.isEmpty || !waiting.isEmpty }
 
-    /// How full the icon's ring is, or `nil` to hide it because nothing is downloading. Downloads
-    /// of unknown size don't count; with only those, the ring is full.
-    public var ringFraction: Double? {
+    /// How full the icon's progress bar is, or `nil` for the plain icon because nothing is
+    /// downloading. Downloads of unknown size don't count; with only those, the bar is full.
+    public var progressFraction: Double? {
         guard !running.isEmpty else { return nil }
         let sized = running.compactMap { row in row.totalBytes.map { (row.receivedBytes, $0) } }
         let total = sized.reduce(Int64(0)) { $0 + $1.1 }

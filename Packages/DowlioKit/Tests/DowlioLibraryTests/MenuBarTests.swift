@@ -17,7 +17,7 @@ struct MenuBarTests {
         #expect(summary.status == "2 downloading · 1 queued")
         #expect(summary.speedText == "2.00 MB/s")
         #expect(summary.active.map(\.fileName) == ["a.iso", "b.iso", "c.iso", "d.iso"])
-        #expect(summary.ringFraction == 0.125)
+        #expect(summary.progressFraction == 0.125)
     }
 
     @Test(arguments: [
@@ -30,9 +30,9 @@ struct MenuBarTests {
         #expect(MenuBarSummary(rows: rows).status == status)
     }
 
-    @Test func theRingIsOffWhenNothingDownloadsAndFullWhenTheSizeIsUnknown() {
-        #expect(MenuBarSummary(rows: [row("a.iso", .paused, received: 5, total: 10)]).ringFraction == nil)
-        #expect(MenuBarSummary(rows: [row("a.iso", .downloading, received: 5, total: nil)]).ringFraction == 1)
+    @Test func theProgressBarIsOffWhenNothingDownloadsAndFullWhenTheSizeIsUnknown() {
+        #expect(MenuBarSummary(rows: [row("a.iso", .paused, received: 5, total: 10)]).progressFraction == nil)
+        #expect(MenuBarSummary(rows: [row("a.iso", .downloading, received: 5, total: nil)]).progressFraction == 1)
     }
 
     @Test func pauseAllIsOnWhileSomethingRunsOrWaits() {

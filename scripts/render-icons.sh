@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Renders the app icon set and the menu bar icon into App/Assets.xcassets.
-# Sizes from 64 px up come from Flow's icon art. The 16 and 32 px icons and the menu bar icon are
-# drawn by scripts/icons/render.swift. Run it after changing either, then commit the images.
+# Renders the app icon set into App/Assets.xcassets.
+# Sizes from 64 px up come from Flow's icon art. The 16 and 32 px icons are drawn by
+# scripts/icons/render.swift. Run it after changing either, then commit the images.
+# The menu bar icon isn't an image: the app draws it, so its progress bar lines up exactly.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
@@ -10,10 +11,9 @@ FLOW_ICON="${FLOW_ICON:-$ROOT/apps/Flow.app/Contents/Resources/AppIcon.icns}"
 
 ASSETS="$ROOT/App/Assets.xcassets"
 APP_ICON="$ASSETS/AppIcon.appiconset"
-MENU_BAR="$ASSETS/MenuBarIcon.imageset"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$APP_ICON" "$MENU_BAR"
+mkdir -p "$APP_ICON"
 
 log "Taking Flow's art for 64 px and up"
 iconutil -c iconset "$FLOW_ICON" -o "$WORK/flow.iconset"
@@ -21,8 +21,8 @@ for name in icon_32x32@2x icon_128x128 icon_128x128@2x icon_256x256 icon_256x256
   cp "$WORK/flow.iconset/$name.png" "$APP_ICON/$name.png"
 done
 
-log "Drawing the small icons and the menu bar icon"
-swift "$ROOT/scripts/icons/render.swift" "$APP_ICON" "$MENU_BAR"
+log "Drawing the 16 and 32 px icons"
+swift "$ROOT/scripts/icons/render.swift" "$APP_ICON"
 
 cat > "$APP_ICON/Contents.json" <<'JSON'
 {
@@ -42,14 +42,4 @@ cat > "$APP_ICON/Contents.json" <<'JSON'
 }
 JSON
 
-cat > "$MENU_BAR/Contents.json" <<'JSON'
-{
-  "images" : [
-    { "filename" : "menubar.png", "idiom" : "mac", "scale" : "1x" },
-    { "filename" : "menubar@2x.png", "idiom" : "mac", "scale" : "2x" }
-  ],
-  "info" : { "author" : "xcode", "version" : 1 },
-  "properties" : { "template-rendering-intent" : "template" }
-}
-JSON
 log "Icons are in $ASSETS"
