@@ -50,7 +50,7 @@ private struct WelcomePage: View {
             Text("Welcome to Dowlio")
                 .font(.largeTitle.weight(.bold))
                 .accessibilityAddTraits(.isHeader)
-            Text("Dowlio splits each download across several connections, so big files finish sooner. When a connection finishes early, it takes over half of the slowest one's remaining work.")
+            Text("A fast, reliable, native download manager for your Mac. Download fast with multiple connections, categorize into folders, capture from browser or send to the app.")
                 .font(DowlioDesign.TypeRole.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

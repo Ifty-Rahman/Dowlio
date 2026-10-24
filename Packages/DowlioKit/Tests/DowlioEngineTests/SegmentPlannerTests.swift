@@ -99,6 +99,16 @@ struct SegmentStealTests {
         Case(name: "just under 2 MiB can't be split", remaining: [0...2_097_150, nil], expected: nil),
         Case(name: "every segment finished", remaining: [nil, nil, nil], expected: nil),
         Case(
+            name: "31 segments can still split one more",
+            remaining: Array(repeating: nil, count: 30) + [0...4_194_303],
+            expected: Expected(victim: 30, kept: 0...2_097_151, taken: 2_097_152...4_194_303)
+        ),
+        Case(
+            name: "32 segments split no further",
+            remaining: Array(repeating: nil, count: 31) + [0...4_194_303],
+            expected: nil
+        ),
+        Case(
             name: "a tie goes to the first segment",
             remaining: [0...3_145_727, 4_194_304...7_340_031],
             expected: Expected(victim: 0, kept: 0...1_572_863, taken: 1_572_864...3_145_727)
