@@ -4,7 +4,7 @@ import SwiftUI
 
 struct DownloadRowView: View {
     let row: DownloadRow
-    let model: AppModel?
+    let actions: RowActions?
 
     var body: some View {
         HStack(alignment: .center, spacing: DowlioDesign.Spacing.md) {
@@ -49,13 +49,13 @@ struct DownloadRowView: View {
     @ViewBuilder private var action: some View {
         switch row.state {
         case .downloading, .retrying, .queued:
-            actionButton("Pause", symbol: "pause.fill") { model?.pause(row) }
+            actionButton("Pause", symbol: "pause.fill") { actions?.pause(row) }
         case .paused:
-            actionButton("Resume", symbol: "play.fill") { model?.resume(row) }
+            actionButton("Resume", symbol: "play.fill") { actions?.resume(row) }
         case .failed:
-            actionButton("Retry", symbol: "arrow.clockwise") { model?.retry(row) }
+            actionButton("Retry", symbol: "arrow.clockwise") { actions?.retry(row) }
         case .completed:
-            actionButton("Show in Finder", symbol: "magnifyingglass") { model?.showInFinder(row) }
+            actionButton("Show in Finder", symbol: "magnifyingglass") { actions?.showInFinder(row) }
                 .disabled(row.finishedFile == nil)
         }
     }
@@ -102,7 +102,7 @@ struct FileTypeBadge: View {
 
 private struct RowPreview: View {
     var body: some View {
-        List(Self.rows) { DownloadRowView(row: $0, model: nil) }
+        List(Self.rows) { DownloadRowView(row: $0, actions: nil) }
             .frame(width: 640, height: 320)
     }
 

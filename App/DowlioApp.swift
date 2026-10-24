@@ -1,3 +1,4 @@
+import DowlioCore
 import SwiftUI
 
 @main
@@ -9,5 +10,14 @@ struct DowlioApp: App {
         Window("Dowlio", id: "library") {
             LibraryWindow(model: model)
         }
+        .commands {
+            DownloadCommands()
+            InspectorCommands()
+        }
+
+        WindowGroup("Download", id: DetailWindow.sceneID, for: DownloadID.self) { $id in
+            if let id { DetailWindow(id: id, model: model) }
+        }
+        .defaultSize(width: 620, height: 520)
     }
 }

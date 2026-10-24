@@ -10,6 +10,8 @@ import Observation
 final class AppModel {
     private(set) var rows: [DownloadRow] = []
     private(set) var problem: String?
+    /// A failed action to tell the user about, such as a file the Trash refused.
+    var actionFailure: String?
 
     private let library: Library?
 
@@ -26,33 +28,59 @@ final class AppModel {
             return
         }
         Task { await follow() }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.perform { await $0.checkFinishedFiles() } }
+        }
+    }
+
+    func row(_ id: DownloadID) -> DownloadRow? {
+        rows.first { $0.id == id }
     }
 
     /// Adds the first `http` or `https` link in `text` with the default settings, into Downloads.
     func add(pasted text: String) {
-        guard let library, let url = Self.firstLink(in: text) else { return }
+        guard let url = Self.firstLink(in: text) else { return }
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        Task { await library.add(url, destination: .folder(downloads)) }
+        perform { await $0.add(url, destination: .folder(downloads)) }
     }
 
-    func pause(_ row: DownloadRow) {
-        guard let library else { return }
-        Task { await library.pause(row.id) }
-    }
+    func pause(_ row: DownloadRow) { perform { await $0.pause(row.id) } }
+    func resume(_ row: DownloadRow) { perform { await $0.resume(row.id) } }
+    func retry(_ row: DownloadRow) { perform { await $0.retry(row.id) } }
+    func cancel(_ row: DownloadRow) { perform { await $0.cancel(row.id) } }
+    func removeFromList(_ row: DownloadRow) { perform { await $0.removeFromList(row.id) } }
+    func clearCompleted() { perform { await $0.clearCompleted() } }
 
-    func resume(_ row: DownloadRow) {
-        guard let library else { return }
-        Task { await library.resume(row.id) }
-    }
-
-    func retry(_ row: DownloadRow) {
-        guard let library else { return }
-        Task { await library.retry(row.id) }
+    func moveToTrash(_ row: DownloadRow) {
+        perform { [weak self] library in
+            do {
+                try await library.moveToTrash(row.id)
+            } catch {
+                self?.actionFailure = "Dowlio couldn't move “\(row.fileName)” to the Trash. \(error.localizedDescription)"
+            }
+        }
     }
 
     func showInFinder(_ row: DownloadRow) {
         guard let file = row.finishedFile else { return }
         NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+
+    func open(_ row: DownloadRow) {
+        guard let file = row.finishedFile else { return }
+        NSWorkspace.shared.open(file)
+    }
+
+    func copyLink(_ row: DownloadRow) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(row.sourceURL.absoluteString, forType: .string)
+    }
+
+    private func perform(_ work: @escaping @MainActor (Library) async -> Void) {
+        guard let library else { return }
+        Task { await work(library) }
     }
 
     private func follow() async {

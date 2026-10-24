@@ -1,7 +1,7 @@
 import Foundation
 
 /// Identifies one download, in the sense of `GLOSSARY.md`.
-public struct DownloadID: Hashable, Sendable, CustomStringConvertible {
+public struct DownloadID: Hashable, Codable, Sendable, CustomStringConvertible {
     public let rawValue: UUID
 
     public init(rawValue: UUID = UUID()) {

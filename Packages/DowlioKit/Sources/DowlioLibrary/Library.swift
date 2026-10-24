@@ -9,6 +9,7 @@ public actor Library {
     private let engine: DownloadEngine
     private let store: DownloadStore
     private let now: @Sendable () -> Date
+    private let trash: @Sendable (URL) throws -> Void
 
     private var records: [DownloadID: StoredDownload] = [:]
     private var snapshots: [DownloadID: DownloadSnapshot] = [:]
@@ -21,10 +22,16 @@ public actor Library {
     private var published: [DownloadRow]?
     private var following: Task<Void, Never>?
 
-    public init(engine: DownloadEngine, store: DownloadStore, now: @escaping @Sendable () -> Date = { Date() }) {
+    public init(
+        engine: DownloadEngine,
+        store: DownloadStore,
+        now: @escaping @Sendable () -> Date = { Date() },
+        trash: @escaping @Sendable (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) {
         self.engine = engine
         self.store = store
         self.now = now
+        self.trash = trash
     }
 
     /// Reads History and brings every unfinished download back Paused. Call it once, at launch.
@@ -33,9 +40,7 @@ public actor Library {
             let id = DownloadID(rawValue: record.id)
             switch record.state {
             case .completed:
-                if !FileManager.default.fileExists(atPath: record.folder.appending(path: record.fileName).path) {
-                    missingFiles.insert(id)
-                }
+                if !Self.finishedFileExists(record) { missingFiles.insert(id) }
             case .queued:
                 break
             case .paused, .downloading, .failed:
@@ -121,6 +126,51 @@ public actor Library {
         publish()
         await engine.cancel(id)
         if let package = record.partialFile { try? FileManager.default.removeItem(at: package) }
+    }
+
+    /// Takes the row off the list. A Completed download's file stays. Anything with a partial
+    /// file is cancelled, so the partial file doesn't stay behind.
+    public func removeFromList(_ id: DownloadID) async {
+        guard let record = records[id] else { return }
+        guard record.state == .completed else { return await cancel(id) }
+        forget(id)
+        publish()
+    }
+
+    /// Sends a Completed download's file to the Trash and takes the row off the list. Throws, and
+    /// keeps the row, when the Trash refuses the file.
+    public func moveToTrash(_ id: DownloadID) throws {
+        guard let record = records[id], record.state == .completed else { return }
+        if Self.finishedFileExists(record) {
+            try trash(record.folder.appending(path: record.fileName))
+        }
+        forget(id)
+        publish()
+    }
+
+    /// Takes every Completed row off the list. Their files stay.
+    public func clearCompleted() {
+        for (id, record) in records where record.state == .completed { forget(id) }
+        publish()
+    }
+
+    /// Checks again that every Completed download's file is where Dowlio put it.
+    public func checkFinishedFiles() {
+        for (id, record) in records where record.state == .completed {
+            if Self.finishedFileExists(record) { missingFiles.remove(id) } else { missingFiles.insert(id) }
+        }
+        publish()
+    }
+
+    private func forget(_ id: DownloadID) {
+        records[id] = nil
+        snapshots[id] = nil
+        missingFiles.remove(id)
+        try? store.delete(id.rawValue)
+    }
+
+    private static func finishedFileExists(_ record: StoredDownload) -> Bool {
+        FileManager.default.fileExists(atPath: record.folder.appending(path: record.fileName).path)
     }
 
     private func startInEngine(_ id: DownloadID) async {

@@ -13,23 +13,23 @@ struct LibraryFixture {
     let databaseURL: URL
     let folder: URL
 
-    init() async throws {
+    init(trash: @escaping @Sendable (URL) throws -> Void = { _ in }) async throws {
         let base = try TestFiles.makeFolder()
         let folder = base.appending(path: "Downloads", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try await self.init(databaseURL: base.appending(path: "Dowlio.sqlite"), folder: folder)
+        try await self.init(databaseURL: base.appending(path: "Dowlio.sqlite"), folder: folder, trash: trash)
     }
 
-    private init(databaseURL: URL, folder: URL) async throws {
+    private init(databaseURL: URL, folder: URL, trash: @escaping @Sendable (URL) throws -> Void) async throws {
         self.databaseURL = databaseURL
         self.folder = folder
         engine = DownloadEngine(configuration: .fast)
-        library = Library(engine: engine, store: try DownloadStore(databaseAt: databaseURL))
+        library = Library(engine: engine, store: try DownloadStore(databaseAt: databaseURL), trash: trash)
         await library.start()
     }
 
     func relaunched() async throws -> LibraryFixture {
-        try await LibraryFixture(databaseURL: databaseURL, folder: folder)
+        try await LibraryFixture(databaseURL: databaseURL, folder: folder, trash: { _ in })
     }
 
     func add(_ url: URL, options: RequestOptions = RequestOptions(), startImmediately: Bool = true) async -> DownloadID {
