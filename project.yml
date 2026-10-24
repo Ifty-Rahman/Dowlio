@@ -42,6 +42,13 @@ targets:
         # Plain http:// downloads are allowed and marked "Not secure" (docs/adr/0003).
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        # Lets links be dropped on the Dock icon. Rank None, so Dowlio never becomes the default
+        # app for web links.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Web link
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: None
+            LSItemContentTypes: [public.url]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio

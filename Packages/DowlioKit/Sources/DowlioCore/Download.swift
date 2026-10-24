@@ -116,6 +116,9 @@ public struct RequestOptions: Equatable, Sendable {
     /// How many failed attempts in a row one segment may have before the download is Failed, 0 to
     /// 10. `nil` uses the engine's own default of 5.
     public var maximumFailures: Int?
+    /// The name the user chose for the finished file. Unsafe characters are removed. `nil` takes
+    /// the name the server or the link gives.
+    public var fileName: String?
 }
 
 /// One cookie a download sends, as the browser had it for the download's link.

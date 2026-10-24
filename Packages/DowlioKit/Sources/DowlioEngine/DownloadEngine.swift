@@ -62,7 +62,7 @@ public actor DownloadEngine {
         let snapshot = DownloadSnapshot(
             id: id,
             state: .probing,
-            fileName: FileNaming.name(for: url),
+            fileName: options.fileName.map(FileNaming.chosen) ?? FileNaming.name(for: url),
             destinationFolder: destination.root,
             isNotSecure: url.isPlainHTTP,
             displayHost: url.displayHost

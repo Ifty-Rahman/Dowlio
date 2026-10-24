@@ -41,6 +41,9 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var referrer: URL?
     public var userAgent: String?
     public var maximumFailures: Int?
+    /// The name the user typed in the New Download sheet, kept so a download that starts later
+    /// still gets it.
+    public var chosenName: String?
 
     public init(
         id: UUID,
@@ -54,7 +57,8 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         self.sourceURL = sourceURL
         displayHost = sourceURL.host(percentEncoded: false)?.lowercased()
         let last = sourceURL.lastPathComponent
-        fileName = last.isEmpty || last == "/" ? "download" : last
+        fileName = options.fileName ?? (last.isEmpty || last == "/" ? "download" : last)
+        chosenName = options.fileName
         folder = destination.root
         destinationRoot = destination.root
         if case .categoryFolders = destination { sortsIntoCategoryFolders = true } else { sortsIntoCategoryFolders = false }
@@ -85,6 +89,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         options.referrer = referrer
         options.userAgent = userAgent
         options.maximumFailures = maximumFailures
+        options.fileName = chosenName
         return options
     }
 }
@@ -141,6 +146,11 @@ public final class DownloadStore: Sendable {
                 table.column("referrer", .text)
                 table.column("userAgent", .text)
                 table.column("maximumFailures", .integer)
+            }
+        }
+        migrator.registerMigration("chosen name") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "chosenName", .text)
             }
         }
         return migrator

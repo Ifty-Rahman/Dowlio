@@ -155,6 +155,44 @@ struct LibraryTests {
         #expect(try await fixture.relaunched().library.row(id) { _ in true }.category == .video)
     }
 
+    @Test func aDownloadAddedFromTheSheetKeepsTheChosenNameFolderAndOptions() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024, seed: 210)
+        server.serve(.init(data: data, eTag: "\"s1\""), at: "/download?id=9")
+        let elsewhere = fixture.folder.appending(path: "Elsewhere", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        var options = RequestOptions()
+        options.fileName = "Meeting notes.txt"
+        options.referrer = URL(string: "https://example.com/notes")
+        options.userAgent = "Dowlio test"
+        options.connections = 1
+
+        let id = await fixture.library.add(
+            server.url(for: "/download?id=9"), destination: .folder(elsewhere), options: options, startImmediately: false
+        )
+        let waiting = try await fixture.library.row(id) { _ in true }
+        #expect(waiting.fileName == "Meeting notes.txt")
+        #expect(waiting.state == .paused)
+
+        await fixture.library.resume(id)
+        _ = try await fixture.library.row(id) { $0.state == .completed }
+        #expect(try TestFiles.sha256(of: elsewhere.appending(path: "Meeting notes.txt")) == TestFiles.sha256(data))
+        #expect(server.requests.allSatisfy { $0.headers["referer"] == "https://example.com/notes" && $0.headers["user-agent"] == "Dowlio test" })
+    }
+
+    @Test func theLibraryInspectsALinkWithoutAddingIt() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 2048, seed: 211), eTag: "\"s2\""), at: "/peek.zip")
+
+        let inspection = try await fixture.library.inspect(server.url(for: "/peek.zip"))
+
+        #expect(inspection.fileName == "peek.zip")
+        #expect(inspection.totalBytes == 2048)
+        #expect(try await fixture.library.firstRows { _ in true }.isEmpty)
+    }
+
     @Test func aRowIsPublishedOnlyWhenSomethingItShowsChanges() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()

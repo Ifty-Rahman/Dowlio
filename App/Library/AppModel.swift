@@ -12,6 +12,13 @@ final class AppModel {
     private(set) var problem: String?
     /// A failed action to tell the user about, such as a file the Trash refused.
     var actionFailure: String?
+    /// The New Download sheet waiting to show, with the links it opens with.
+    var newDownload: NewDownloadRequest?
+    /// Opens the library window. The window hands it over the first time it appears, so a link
+    /// that arrives while it's closed can open it again.
+    var openLibraryWindow: (() -> Void)?
+
+    let downloadsFolder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
 
     private let library: Library?
 
@@ -28,6 +35,9 @@ final class AppModel {
             return
         }
         Task { await follow() }
+        IncomingLinks.shared.deliver { [weak self] urls in
+            self?.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
+        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -39,11 +49,33 @@ final class AppModel {
         rows.first { $0.id == id }
     }
 
-    /// Adds the first `http` or `https` link in `text` with the default settings, into Downloads.
-    func add(pasted text: String) {
-        guard let url = Self.firstLink(in: text) else { return }
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        perform { await $0.add(url, destination: .folder(downloads)) }
+    /// The New Download sheet on screen, so links that arrive while it's open join it.
+    weak var openSheet: NewDownloadModel?
+
+    /// Shows the New Download sheet with `text` in its link field, opening the window first. With
+    /// the sheet already open, the links join it.
+    func requestNewDownload(_ text: String = "") {
+        openLibraryWindow?()
+        if let openSheet {
+            openSheet.append(text)
+        } else if let waiting = newDownload {
+            newDownload = NewDownloadRequest(text: [waiting.text, text].filter { !$0.isEmpty }.joined(separator: "\n"))
+        } else {
+            newDownload = NewDownloadRequest(text: text)
+        }
+    }
+
+    func add(_ links: [URL], into folder: URL, options: RequestOptions, startImmediately: Bool) {
+        perform { library in
+            for url in links {
+                await library.add(url, destination: .folder(folder), options: options, startImmediately: startImmediately)
+            }
+        }
+    }
+
+    func inspect(_ url: URL, options: RequestOptions) async throws -> LinkInspection {
+        guard let library else { throw DownloadError.network(NetworkFailure(code: .unknown, message: "Dowlio can't start.")) }
+        return try await library.inspect(url, options: options)
     }
 
     func pause(_ row: DownloadRow) { perform { await $0.pause(row.id) } }
@@ -90,11 +122,32 @@ final class AppModel {
             self.rows = rows
         }
     }
+}
 
-    private static func firstLink(in text: String) -> URL? {
-        text.split(whereSeparator: \.isNewline)
-            .lazy
-            .compactMap { URL(string: $0.trimmingCharacters(in: .whitespaces)) }
-            .first { ["http", "https"].contains($0.scheme?.lowercased()) && $0.host() != nil }
+struct NewDownloadRequest: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
+/// Links macOS hands to Dowlio from outside, such as one dropped on the Dock icon. They wait here
+/// until the model is ready for them.
+@MainActor
+final class IncomingLinks {
+    static let shared = IncomingLinks()
+
+    private var waiting: [URL] = []
+    private var handler: (([URL]) -> Void)?
+
+    func receive(_ urls: [URL]) {
+        guard let handler else { return waiting.append(contentsOf: urls) }
+        handler(urls)
+    }
+
+    func deliver(to handler: @escaping ([URL]) -> Void) {
+        self.handler = handler
+        if !waiting.isEmpty {
+            handler(waiting)
+            waiting = []
+        }
     }
 }

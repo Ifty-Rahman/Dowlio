@@ -20,6 +20,11 @@ enum FileNaming {
 
     static let maximumBytes = 200
 
+    /// A name the user typed, made safe the same way as a server's.
+    static func chosen(_ name: String) -> String {
+        capped(clean(name))
+    }
+
     /// Cuts `name` to at most 200 UTF-8 bytes on a character boundary. The extension is kept when
     /// it's short enough to leave room for a name.
     static func capped(_ name: String) -> String {

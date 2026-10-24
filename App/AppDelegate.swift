@@ -5,4 +5,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Downloads keep running with every window closed (architecture.md, process model).
         false
     }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        IncomingLinks.shared.receive(urls)
+    }
 }

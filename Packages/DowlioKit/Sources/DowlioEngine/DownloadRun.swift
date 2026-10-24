@@ -117,7 +117,8 @@ struct DownloadRun: Sendable {
         }
 
         let probed = try await probeWithRetries(url)
-        let fileName = FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
+        let fileName = options.fileName.map(FileNaming.chosen)
+            ?? FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
         let folder = destination.folder(forFileNamed: fileName, contentType: probed.probeResponse.contentTypeHeader)
         await changeSnapshot {
             $0.state = .downloading

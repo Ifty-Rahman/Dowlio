@@ -115,6 +115,11 @@ public actor Library {
         await engine.retry(id)
     }
 
+    /// What `url` gives, without adding it. Throws `DownloadError`.
+    public nonisolated func inspect(_ url: URL, options: RequestOptions = RequestOptions()) async throws -> LinkInspection {
+        try await engine.inspect(url, options: options)
+    }
+
     /// Throws the download away: its partial file, its row and its record.
     public func cancel(_ id: DownloadID) async {
         guard let record = records[id], record.state != .completed else { return }

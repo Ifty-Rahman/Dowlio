@@ -256,3 +256,24 @@ struct FinishedFileTests {
         #expect(!first.isNotSecure)
     }
 }
+
+extension FinishedFileTests {
+    /// The New Download sheet lets the user rename the file before it starts.
+    @Test func aNameTheUserChoseWinsOverTheServersName() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024, seed: 61)
+        let headers = ["Content-Disposition": #"attachment; filename="server-name.pdf""#]
+        server.serve(.init(data: data, eTag: "\"n1\"", headers: headers), at: "/get")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.fileName = "My: Report.pdf"
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/get"), to: folder, options: options)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.fileName == "My Report.pdf")
+        #expect(try TestFiles.sha256(of: folder.appending(path: "My Report.pdf")) == TestFiles.sha256(data))
+    }
+}

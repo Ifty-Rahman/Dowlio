@@ -5,6 +5,8 @@ import QuickLook
 import SwiftUI
 
 struct LibraryWindow: View {
+    static let sceneID = "library"
+
     let model: AppModel
     @FocusState private var isFocused: Bool
     @State private var selection: DownloadID?
@@ -27,7 +29,10 @@ struct LibraryWindow: View {
             .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
-            .onAppear { isFocused = true }
+            .onAppear {
+                isFocused = true
+                model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
+            }
             .onKeyPress(.space) {
                 guard let file = selectedRow?.finishedFile else { return .ignored }
                 quickLookFile = quickLookFile == nil ? file : nil
@@ -35,8 +40,18 @@ struct LibraryWindow: View {
             }
             .onPasteCommand(of: [.url, .plainText]) { _ in
                 let pasteboard = NSPasteboard.general
-                if let text = pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) {
-                    model.add(pasted: text)
+                model.requestNewDownload(pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) ?? "")
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                model.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
+                return true
+            }
+            .sheet(item: Bindable(model).newDownload) { request in
+                NewDownloadSheet(
+                    sheet: NewDownloadModel(text: request.text, folder: model.downloadsFolder, inspect: model.inspect),
+                    shown: { model.openSheet = $0 }
+                ) { sheet in
+                    model.add(sheet.links, into: sheet.folder, options: sheet.options, startImmediately: sheet.startImmediately)
                 }
             }
             .toolbar {
@@ -73,7 +88,13 @@ struct LibraryWindow: View {
         if let problem = model.problem {
             ContentUnavailableView("Dowlio can't start", systemImage: "exclamationmark.triangle", description: Text(problem))
         } else if model.rows.isEmpty {
-            ContentUnavailableView("No downloads yet", systemImage: "tray", description: Text("Paste a link with ⌘V."))
+            ContentUnavailableView {
+                Label("No downloads yet", systemImage: "tray")
+            } description: {
+                Text("Paste a link with ⌘V or drop one here.")
+            } actions: {
+                Button("New Download…") { model.requestNewDownload() }
+            }
         } else {
             List(model.rows, selection: $selection) { row in
                 DownloadRowView(row: row, actions: actions)
