@@ -25,6 +25,7 @@ struct DownloadList: View {
                 }
                 .padding(DowlioDesign.Spacing.sm)
             }
+            .modifier(NoScrollEdgeEffect())
             .onChange(of: selection) { _, id in
                 if let id { proxy.scrollTo(id) }
             }

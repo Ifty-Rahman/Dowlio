@@ -49,6 +49,7 @@ struct InspectorView: View {
                 .padding(DowlioDesign.Spacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .modifier(NoScrollEdgeEffect())
         } else {
             ContentUnavailableView("No download selected", systemImage: "sidebar.right")
         }

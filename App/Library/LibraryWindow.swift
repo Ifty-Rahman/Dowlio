@@ -37,7 +37,7 @@ struct LibraryWindow: View {
             if showsSidebar {
                 LibrarySidebar(counts: view.counts, selection: $filter, freeSpace: model.freeSpace)
                     .frame(width: Self.sidebarWidth)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .transition(.move(edge: .leading))
                 Divider()
             }
             detail.frame(minWidth: Self.listMinimumWidth, maxWidth: .infinity, maxHeight: .infinity)
@@ -45,7 +45,7 @@ struct LibraryWindow: View {
                 Divider()
                 InspectorView(row: selectedRow, actions: actions)
                     .frame(width: Self.inspectorWidth)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .transition(.move(edge: .trailing))
             }
         }
         .clipped()
@@ -56,6 +56,7 @@ struct LibraryWindow: View {
         .searchable(text: $search, placement: .toolbar, prompt: "Search downloads")
         .modifier(SearchFocus(isFocused: $isSearching))
         .toolbar { toolbar }
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .focusedSceneValue(\.panelToggles, PanelToggles(
             sidebarShown: showsSidebar, inspectorShown: showsInspector,
             toggleSidebar: { togglePanel($showsSidebar) }, toggleInspector: { togglePanel($showsInspector) }
@@ -193,23 +194,28 @@ struct LibraryWindow: View {
     }
 }
 
+/// Plain rows in a scroll view, styled like a macOS sidebar. A sidebar `List` gets special
+/// treatment next to the title bar, which made the toolbar redraw while the sidebar slid away.
 private struct LibrarySidebar: View {
     let counts: [LibraryFilter: Int]
     @Binding var selection: LibraryFilter
     let freeSpace: Int64?
 
     var body: some View {
-        List(selection: Binding(get: { selection }, set: { if let new = $0 { selection = new } })) {
-            Section("Library") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Library")
+                    .font(DowlioDesign.TypeRole.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, DowlioDesign.Spacing.sm)
+                    .padding(.bottom, DowlioDesign.Spacing.xs)
                 ForEach(LibraryFilter.allCases, id: \.self) { filter in
-                    Label(filter.title, systemImage: filter.symbolName)
-                        .badge(counts[filter] ?? 0)
-                        .tag(filter)
+                    item(filter)
                 }
             }
+            .padding(DowlioDesign.Spacing.sm)
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
+        .modifier(NoScrollEdgeEffect())
         .safeAreaInset(edge: .bottom) {
             if let freeSpace {
                 Label(FreeSpaceText.string(freeSpace), systemImage: "internaldrive")
@@ -220,6 +226,50 @@ private struct LibrarySidebar: View {
                     .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
                     .padding(DowlioDesign.Spacing.sm)
             }
+        }
+    }
+
+    private func item(_ filter: LibraryFilter) -> some View {
+        let isSelected = selection == filter
+        let count = counts[filter] ?? 0
+        return Button { selection = filter } label: {
+            HStack(spacing: DowlioDesign.Spacing.sm) {
+                Image(systemName: filter.symbolName)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 20)
+                Text(filter.title)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                Spacer(minLength: DowlioDesign.Spacing.sm)
+                if count > 0 {
+                    Text("\(count)").monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+            .font(DowlioDesign.TypeRole.body)
+            .padding(.horizontal, DowlioDesign.Spacing.sm)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested)
+                        .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(count > 0 ? "\(filter.title), \(count)" : filter.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Newer macOS draws a band behind the toolbar wherever a scroll view meets it. The toolbar
+/// stays the same in every layout, so the band is off everywhere.
+struct NoScrollEdgeEffect: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            content
         }
     }
 }
