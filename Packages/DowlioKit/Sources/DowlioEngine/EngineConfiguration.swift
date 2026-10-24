@@ -12,13 +12,15 @@ package struct EngineConfiguration: Sendable {
 
 package struct RetryPolicy: Sendable {
     /// Per segment. One segment running out fails the whole download.
-    var maximumFailures = 5
+    package var maximumFailures = 5
     package var firstDelay: Duration = .seconds(1)
     package var maximumDelay: Duration = .seconds(30)
-    var jitter = 0.2
-    var maximumRetryAfter: Duration = .seconds(5 * 60)
+    package var jitter = 0.2
+    package var maximumRetryAfter: Duration = .seconds(5 * 60)
 
-    func delay(afterFailure failure: Int, retryAfter: Duration?, random: (ClosedRange<Double>) -> Double) -> Duration {
+    package init() {}
+
+    package func delay(afterFailure failure: Int, retryAfter: Duration?, random: (ClosedRange<Double>) -> Double) -> Duration {
         if let retryAfter { return min(max(retryAfter, .zero), maximumRetryAfter) }
         let doubled = firstDelay * (1 << min(failure - 1, 30))
         let jittered = doubled * random((1 - jitter)...(1 + jitter))
@@ -35,13 +37,13 @@ enum RetryAfter {
     }
 
     /// RFC 9110's preferred date format, such as `Sun, 06 Nov 1994 08:49:37 GMT`.
-    private static var httpDate: DateFormatter {
+    private static let httpDate: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "GMT")
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
         return formatter
-    }
+    }()
 }
 
 extension URLError.Code {
