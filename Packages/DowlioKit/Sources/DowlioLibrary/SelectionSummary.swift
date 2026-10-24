@@ -22,9 +22,17 @@ public struct SelectionSummary: Equatable, Sendable {
 
     public var removeAsksFirst: Bool { bytesAtStake > 0 }
 
-    public var pauseTitle: String { Self.title("Pause", count: pausable.count) }
-    public var resumeTitle: String { Self.title("Resume", count: resumable.count) }
-    public var retryTitle: String { Self.title("Retry", count: retryable.count) }
+    public var pauseTitle: String { Self.menuTitle("Pause", count: pausable.count) }
+    public var resumeTitle: String { Self.menuTitle("Resume", count: resumable.count) }
+    public var retryTitle: String { Self.menuTitle("Retry", count: retryable.count) }
+
+    public var cancelTitle: String {
+        cancellable.count > 1 ? "Cancel \(cancellable.count) Downloads…" : "Cancel Download…"
+    }
+
+    public var copyLinksTitle: String {
+        rows.count > 1 ? "Copy \(rows.count) Links" : "Copy Link"
+    }
 
     public var removeTitle: String {
         let base = rows.count > 1 ? "Remove \(rows.count) from List" : "Remove from List"
@@ -52,10 +60,10 @@ public struct SelectionSummary: Equatable, Sendable {
     public var title: String { "\(rows.count) selected" }
 
     public var sizeText: String {
-        let sized = rows.filter { $0.totalBytes != nil }
-        let received = sized.reduce(Int64(0)) { $0 + $1.receivedBytes }
-        let total = sized.reduce(Int64(0)) { $0 + ($1.totalBytes ?? 0) }
-        return "\(ByteText.string(received)) of \(ByteText.string(total))"
+        let received = rows.reduce(Int64(0)) { $0 + $1.receivedBytes }
+        let totals = rows.compactMap(\.totalBytes)
+        guard totals.count == rows.count else { return ByteText.string(received) }
+        return "\(ByteText.string(received)) of \(ByteText.string(totals.reduce(0, +)))"
     }
 
     public var speedText: String? {
@@ -67,7 +75,7 @@ public struct SelectionSummary: Equatable, Sendable {
         rows.map(\.sourceURL.absoluteString).joined(separator: "\n")
     }
 
-    private static func title(_ verb: String, count: Int) -> String {
+    private static func menuTitle(_ verb: String, count: Int) -> String {
         count > 1 ? "\(verb) \(count) Downloads" : verb
     }
 }

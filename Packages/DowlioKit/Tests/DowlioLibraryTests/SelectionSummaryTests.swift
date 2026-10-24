@@ -21,15 +21,17 @@ struct SelectionSummaryTests {
     }
 
     @Test(arguments: [
-        (1, "Pause", "Resume", "Remove from List"),
-        (3, "Pause 3 Downloads", "Resume 3 Downloads", "Remove 3 from List"),
+        (1, "Pause", "Resume", "Remove from List", "Cancel Download…", "Copy Link"),
+        (3, "Pause 3 Downloads", "Resume 3 Downloads", "Remove 3 from List", "Cancel 3 Downloads…", "Copy 3 Links"),
     ])
-    func menuItemsSayHowManyTheyActOn(count: Int, pause: String, resume: String, remove: String) {
+    func menuItemsSayHowManyTheyActOn(count: Int, pause: String, resume: String, remove: String, cancel: String, copy: String) {
         let rows = (0..<count).map { _ in row("x.iso", .downloading) }
         let resumable = (0..<count).map { _ in row("x.iso", .paused) }
         #expect(SelectionSummary(rows: rows).pauseTitle == pause)
         #expect(SelectionSummary(rows: resumable).resumeTitle == resume)
         #expect(SelectionSummary(rows: rows).removeTitle == remove)
+        #expect(SelectionSummary(rows: rows).cancelTitle == cancel)
+        #expect(SelectionSummary(rows: rows).copyLinksTitle == copy)
     }
 
     @Test func removingAsksOnceWhenAnyBytesWouldBeLost() {
@@ -54,6 +56,10 @@ struct SelectionSummaryTests {
         #expect(summary.title == "3 selected")
         #expect(summary.sizeText == "4.50 MB of 8.00 MB")
         #expect(summary.speedText == "2.00 MB/s")
+    }
+
+    @Test func aDownloadOfUnknownSizeLeavesOnlyTheBytesSoFar() {
+        #expect(SelectionSummary(rows: [running, failed]).sizeText == "1.20 MB")
     }
 
     @Test func copyLinkCopiesEveryLinkOnItsOwnLine() {

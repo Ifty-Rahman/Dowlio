@@ -132,7 +132,7 @@ extension Confirmation {
     var dismissTitle: String {
         switch self {
         case .pauseStartsOver: "Keep Downloading"
-        case .cancel, .removePartial: "Keep Them"
+        case .cancel, .removePartial: rows.count == 1 ? "Keep It" : "Keep Them"
         case .moveToTrash: "Cancel"
         }
     }
@@ -146,15 +146,12 @@ struct SelectionMenuItems: View {
 
     var body: some View {
         let summary = SelectionSummary(rows: rows)
-        if !summary.pausable.isEmpty {
-            Button(summary.pauseTitle) { actions.pause(rows) }
-        }
-        if !summary.resumable.isEmpty {
-            Button(summary.resumeTitle) { actions.resume(rows) }
-        }
-        if !summary.retryable.isEmpty {
-            Button(summary.retryTitle) { actions.retry(rows) }
-        }
+        Button(summary.pauseTitle) { actions.pause(rows) }
+            .disabled(summary.pausable.isEmpty)
+        Button(summary.resumeTitle) { actions.resume(rows) }
+            .disabled(summary.resumable.isEmpty)
+        Button(summary.retryTitle) { actions.retry(rows) }
+            .disabled(summary.retryable.isEmpty)
         Divider()
         Button("Show in Finder") { actions.showInFinder(rows) }
             .keyboardShortcut("r", modifiers: .command)
@@ -163,13 +160,10 @@ struct SelectionMenuItems: View {
             .disabled(summary.finishedFiles.isEmpty)
         Button("Quick Look") { quickLook?() }
             .disabled(summary.finishedFiles.isEmpty || quickLook == nil)
-        Button(rows.count > 1 ? "Copy \(rows.count) Links" : "Copy Link") { actions.copyLinks(rows) }
+        Button(summary.copyLinksTitle) { actions.copyLinks(rows) }
         Divider()
-        if !summary.cancellable.isEmpty {
-            Button(summary.cancellable.count > 1 ? "Cancel \(summary.cancellable.count) Downloads…" : "Cancel Download…", role: .destructive) {
-                actions.cancel(rows)
-            }
-        }
+        Button(summary.cancelTitle, role: .destructive) { actions.cancel(rows) }
+            .disabled(summary.cancellable.isEmpty)
         Button(summary.removeTitle) { actions.removeFromList(rows) }
             .keyboardShortcut(.delete, modifiers: .command)
         Button("Move to Trash…", role: .destructive) { actions.moveToTrash(rows) }

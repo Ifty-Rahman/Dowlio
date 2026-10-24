@@ -5,7 +5,8 @@ import SwiftUI
 
 /// Not a `List`: its table keeps each row's first measured height, so rows added while it was
 /// busy could stay squashed. Selection works as in Finder: click, ⌘-click, ⇧-click, and dragging a
-/// rectangle across rows.
+/// rectangle across rows. Rows scrolled out of view keep their last known place, so a drag that
+/// scrolls still covers them.
 struct DownloadList: View {
     let rows: [DownloadRow]
     @Binding var selection: RowSelection
@@ -40,11 +41,12 @@ struct DownloadList: View {
                     focusList()
                 }
                 .coordinateSpace(name: Self.space)
-                .onPreferenceChange(RowFrames.self) { rowFrames = $0 }
+                .onPreferenceChange(RowFrames.self) { rowFrames.merge($0) { $1 } }
                 .overlay(alignment: .topLeading) { dragOverlay }
                 .simultaneousGesture(dragToSelect)
             }
             .modifier(NoScrollEdgeEffect())
+            .onChange(of: ids) { _, ids in rowFrames = rowFrames.filter { ids.contains($0.key) } }
             .onChange(of: selection.selected) { _, selected in
                 if selected.count == 1, let id = selected.first { proxy.scrollTo(id) }
             }

@@ -18,11 +18,6 @@ public struct RowSelection: Equatable, Sendable {
 
     public init() {}
 
-    /// The one selected download, or `nil` with none or several.
-    public var single: DownloadID? {
-        selected.count == 1 ? selected.first : nil
-    }
-
     public func contains(_ id: DownloadID) -> Bool {
         selected.contains(id)
     }
