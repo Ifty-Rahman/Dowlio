@@ -10,7 +10,7 @@ struct LibraryWindow: View {
     let model: AppModel
     @FocusState private var isFocused: Bool
     @FocusState private var isSearching: Bool
-    @State private var selection: DownloadID?
+    @State private var selection = RowSelection()
     @State private var confirmation: Confirmation?
     @State private var quickLookFile: URL?
     @State private var search = ""
@@ -30,11 +30,15 @@ struct LibraryWindow: View {
         LibraryView(rows: model.rows, selection: selectionInSidebar, search: search)
     }
 
-    private var selectedRow: DownloadRow? {
-        selection.flatMap(model.row)
+    private var selectedRows: [DownloadRow] {
+        view.rows.filter { selection.contains($0.id) }
     }
 
-    var body: some View {
+    private var quickLookFiles: [URL] {
+        SelectionSummary(rows: selectedRows).finishedFiles
+    }
+
+    private var panels: some View {
         HStack(spacing: 0) {
             if showsSidebar {
                 LibrarySidebar(view: view, selection: $selectionInSidebar, freeSpace: model.freeSpace)
@@ -50,7 +54,7 @@ struct LibraryWindow: View {
                 }
             if showsInspector {
                 Divider()
-                InspectorView(row: selectedRow, actions: actions)
+                inspector
                     .frame(width: Self.inspectorWidth)
                     .transition(.move(edge: .trailing))
             }
@@ -65,63 +69,65 @@ struct LibraryWindow: View {
         .modifier(SearchFocus(isFocused: $isSearching))
         .toolbar { toolbar }
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .focusedSceneValue(\.panelToggles, PanelToggles(
-            sidebarShown: showsSidebar, inspectorShown: showsInspector,
-            toggleSidebar: { togglePanel($showsSidebar) }, toggleInspector: { togglePanel($showsInspector) }
-        ))
-        .focusable()
-        .focused($isFocused)
-        .focusEffectDisabled()
-        .onAppear {
-            isFocused = true
-            model.isLibraryWindowOpen = true
-            model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
-            model.openSettingsWindow = { [openSettings] in openSettings() }
-        }
-        .onDisappear { model.isLibraryWindowOpen = false }
-        .task {
-            guard DebugLaunch.isOn else { return }
-            try? await Task.sleep(for: .seconds(1))
-            DebugLaunch.applyWindowWidth()
-            if DebugLaunch.showsInspector { togglePanel($showsInspector) }
-            if DebugLaunch.opensSettings { model.showSettings() }
-            if DebugLaunch.togglesSidebar {
-                try? await Task.sleep(for: .seconds(1))
-                togglePanel($showsSidebar)
+    }
+
+    var body: some View {
+        panels
+            .focusedSceneValue(\.panelToggles, PanelToggles(
+                sidebarShown: showsSidebar, inspectorShown: showsInspector,
+                toggleSidebar: { togglePanel($showsSidebar) }, toggleInspector: { togglePanel($showsInspector) }
+            ))
+            .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .onAppear {
+                isFocused = true
+                model.isLibraryWindowOpen = true
+                model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
+                model.openSettingsWindow = { [openSettings] in openSettings() }
             }
-        }
-        .onKeyPress(.downArrow) { moveSelection(by: 1) }
-        .onKeyPress(.upArrow) { moveSelection(by: -1) }
-        .onKeyPress(.space) {
-            guard let file = selectedRow?.finishedFile else { return .ignored }
-            quickLookFile = quickLookFile == nil ? file : nil
-            return .handled
-        }
-        .onPasteCommand(of: [.url, .plainText]) { _ in
-            let pasteboard = NSPasteboard.general
-            model.requestNewDownload(pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) ?? "")
-        }
-        .dropDestination(for: URL.self) { urls, _ in
-            model.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
-            return true
-        }
-        .sheet(item: newDownloadSheet) { sheet in
-            NewDownloadSheet(sheet: sheet) { model.add($0) }
-        }
-        .focusedSceneValue(\.findInLibrary, SearchFocus.isAvailable ? FindInLibrary { isSearching = true } : nil)
-        .focusedSceneValue(\.selectedDownload, selectedRow.map {
-            SelectedDownload(row: $0, actions: actions, quickLook: { quickLookFile = $0.finishedFile })
-        })
-        .quickLookPreview($quickLookFile)
-        .alert(confirmation?.title ?? "", isPresented: isConfirming, presenting: confirmation) { pending in
-            Button(pending.confirmTitle, role: .destructive) { actions.carryOut(pending) }
-            Button(pending.dismissTitle, role: .cancel) {}
-        } message: { pending in
-            if !pending.message.isEmpty { Text(pending.message) }
-        }
-        .alert(model.actionFailure ?? "", isPresented: failureShown) {
-            Button("OK") {}
-        }
+            .onDisappear { model.isLibraryWindowOpen = false }
+            .task {
+                guard DebugLaunch.isOn else { return }
+                try? await Task.sleep(for: .seconds(1))
+                DebugLaunch.applyWindowWidth()
+                if DebugLaunch.showsInspector { togglePanel($showsInspector) }
+                if DebugLaunch.opensSettings { model.showSettings() }
+                if DebugLaunch.togglesSidebar {
+                    try? await Task.sleep(for: .seconds(1))
+                    togglePanel($showsSidebar)
+                }
+            }
+            .modifier(SelectionKeys(selection: $selection, rows: rowIDs) {
+                guard let file = quickLookFiles.first else { return false }
+                quickLookFile = quickLookFile == nil ? file : nil
+                return true
+            })
+            .onPasteCommand(of: [.url, .plainText]) { _ in
+                let pasteboard = NSPasteboard.general
+                model.requestNewDownload(pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) ?? "")
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                model.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
+                return true
+            }
+            .sheet(item: newDownloadSheet) { sheet in
+                NewDownloadSheet(sheet: sheet) { model.add($0) }
+            }
+            .focusedSceneValue(\.findInLibrary, SearchFocus.isAvailable ? FindInLibrary { isSearching = true } : nil)
+            .focusedSceneValue(\.selectedDownloads, SelectedDownloads(
+                rows: selectedRows, actions: actions, quickLook: { quickLookFile = quickLookFiles.first }
+            ))
+            .quickLookPreview($quickLookFile, in: quickLookFiles)
+            .alert(confirmation?.title ?? "", isPresented: isConfirming, presenting: confirmation) { pending in
+                Button(pending.confirmTitle, role: .destructive) { actions.carryOut(pending) }
+                Button(pending.dismissTitle, role: .cancel) {}
+            } message: { pending in
+                if !pending.message.isEmpty { Text(pending.message) }
+            }
+            .alert(model.actionFailure ?? "", isPresented: failureShown) {
+                Button("OK") {}
+            }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
@@ -135,12 +141,16 @@ struct LibraryWindow: View {
                 .disabled(!view.canClearCompleted)
             Button("New Download", systemImage: "plus") { model.requestNewDownload() }
                 .help("New Download")
-            Button("Resume All", systemImage: "play.fill") { model.resumeAll() }
-                .help("Resume All")
-                .disabled(!view.canResumeAll)
-            Button("Pause All", systemImage: "pause.fill") { model.pauseAll() }
-                .help("Pause All")
-                .disabled(!view.canPauseAll)
+            Button("Resume", systemImage: "play.fill") {
+                if selectedRows.isEmpty { model.resumeAll() } else { actions.resume(selectedRows) }
+            }
+            .help(selectedRows.isEmpty ? "Resume All" : "Resume Selected")
+            .disabled(selectedRows.isEmpty ? !view.canResumeAll : SelectionSummary(rows: selectedRows).resumable.isEmpty)
+            Button("Pause", systemImage: "pause.fill") {
+                if selectedRows.isEmpty { model.pauseAll() } else { actions.pause(selectedRows) }
+            }
+            .help(selectedRows.isEmpty ? "Pause All" : "Pause Selected")
+            .disabled(selectedRows.isEmpty ? !view.canPauseAll : SelectionSummary(rows: selectedRows).pausable.isEmpty)
         }
         ToolbarItem {
             Button("Inspector", systemImage: "sidebar.right") { togglePanel($showsInspector) }
@@ -168,7 +178,7 @@ struct LibraryWindow: View {
         } else {
             DownloadList(
                 rows: view.rows, selection: $selection, actions: actions,
-                quickLook: { quickLookFile = $0.finishedFile },
+                quickLook: { quickLookFile = quickLookFiles.first },
                 open: { openWindow(id: DetailWindow.sceneID, value: $0.id) },
                 focusList: { isFocused = true }
             )
@@ -188,13 +198,15 @@ struct LibraryWindow: View {
         return max(Self.toolbarMinimumWidth, Self.listMinimumWidth + panels)
     }
 
-    private func moveSelection(by step: Int) -> KeyPress.Result {
-        let rows = view.rows
-        guard !rows.isEmpty else { return .ignored }
-        let current = rows.firstIndex { $0.id == selection }
-        let next = current.map { min(max($0 + step, 0), rows.count - 1) } ?? (step > 0 ? 0 : rows.count - 1)
-        selection = rows[next].id
-        return .handled
+    private var rowIDs: [DownloadID] { view.rows.map(\.id) }
+
+    @ViewBuilder private var inspector: some View {
+        let rows = selectedRows
+        if rows.count > 1 {
+            SelectionInspector(rows: rows, actions: actions)
+        } else {
+            InspectorView(row: rows.first, actions: actions)
+        }
     }
 
     private func togglePanel(_ isShown: Binding<Bool>) {
@@ -217,6 +229,30 @@ struct LibraryWindow: View {
 
     private var failureShown: Binding<Bool> {
         Binding(get: { model.actionFailure != nil }, set: { if !$0 { model.actionFailure = nil } })
+    }
+}
+
+/// The keys that change the selection as in Finder, and Space for Quick Look.
+private struct SelectionKeys: ViewModifier {
+    @Binding var selection: RowSelection
+    let rows: [DownloadID]
+    let toggleQuickLook: () -> Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onKeyPress(keys: [.downArrow, .upArrow]) { press in
+                guard !rows.isEmpty else { return .ignored }
+                selection.move(by: press.key == .downArrow ? 1 : -1, in: rows, extending: press.modifiers.contains(.shift))
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                guard !selection.selected.isEmpty else { return .ignored }
+                selection.clear()
+                return .handled
+            }
+            .onKeyPress(.space) { toggleQuickLook() ? .handled : .ignored }
+            .onCommand(#selector(NSResponder.selectAll(_:))) { selection.selectAll(in: rows) }
+            .onChange(of: rows) { _, ids in selection.keepOnly(ids) }
     }
 }
 

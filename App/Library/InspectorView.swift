@@ -75,6 +75,41 @@ struct InspectorView: View {
     }
 }
 
+/// Several downloads selected: how many, their combined size and speed.
+struct SelectionInspector: View {
+    let rows: [DownloadRow]
+    let actions: RowActions
+
+    var body: some View {
+        let summary = SelectionSummary(rows: rows)
+        ScrollView {
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
+                Text(summary.title)
+                    .font(DowlioDesign.TypeRole.heroMetric)
+                Grid(alignment: .leading, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.sm) {
+                    GridRow {
+                        Text("Size").foregroundStyle(.secondary)
+                        Text(summary.sizeText)
+                    }
+                    GridRow {
+                        Text("Speed").foregroundStyle(.secondary)
+                        Text(summary.speedText ?? "—")
+                    }
+                }
+                .font(DowlioDesign.TypeRole.detailMetric)
+                HStack {
+                    Button("Show in Finder") { actions.showInFinder(rows) }
+                        .disabled(summary.finishedFiles.isEmpty)
+                    Button("Copy Links") { actions.copyLinks(rows) }
+                }
+            }
+            .padding(DowlioDesign.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .modifier(NoScrollEdgeEffect())
+    }
+}
+
 #Preview("Inspector, light") {
     InspectorView(row: InspectorPreview.row, actions: nil).frame(width: 280, height: 480).preferredColorScheme(.light)
 }
