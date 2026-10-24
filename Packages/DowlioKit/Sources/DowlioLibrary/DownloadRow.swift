@@ -33,6 +33,8 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     public var isNotSecure: Bool
     public var canResume: Bool
     public var addedAt: Date
+    /// When it first started fetching.
+    public var startedAt: Date?
     public var completedAt: Date?
     /// A Completed download whose file is no longer where Dowlio put it.
     public var isFileMissing: Bool
@@ -58,6 +60,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         isNotSecure: Bool,
         canResume: Bool,
         addedAt: Date,
+        startedAt: Date? = nil,
         completedAt: Date?,
         isFileMissing: Bool,
         wasSkipped: Bool
@@ -79,6 +82,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         self.isNotSecure = isNotSecure
         self.canResume = canResume
         self.addedAt = addedAt
+        self.startedAt = startedAt
         self.completedAt = completedAt
         self.isFileMissing = isFileMissing
         self.wasSkipped = wasSkipped
@@ -88,6 +92,13 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     public var segmentCountText: String {
         let added = segments.count - displaySegments.count
         return added > 0 ? "\(displaySegments.count) planned, \(added) added" : "\(segments.count)"
+    }
+
+    /// How long a Completed download took from its first start, pauses included, such as
+    /// "3 min 20 s".
+    public var timeTakenText: String? {
+        guard state == .completed, let startedAt, let completedAt else { return nil }
+        return ElapsedText.string(completedAt.timeIntervalSince(startedAt))
     }
 
     /// How far the download is, from 0 to 1, or `nil` while the size is unknown.
@@ -210,6 +221,21 @@ public enum ByteText {
         }
         let digits = value < 9.995 ? 2 : value < 99.95 ? 1 : 0
         return String(format: "%.\(digits)f %@", value, units[unit])
+    }
+}
+
+/// Time already spent, to the nearest second: "42 s", "3 min 20 s", "1 h 5 min".
+public enum ElapsedText {
+    public static func string(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded())
+        if total < 1 { return "Less than a second" }
+        if total < 60 { return "\(total) s" }
+        if total < 3600 {
+            let rest = total % 60
+            return rest == 0 ? "\(total / 60) min" : "\(total / 60) min \(rest) s"
+        }
+        let minutes = (total % 3600) / 60
+        return minutes == 0 ? "\(total / 3600) h" : "\(total / 3600) h \(minutes) min"
     }
 }
 

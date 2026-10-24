@@ -211,7 +211,7 @@ final class AppModel {
 
     private func follow() async {
         guard let library else { return }
-        await library.start(maximumFailures: settings.maximumFailures)
+        await library.start(maximumFailures: settings.maximumFailures, allowsWorkStealing: settings.takesOverSlowSegments)
         await library.setMaximumActive(settings.downloadsAtOnce)
         for await rows in await library.rows() {
             self.rows = rows

@@ -11,6 +11,9 @@ public struct DownloadSettings: Equatable, Sendable {
     public var downloadsAtOnce = 3
     public var openExtraConnections = OpenExtraConnections.afterFirstConnectionStarts
     public var retries = 5
+    /// A connection that finishes early takes over half of the slowest segment's work. Off unless
+    /// the user turns it on.
+    public var takesOverSlowSegments = false
 
     public init(folder: URL) {
         self.folder = folder
@@ -29,6 +32,7 @@ public struct DownloadSettings: Equatable, Sendable {
         options.maximumFailures = maximumFailures
         options.openExtraConnections = openExtraConnections
         options.nameConflictPolicy = nameConflictPolicy
+        options.allowsWorkStealing = takesOverSlowSegments
         return options
     }
 

@@ -10,6 +10,7 @@ enum SettingsKey {
     static let downloadsAtOnce = "downloadsAtOnce"
     static let opensAllConnectionsAtOnce = "opensAllConnectionsAtOnce"
     static let retries = "retries"
+    static let takesOverSlowSegments = "takesOverSlowSegments"
     static let showsInMenuBar = "showsInMenuBar"
     static let showsInDock = "showsInDock"
     static let startsInMenuBar = "startsInMenuBar"
@@ -28,6 +29,7 @@ extension UserDefaults {
         settings.downloadsAtOnce = integer(SettingsKey.downloadsAtOnce) ?? settings.downloadsAtOnce
         settings.openExtraConnections = bool(forKey: SettingsKey.opensAllConnectionsAtOnce) ? .allAtOnce : .afterFirstConnectionStarts
         settings.retries = integer(SettingsKey.retries) ?? settings.retries
+        settings.takesOverSlowSegments = flag(SettingsKey.takesOverSlowSegments) ?? false
         return settings
     }
 

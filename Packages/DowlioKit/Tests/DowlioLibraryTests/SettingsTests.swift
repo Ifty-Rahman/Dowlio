@@ -16,6 +16,14 @@ struct SettingsTests {
         #expect(settings.openExtraConnections == .afterFirstConnectionStarts)
         #expect(settings.nameConflictPolicy == .keepBoth)
         #expect(!settings.sortsIntoCategoryFolders)
+        #expect(!settings.takesOverSlowSegments)
+        #expect(!settings.options(connections: nil).allowsWorkStealing)
+    }
+
+    @Test func takingOverSlowSegmentsTurnsWorkStealingOn() {
+        var settings = DownloadSettings(folder: folder)
+        settings.takesOverSlowSegments = true
+        #expect(settings.options(connections: nil).allowsWorkStealing)
     }
 
     /// "Retry a failed connection 5 times" means a sixth failure in a row fails the download.

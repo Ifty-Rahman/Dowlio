@@ -40,11 +40,15 @@ public actor Library {
     }
 
     /// Reads History and brings every unfinished download back Paused. Call it once, at launch.
-    /// `maximumFailures` is the retry setting in force now, for every unfinished download.
-    public func start(maximumFailures: Int? = nil) async {
+    /// `maximumFailures` and `allowsWorkStealing` are the settings in force now, for every
+    /// unfinished download.
+    public func start(maximumFailures: Int? = nil, allowsWorkStealing: Bool? = nil) async {
         for var record in (try? store.all()) ?? [] {
             let id = DownloadID(rawValue: record.id)
-            if let maximumFailures, record.state != .completed { record.maximumFailures = maximumFailures }
+            if record.state != .completed {
+                if let maximumFailures { record.maximumFailures = maximumFailures }
+                if let allowsWorkStealing { record.allowsWorkStealing = allowsWorkStealing }
+            }
             switch record.state {
             case .completed:
                 if !Self.finishedFileExists(record) { missingFiles.insert(id) }
@@ -249,6 +253,7 @@ public actor Library {
         var options = record.options
         options.cookies = waitingCookies.removeValue(forKey: id) ?? []
         record.state = .downloading
+        if record.startedAt == nil { record.startedAt = now() }
         records[id] = record
         save(record)
         publish()
@@ -260,7 +265,9 @@ public actor Library {
     private func restore(_ record: StoredDownload) async -> Bool {
         guard let package = record.partialFile else { return false }
         do {
-            let id = try await engine.restore(partialFile: package, maximumFailures: record.maximumFailures)
+            let id = try await engine.restore(
+                partialFile: package, maximumFailures: record.maximumFailures, allowsWorkStealing: record.allowsWorkStealing ?? true
+            )
             return id.rawValue == record.id
         } catch {
             return false
@@ -371,6 +378,7 @@ public actor Library {
             isNotSecure: live?.isNotSecure ?? record.isNotSecure,
             canResume: live?.canResume ?? false,
             addedAt: record.addedAt,
+            startedAt: record.startedAt,
             completedAt: record.completedAt,
             isFileMissing: missingFiles.contains(id),
             wasSkipped: live?.wasSkipped ?? record.wasSkipped

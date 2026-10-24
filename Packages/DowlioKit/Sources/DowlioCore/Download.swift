@@ -116,6 +116,9 @@ public struct RequestOptions: Equatable, Sendable {
     /// How many failed attempts in a row one segment may have before the download is Failed, up
     /// to 11, which is ten retries. `nil` uses the engine's own default of 5.
     public var maximumFailures: Int?
+    /// A connection that finishes its segment takes over half of the slowest segment's remaining
+    /// work. With this off, each connection closes when its own segment is done.
+    public var allowsWorkStealing = true
     /// The name the user chose for the finished file. Unsafe characters are removed. `nil` takes
     /// the name the server or the link gives.
     public var fileName: String?

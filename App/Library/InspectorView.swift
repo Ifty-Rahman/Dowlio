@@ -38,6 +38,7 @@ struct InspectorView: View {
                         fact("Time left", row.timeLeftText ?? "—")
                         fact("Size", row.detailLine)
                         fact("Resumable", resumableText(row))
+                        if let taken = row.timeTakenText { fact("Time taken", taken) }
                         fact("From", row.host ?? "—")
                         if row.isNotSecure { fact("Connection", "Not secure") }
                     }

@@ -121,3 +121,25 @@ struct WorkStealingTests {
         #expect(!resumeStarts.contains(0))
     }
 }
+
+extension WorkStealingTests {
+    /// With stealing turned off, the slow segment keeps its own range to the end.
+    @Test func withStealingOffEverySegmentKeepsItsRange() async throws {
+        let server = try await TestServer()
+        let size = 16 * Self.mebibyte
+        let data = TestServer.makeData(size: size, seed: 33)
+        server.serve(.init(data: data, eTag: "\"v3\"", throttle: .init(rangeStart: 12 * Self.mebibyte, bytesPerSecond: 4 * Self.mebibyte)), at: "/plain.iso")
+        let folder = try TestFiles.makeFolder()
+
+        var options = RequestOptions()
+        options.connections = 4
+        options.allowsWorkStealing = false
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/plain.iso"), to: folder, options: options)
+        let completed = try await engine.completedOrFailed(id)
+
+        #expect(completed.state == .completed)
+        #expect(completed.segments.count == 4)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "plain.iso")) == TestFiles.sha256(data))
+    }
+}

@@ -47,6 +47,10 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     /// The segments the download started with, which the download list keeps showing while work
     /// stealing splits them.
     public var plannedSegments: [SegmentBounds]?
+    /// `nil` in records from before the setting existed, which took over slow segments.
+    public var allowsWorkStealing: Bool?
+    /// When the download first started fetching, for how long it took.
+    public var startedAt: Date?
 
     public init(
         id: UUID,
@@ -62,6 +66,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         let last = sourceURL.lastPathComponent
         fileName = options.fileName ?? (last.isEmpty || last == "/" ? "download" : last)
         chosenName = options.fileName
+        allowsWorkStealing = options.allowsWorkStealing
         folder = destination.root
         destinationRoot = destination.root
         if case .categoryFolders = destination { sortsIntoCategoryFolders = true } else { sortsIntoCategoryFolders = false }
@@ -93,6 +98,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         options.userAgent = userAgent
         options.maximumFailures = maximumFailures
         options.fileName = chosenName
+        options.allowsWorkStealing = allowsWorkStealing ?? true
         return options
     }
 }
@@ -156,6 +162,12 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("chosen name") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "chosenName", .text)
+            }
+        }
+        migrator.registerMigration("work stealing and start time") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "allowsWorkStealing", .boolean)
+                table.add(column: "startedAt", .datetime)
             }
         }
         migrator.registerMigration("planned segments") { db in

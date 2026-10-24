@@ -206,6 +206,8 @@ private struct ConnectionsSettings: View {
     @AppStorage(SettingsKey.downloadsAtOnce) private var downloadsAtOnce = 3
     @AppStorage(SettingsKey.opensAllConnectionsAtOnce) private var allAtOnce = false
     @AppStorage(SettingsKey.retries) private var retries = 5
+    @AppStorage(SettingsKey.takesOverSlowSegments) private var takesOverSlowSegments = false
+    @State private var explainsTakingOver = false
 
     var body: some View {
         Form {
@@ -235,6 +237,22 @@ private struct ConnectionsSettings: View {
                 Text("After the first connection starts").tag(false)
                 Text("All at once").tag(true)
             }
+            LabeledContent {
+                Toggle("Take over slow segments", isOn: $takesOverSlowSegments).labelsHidden().toggleStyle(.switch)
+            } label: {
+                HStack(spacing: DowlioDesign.Spacing.xs) {
+                    Text("Take over slow segments")
+                    Button { explainsTakingOver.toggle() } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("What this does")
+                    .accessibilityLabel("About taking over slow segments")
+                    .popover(isPresented: $explainsTakingOver, arrowEdge: .bottom) {
+                        TakingOverExplanation()
+                    }
+                }
+            }
             LabeledContent("Retry a failed connection") {
                 HStack {
                     Text(retries == 1 ? "1 time" : "\(retries) times").monospacedDigit()
@@ -257,5 +275,20 @@ private struct ComingSoon: View {
             .multilineTextAlignment(.center)
             .padding(DowlioDesign.Spacing.xxl)
             .frame(maxWidth: .infinity, minHeight: 160)
+    }
+}
+
+private struct TakingOverExplanation: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
+            Text("Take over slow segments").font(DowlioDesign.TypeRole.heading)
+            Text("Dowlio splits each download into segments, one per connection. Some connections are slower than others, so a download can end up waiting on one slow segment.")
+            Text("With this on, a connection that finishes its own segment early takes over half of the slowest segment's remaining work, so the download finishes sooner. A download can be split this way into at most 32 segments.")
+            Text("Leave it off if a server limits how many requests it accepts, or if you'd rather each connection keep its own segment.")
+        }
+        .font(DowlioDesign.TypeRole.detail)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 300, alignment: .leading)
+        .padding(DowlioDesign.Spacing.lg)
     }
 }

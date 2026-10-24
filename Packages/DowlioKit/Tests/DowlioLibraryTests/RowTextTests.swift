@@ -162,6 +162,29 @@ struct RowTextTests {
         #expect(row.segmentCountText == "2 planned, 2 added")
     }
 
+    @Test(arguments: [
+        (TimeInterval(42), "42 s"),
+        (200, "3 min 20 s"),
+        (3600, "1 h"),
+        (3900, "1 h 5 min"),
+        (0.4, "Less than a second"),
+    ])
+    func aCompletedRowSaysHowLongItTook(seconds: TimeInterval, text: String) {
+        var row = Self.row(state: .completed)
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        row.startedAt = start
+        row.completedAt = start.addingTimeInterval(seconds)
+        #expect(row.timeTakenText == text)
+    }
+
+    @Test func onlyACompletedRowWithBothTimesSaysHowLongItTook() {
+        var row = Self.row(state: .downloading)
+        row.startedAt = Date()
+        #expect(row.timeTakenText == nil)
+        row.state = .completed
+        #expect(row.timeTakenText == nil)
+    }
+
     private static func row(state: DownloadRow.State) -> DownloadRow {
         DownloadRow(
             id: DownloadID(), state: state, fileName: "file.zip", sourceURL: URL(string: "https://example.com/file.zip")!,

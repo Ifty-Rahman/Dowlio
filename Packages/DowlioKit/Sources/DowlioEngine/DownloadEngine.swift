@@ -174,9 +174,9 @@ public actor DownloadEngine {
     /// so Resume continues it. Returns the download's identifier. A partial file the engine already
     /// has returns that download. Throws `RestoreError`, and leaves the partial file alone, when its
     /// manifest is missing, unreadable or describes segments that don't fit the file.
-    /// `maximumFailures` is the retry setting at the time of the restore, since the manifest doesn't
-    /// keep it.
-    public func restore(partialFile package: URL, maximumFailures: Int? = nil) throws -> DownloadID {
+    /// `maximumFailures` and `allowsWorkStealing` are the settings at the time of the restore, since
+    /// the manifest doesn't keep them.
+    public func restore(partialFile package: URL, maximumFailures: Int? = nil, allowsWorkStealing: Bool = true) throws -> DownloadID {
         let package = package.standardizedFileURL
         if let known = entries.first(where: { $0.value.partialFile.url?.standardizedFileURL == package }) {
             return known.key
@@ -194,6 +194,7 @@ public actor DownloadEngine {
         options.userAgent = manifest.userAgent
         options.nameConflictPolicy = manifest.nameConflictPolicy ?? .keepBoth
         options.maximumFailures = maximumFailures
+        options.allowsWorkStealing = allowsWorkStealing
 
         let segments = manifest.segments.map { ByteRange(start: $0.start, end: $0.end) }
         let plan = DownloadPlan(

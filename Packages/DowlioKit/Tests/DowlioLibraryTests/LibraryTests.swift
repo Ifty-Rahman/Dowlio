@@ -193,6 +193,22 @@ struct LibraryTests {
         #expect(try await fixture.library.firstRows { _ in true }.isEmpty)
     }
 
+    @Test func aCompletedDownloadKnowsWhenItStartedAndFinishedEvenAfterARelaunch() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 230), eTag: "\"t1\""), at: "/timed.zip")
+
+        let id = await fixture.add(server.url(for: "/timed.zip"))
+        let row = try await fixture.library.row(id) { $0.state == .completed }
+        let started = try #require(row.startedAt)
+        let completed = try #require(row.completedAt)
+        #expect(completed >= started)
+        #expect(row.timeTakenText != nil)
+
+        let relaunched = try await fixture.relaunched().library.row(id) { _ in true }
+        #expect(relaunched.timeTakenText == row.timeTakenText)
+    }
+
     @Test func aRowIsPublishedOnlyWhenSomethingItShowsChanges() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
