@@ -34,6 +34,33 @@ struct ProgressTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "still.bin")) == TestFiles.sha256(data))
     }
 
+    /// Story 22: while bytes arrive, the snapshots carry the speed and the time left, and the time
+    /// left goes down as the download goes on.
+    @Test func snapshotsShowTheSpeedAndTheTimeLeft() async throws {
+        let server = try await TestServer()
+        let size = 2 * 1024 * 1024
+        let data = TestServer.makeData(size: size, seed: 63)
+        server.serve(.init(data: data, throttle: .init(rangeStart: 0, bytesPerSecond: 1024 * 1024)), at: "/timed.bin")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.connections = 1
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/timed.bin"), to: folder, options: options)
+        var snapshots: [DownloadSnapshot] = []
+        for await snapshot in await engine.snapshots(of: id) { snapshots.append(snapshot) }
+
+        #expect(snapshots.last?.state == .completed)
+        let downloading = snapshots.filter { $0.state == .downloading }
+        #expect(downloading.contains { $0.bytesPerSecond > 0 })
+        #expect(downloading.filter { $0.bytesPerSecond > 0 }.allSatisfy { $0.timeRemaining != nil && $0.totalBytes == Int64(size) })
+        let timesLeft = downloading.compactMap(\.timeRemaining)
+        #expect(timesLeft.count >= 2)
+        #expect(try #require(timesLeft.last) < (try #require(timesLeft.first)))
+        #expect(snapshots.last?.bytesPerSecond == 0)
+        #expect(snapshots.last?.timeRemaining == nil)
+    }
+
     @Test func aSteadyDownloadGetsAtMostFourSnapshotsASecond() async throws {
         let server = try await TestServer()
         let size = 2 * 1024 * 1024

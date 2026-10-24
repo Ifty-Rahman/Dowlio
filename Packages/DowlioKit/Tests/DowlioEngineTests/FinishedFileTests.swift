@@ -207,6 +207,35 @@ struct FinishedFileTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["notes.zip"])
     }
 
+    /// Story 41: the finished file is the partial file's data file, renamed into the folder in one
+    /// step. It has the same inode, so it was never copied, and its name doesn't exist before.
+    @Test func theFinishedFileAppearsInOneStep() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024 * 1024, seed: 92)
+        server.serve(.init(data: data, holdAfterBytes: 64 * 1024), at: "/whole.pkg")
+        let folder = try TestFiles.makeFolder()
+        let finishedURL = folder.appending(path: "whole.pkg")
+
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/whole.pkg"), to: folder)
+        _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
+        let dataFile = Self.inode(of: folder.appending(path: "whole.pkg.dowlio/data"))
+        #expect(dataFile != nil)
+        #expect(!FileManager.default.fileExists(atPath: finishedURL.path))
+
+        server.releaseHeldResponses()
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(Self.inode(of: finishedURL) == dataFile)
+        #expect(try TestFiles.sha256(of: finishedURL) == TestFiles.sha256(data))
+    }
+
+    private static func inode(of file: URL) -> Int? {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        return (attributes?[.systemFileNumber] as? NSNumber)?.intValue
+    }
+
     @Test func aPlainHTTPDownloadIsMarkedNotSecure() async throws {
         let folder = try TestFiles.makeFolder()
 
