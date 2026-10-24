@@ -94,7 +94,7 @@ struct PresenceToggles: View {
     @State private var loginProblem: String?
 
     var body: some View {
-        Toggle("Open Dowlio at login", isOn: Binding(get: { opensAtLogin }, set: setOpensAtLogin))
+        Toggle("Open Dowlio at login", isOn: Binding(get: { opensAtLogin }, set: { setOpensAtLogin($0) }))
         if let loginProblem {
             Text(loginProblem).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }
@@ -157,7 +157,7 @@ private struct DownloadsSettings: View {
                 }
             }
             Toggle("Sort into category folders", isOn: $sortsIntoCategoryFolders)
-            Picker("If a file with the same name exists", selection: Binding(get: { policy }, set: choosePolicy)) {
+            Picker("If a file with the same name exists", selection: Binding(get: { policy }, set: { choosePolicy($0) })) {
                 Text("Keep both").tag(NameConflictPolicy.keepBoth.rawValue)
                 Text("Replace").tag(NameConflictPolicy.replace.rawValue)
                 Text("Skip").tag(NameConflictPolicy.skip.rawValue)
