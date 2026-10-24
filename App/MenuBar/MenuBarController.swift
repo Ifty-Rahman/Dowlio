@@ -19,7 +19,6 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         self.model = model
         super.init()
         popover.behavior = .transient
-        popover.animates = true
         popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
             model: model, panel: panel,
@@ -54,6 +53,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         } else if let button = item.button {
             panel.showsQuickAdd = false
             NSApp.activate()
+            popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             watchOutsideClicks()

@@ -53,6 +53,20 @@ enum DebugLaunch {
         #endif
     }
 
+    /// `light`, `dark`, `light-contrast` or `dark-contrast`, for checking each look without
+    /// changing System Settings.
+    @MainActor
+    static func applyAppearance() {
+        #if DEBUG
+        let names: [String: NSAppearance.Name] = [
+            "light": .aqua, "dark": .darkAqua,
+            "light-contrast": .accessibilityHighContrastAqua, "dark-contrast": .accessibilityHighContrastDarkAqua,
+        ]
+        guard let value = ProcessInfo.processInfo.environment["DOWLIO_DEBUG_APPEARANCE"], let name = names[value] else { return }
+        NSApp.appearance = NSAppearance(named: name)
+        #endif
+    }
+
     @MainActor
     static func applyWindowWidth() {
         #if DEBUG

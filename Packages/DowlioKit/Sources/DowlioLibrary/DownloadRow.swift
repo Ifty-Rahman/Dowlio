@@ -162,6 +162,19 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         }
     }
 
+    /// What VoiceOver reads for a row: name, state, how far it got, and speed.
+    public var spokenSummary: String {
+        var parts = [fileName, stateWord]
+        if let fractionDone {
+            parts.append("\(Int((fractionDone * 100).rounded(.down))) percent")
+        } else if receivedBytes > 0 {
+            parts.append(ByteText.string(receivedBytes))
+        }
+        if let speedText { parts.append(speedText) }
+        if isNotSecure { parts.append("Not secure") }
+        return parts.joined(separator: ", ")
+    }
+
     /// "12.4 MB/s" while bytes arrive.
     public var speedText: String? {
         guard state == .downloading, bytesPerSecond > 0 else { return nil }

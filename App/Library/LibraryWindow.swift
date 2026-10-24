@@ -91,7 +91,7 @@ struct LibraryWindow: View {
                 guard DebugLaunch.isOn else { return }
                 try? await Task.sleep(for: .seconds(1))
                 DebugLaunch.applyWindowWidth()
-                if DebugLaunch.showsInspector { togglePanel($showsInspector) }
+                if DebugLaunch.showsInspector, !showsInspector { togglePanel($showsInspector) }
                 if DebugLaunch.opensSettings { model.showSettings() }
                 if DebugLaunch.togglesSidebar {
                     try? await Task.sleep(for: .seconds(1))

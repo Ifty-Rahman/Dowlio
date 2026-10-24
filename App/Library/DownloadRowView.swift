@@ -25,10 +25,12 @@ struct DownloadRowView: View {
                 Label(row.stateWord, systemImage: row.state.symbolName)
                     .font(DowlioDesign.TypeRole.caption)
                     .foregroundStyle(row.state.tone)
+                    .fixedSize()
                 if row.isNotSecure {
                     Label("Not secure", systemImage: "lock.open.fill")
                         .font(DowlioDesign.TypeRole.caption)
                         .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize()
                 }
             }
             SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone)
@@ -43,7 +45,7 @@ struct DownloadRowView: View {
             .lineLimit(1)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(row.spokenSummary)
     }
 
     @ViewBuilder private var action: some View {
@@ -67,14 +69,6 @@ struct DownloadRowView: View {
         .buttonStyle(.borderless)
         .help(title)
         .accessibilityLabel(title)
-    }
-
-    private var accessibilityLabel: String {
-        var parts = [row.fileName, row.stateWord]
-        if let fraction = row.fractionDone { parts.append("\(Int((fraction * 100).rounded(.down))) percent") }
-        if let speed = row.speedText { parts.append(speed) }
-        if row.isNotSecure { parts.append("Not secure") }
-        return parts.joined(separator: ", ")
     }
 }
 

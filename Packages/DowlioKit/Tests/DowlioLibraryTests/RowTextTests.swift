@@ -185,6 +185,17 @@ struct RowTextTests {
         #expect(row.timeTakenText == nil)
     }
 
+    @Test func voiceOverReadsTheNameStateProgressAndSpeed() {
+        var row = Self.row(state: .downloading)
+        row.receivedBytes = 1_000_000
+        row.totalBytes = 4_000_000
+        row.bytesPerSecond = 2_000_000
+        #expect(row.spokenSummary == "file.zip, Downloading, 25 percent, 2.00 MB/s")
+        row.totalBytes = nil
+        row.isNotSecure = true
+        #expect(row.spokenSummary == "file.zip, Downloading, 1.00 MB, 2.00 MB/s, Not secure")
+    }
+
     private static func row(state: DownloadRow.State) -> DownloadRow {
         DownloadRow(
             id: DownloadID(), state: state, fileName: "file.zip", sourceURL: URL(string: "https://example.com/file.zip")!,

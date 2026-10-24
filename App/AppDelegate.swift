@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var launchWindowDecided = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        DebugLaunch.applyAppearance()
         let event = NSAppleEventManager.shared().currentAppleEvent
         Self.launchedAtLogin = event?.eventID == kAEOpenApplication
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
