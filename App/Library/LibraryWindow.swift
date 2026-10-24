@@ -44,7 +44,7 @@ struct LibraryWindow: View {
             }
             detail
                 .frame(minWidth: Self.listMinimumWidth, maxWidth: .infinity, maxHeight: .infinity)
-                .sheet(isPresented: Binding(get: { !hasSeenWelcome }, set: { if !$0 { hasSeenWelcome = true } })) {
+                .sheet(isPresented: showsWelcome) {
                     OnboardingSheet(model: model) { hasSeenWelcome = true }
                         .interactiveDismissDisabled()
                 }
@@ -105,7 +105,7 @@ struct LibraryWindow: View {
             model.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
             return true
         }
-        .sheet(item: Bindable(model).newDownload) { sheet in
+        .sheet(item: newDownloadSheet) { sheet in
             NewDownloadSheet(sheet: sheet) { model.add($0) }
         }
         .focusedSceneValue(\.findInLibrary, SearchFocus.isAvailable ? FindInLibrary { isSearching = true } : nil)
@@ -199,6 +199,16 @@ struct LibraryWindow: View {
 
     private func togglePanel(_ isShown: Binding<Bool>) {
         withAnimation(reduceMotion ? nil : .smooth(duration: 0.28)) { isShown.wrappedValue.toggle() }
+    }
+
+    /// A window shows one sheet at a time, so the New Download sheet waits for onboarding to
+    /// close, and Show Welcome Again waits for the New Download sheet.
+    private var showsWelcome: Binding<Bool> {
+        Binding(get: { !hasSeenWelcome && model.newDownload == nil }, set: { if !$0 { hasSeenWelcome = true } })
+    }
+
+    private var newDownloadSheet: Binding<NewDownloadModel?> {
+        Binding(get: { hasSeenWelcome ? model.newDownload : nil }, set: { model.newDownload = $0 })
     }
 
     private var isConfirming: Binding<Bool> {

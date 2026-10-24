@@ -15,37 +15,35 @@ public struct FinishWatcher: Sendable {
     }
 }
 
-/// Holds finishes until five seconds pass without another, so finishes close together share one
-/// notice.
+/// Groups finishes that come within five seconds of the first one, so they share one notice. The
+/// window opens at the first finish, so a steady trickle never holds a notice back for ever.
 public struct FinishGrouper: Sendable {
     public static let window: TimeInterval = 5
 
     private var waiting: [DownloadRow] = []
-    private var lastFinish: Date?
+    private var firstFinish: Date?
 
     public init() {}
 
     public mutating func add(_ row: DownloadRow, at date: Date) {
         waiting.append(row)
-        lastFinish = date
+        if firstFinish == nil { firstFinish = date }
     }
 
-    /// When the waiting finishes become due, or `nil` with none waiting.
     public var dueDate: Date? {
-        lastFinish.map { $0.addingTimeInterval(Self.window) }
+        firstFinish.map { $0.addingTimeInterval(Self.window) }
     }
 
     public mutating func takeDue(at now: Date) -> FinishNotice? {
         guard let dueDate, now >= dueDate, !waiting.isEmpty else { return nil }
         defer {
             waiting = []
-            lastFinish = nil
+            firstFinish = nil
         }
         return FinishNotice(rows: waiting)
     }
 }
 
-/// One notification for one or more finished downloads.
 public struct FinishNotice: Equatable, Sendable {
     public let rows: [DownloadRow]
 
@@ -57,7 +55,6 @@ public struct FinishNotice: Equatable, Sendable {
         rows.count == 1 ? "Download finished" : "\(rows.count) downloads finished"
     }
 
-    /// The file name, or up to three names and how many more.
     public var body: String {
         let names = rows.map(\.fileName)
         switch names.count {
@@ -70,4 +67,29 @@ public struct FinishNotice: Equatable, Sendable {
 
     /// "Then" in Settings runs for a single finish only, so several never open a pile of files.
     public var runsThenAction: Bool { rows.count == 1 }
+
+    /// The file Show in Finder, Open and "Then" act on. Only a single finish has one.
+    public var singleFile: URL? {
+        rows.count == 1 ? rows[0].finishedFile : nil
+    }
+}
+
+/// What Settings › General's "Then" does after a single download finishes.
+public enum ThenAction: String, CaseIterable, Sendable {
+    case nothing
+    case showInFinder
+    case open
+
+    /// A saved choice, with anything unknown read as doing nothing.
+    public init(saved: String) {
+        self = ThenAction(rawValue: saved) ?? .nothing
+    }
+
+    public var title: String {
+        switch self {
+        case .nothing: "Do nothing"
+        case .showInFinder: "Show in Finder"
+        case .open: "Open the file"
+        }
+    }
 }

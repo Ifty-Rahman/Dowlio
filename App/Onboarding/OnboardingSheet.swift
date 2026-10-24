@@ -106,8 +106,6 @@ private struct PageDots: View {
     }
 }
 
-/// Eight segments filling at different speeds, then starting over. Still and full with Reduce
-/// Motion on.
 private struct FillingBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let speeds: [Double] = [1.0, 0.8, 1.15, 0.7, 0.95, 1.25, 0.85, 1.05]

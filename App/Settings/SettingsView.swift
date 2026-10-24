@@ -29,7 +29,7 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
     let model: AppModel
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
-    @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing.rawValue
+    @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
     @AppStorage(SettingsKey.hasSeenWelcome) private var hasSeenWelcome = false
     @State private var notificationsDenied = false
 
@@ -50,7 +50,7 @@ private struct GeneralSettings: View {
                     }
                 }
                 Picker("Then", selection: $thenAction) {
-                    ForEach(ThenAction.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                    ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
             }
             Section {
