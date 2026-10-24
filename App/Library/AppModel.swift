@@ -19,7 +19,6 @@ final class AppModel {
     var openLibraryWindow: (() -> Void)?
 
     let downloadsFolder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-    /// Free space on the download folder's disk, for the sidebar footer.
     private(set) var freeSpace: Int64?
 
     private let library: Library?

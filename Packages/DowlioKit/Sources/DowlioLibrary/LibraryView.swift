@@ -1,7 +1,6 @@
 import DowlioCore
 import Foundation
 
-/// A sidebar item in the Library group.
 public enum LibraryFilter: String, CaseIterable, Hashable, Sendable {
     case all
     case downloading
@@ -54,16 +53,16 @@ public struct LibraryView: Equatable, Sendable {
         Dictionary(uniqueKeysWithValues: LibraryFilter.allCases.map { filter in (filter, all.count { filter.includes($0) }) })
     }
 
-    /// "3 items · 12.4 MB/s": the rows shown, then the speed of every download, shown or not.
+    /// "3 downloads · 12.4 MB/s": the rows shown, then the speed of every download, shown or not.
     public var summary: String {
         let count = rows.count
-        let items = count == 1 ? "1 item" : "\(count) items"
+        let items = count == 1 ? "1 download" : "\(count) downloads"
         let speed = all.reduce(Int64(0)) { $0 + ($1.speedText == nil ? 0 : $1.bytesPerSecond) }
         return speed > 0 ? "\(items) · \(ByteText.string(speed))/s" : items
     }
 
     public var canPauseAll: Bool { all.contains(where: \.canPause) }
-    public var canResumeAll: Bool { all.contains { $0.state == .paused } }
+    public var canResumeAll: Bool { all.contains { $0.state == .paused || $0.state == .queued } }
     public var canClearCompleted: Bool { all.contains { $0.state == .completed } }
 
     private static func matches(_ row: DownloadRow, _ query: String) -> Bool {
@@ -73,7 +72,6 @@ public struct LibraryView: Equatable, Sendable {
     }
 }
 
-/// The sidebar footer: free space on the download folder's disk.
 public enum FreeSpaceText {
     public static func string(_ bytes: Int64) -> String {
         "\(ByteText.string(bytes)) free"

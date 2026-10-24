@@ -22,6 +22,10 @@ public actor Library {
     private var published: [DownloadRow]?
     private var following: Task<Void, Never>?
     private var maximumActive = 3
+    /// Downloads handed to the engine whose first fetching snapshot hasn't arrived. A Paused or
+    /// Failed snapshot for one of them is from before the start, so it doesn't free the slot.
+    private var starting: Set<DownloadID> = []
+    private var pausingAll = false
 
     public init(
         engine: DownloadEngine,
@@ -84,15 +88,15 @@ public actor Library {
         startImmediately: Bool = true
     ) async -> DownloadID {
         let id = DownloadID()
+        let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
         let record = StoredDownload(
-            id: id.rawValue, sourceURL: url, destination: destination, options: options,
-            state: .paused, addedAt: now()
+            id: id.rawValue, sourceURL: url, destination: destination, options: options, state: state, addedAt: now()
         )
         records[id] = record
         save(record)
         if !options.cookies.isEmpty { waitingCookies[id] = options.cookies }
         publish()
-        if startImmediately { await runOrQueue(id) }
+        if state == .downloading { await startInEngine(id) }
         return id
     }
 
@@ -103,73 +107,71 @@ public actor Library {
         await fillSlots()
     }
 
-    /// Stops a download, or takes a Queued one off the queue.
     public func pause(_ id: DownloadID) async {
-        guard var record = records[id] else { return }
+        guard let record = records[id] else { return }
         if record.state == .queued {
-            record.state = .paused
-            records[id] = record
-            save(record)
-            publish()
+            setState(.paused, of: id)
         } else if inEngine.contains(id) {
             await engine.pause(id)
+            if let now = await engine.snapshot(of: id) { await apply(now) }
         }
     }
 
-    /// Continues a Paused download, or queues it when the limit is reached. One that never reached
-    /// the engine, or whose partial file is gone, starts from its link.
+    /// Continues a Paused or Queued download, or queues it when the limit is reached. One that
+    /// never reached the engine, or whose partial file is gone, starts from its link.
     public func resume(_ id: DownloadID) async {
-        guard records[id]?.state == .paused else { return }
+        guard let state = records[id]?.state, state == .paused || state == .queued else { return }
         await runOrQueue(id)
     }
 
-    /// Continues a Failed download, or queues it when the limit is reached.
     public func retry(_ id: DownloadID) async {
         guard records[id]?.state == .failed else { return }
         await runOrQueue(id)
     }
 
-    /// Pauses every download that runs or waits. Failed downloads stay as they are.
+    /// Pauses every download that runs or waits. Queued ones go first, and no slot that frees on
+    /// the way starts another download. Failed downloads stay as they are.
     public func pauseAll() async {
-        for (id, record) in records where record.state == .downloading || record.state == .queued {
-            await pause(id)
-        }
+        pausingAll = true
+        defer { pausingAll = false }
+        for (id, record) in records where record.state == .queued { setState(.paused, of: id) }
+        for (id, record) in records where record.state == .downloading { await pause(id) }
     }
 
-    /// Resumes every Paused download, oldest first. Those beyond the limit wait Queued.
+    /// Resumes every Paused download, oldest first, then starts Queued ones while slots are free.
     public func resumeAll() async {
         let paused = records.values.filter { $0.state == .paused }.sorted { $0.addedAt < $1.addedAt }
         for record in paused { await resume(DownloadID(rawValue: record.id)) }
+        await fillSlots()
     }
 
     private var activeCount: Int {
         records.values.count { $0.state == .downloading }
     }
 
+    private func setState(_ state: StoredDownload.State, of id: DownloadID) {
+        guard var record = records[id], record.state != state else { return }
+        record.state = state
+        records[id] = record
+        save(record)
+        publish()
+    }
+
     private func runOrQueue(_ id: DownloadID) async {
-        guard var record = records[id] else { return }
-        guard activeCount < maximumActive else {
-            record.state = .queued
-            records[id] = record
-            save(record)
-            publish()
-            return
-        }
+        guard activeCount < maximumActive else { return setState(.queued, of: id) }
         await run(id)
     }
 
     private func run(_ id: DownloadID) async {
-        guard inEngine.contains(id), var record = records[id] else { return await startInEngine(id) }
+        guard inEngine.contains(id) else { return await startInEngine(id) }
         let failed = snapshots[id]?.state.isFailed ?? false
-        record.state = .downloading
-        records[id] = record
-        save(record)
-        publish()
+        starting.insert(id)
+        setState(.downloading, of: id)
         if failed { await engine.retry(id) } else { await engine.resume(id) }
     }
 
     private func fillSlots() async {
-        while activeCount < maximumActive,
+        while !pausingAll, activeCount < maximumActive,
               let next = records.values.filter({ $0.state == .queued }).min(by: { $0.addedAt < $1.addedAt }) {
             await run(DownloadID(rawValue: next.id))
         }
@@ -186,6 +188,7 @@ public actor Library {
         records[id] = nil
         snapshots[id] = nil
         inEngine.remove(id)
+        starting.remove(id)
         waitingCookies[id] = nil
         try? store.delete(id.rawValue)
         publish()
@@ -246,7 +249,9 @@ public actor Library {
         record.state = .downloading
         records[id] = record
         save(record)
+        publish()
         inEngine.insert(id)
+        starting.insert(id)
         await engine.add(url: record.sourceURL, destination: record.destination, options: options, id: id)
     }
 
@@ -260,13 +265,21 @@ public actor Library {
         }
     }
 
-    private func apply(_ snapshot: DownloadSnapshot) async {
-        let id = snapshot.id
+    /// Takes the engine's state now, not the streamed one, which may be older than a pause or
+    /// resume the library has made since.
+    private func apply(_ streamed: DownloadSnapshot) async {
+        let id = streamed.id
+        guard records[id] != nil else { return }
+        let snapshot = await engine.snapshot(of: id) ?? streamed
         guard var record = records[id] else { return }
         if snapshot.state == .cancelled {
             snapshots[id] = nil
             publish()
             return
+        }
+        if starting.contains(id) {
+            guard snapshot.state.isFetching || snapshot.state == .finalizing || snapshot.state == .completed else { return }
+            starting.remove(id)
         }
         snapshots[id] = snapshot
 
@@ -368,7 +381,8 @@ public actor Library {
     private static func rowState(for state: StoredDownload.State) -> DownloadRow.State {
         switch state {
         case .queued: .queued
-        case .paused, .downloading, .failed: .paused
+        case .downloading: .downloading
+        case .paused, .failed: .paused
         case .completed: .completed
         }
     }

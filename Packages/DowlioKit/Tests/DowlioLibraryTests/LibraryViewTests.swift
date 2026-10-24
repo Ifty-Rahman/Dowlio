@@ -51,10 +51,10 @@ struct LibraryViewTests {
     }
 
     @Test func theToolbarSummaryCountsTheShownItemsAndAddsUpEverySpeed() {
-        #expect(LibraryView(rows: rows, filter: .all, search: "").summary == "7 items · 5.50 MB/s")
-        #expect(LibraryView(rows: rows, filter: .completed, search: "").summary == "1 item · 5.50 MB/s")
-        #expect(LibraryView(rows: [row("a.zip", host: nil, state: .paused)], filter: .all, search: "").summary == "1 item")
-        #expect(LibraryView(rows: [], filter: .all, search: "").summary == "0 items")
+        #expect(LibraryView(rows: rows, filter: .all, search: "").summary == "7 downloads · 5.50 MB/s")
+        #expect(LibraryView(rows: rows, filter: .completed, search: "").summary == "1 download · 5.50 MB/s")
+        #expect(LibraryView(rows: [row("a.zip", host: nil, state: .paused)], filter: .all, search: "").summary == "1 download")
+        #expect(LibraryView(rows: [], filter: .all, search: "").summary == "0 downloads")
     }
 
     @Test func pauseAllAndResumeAllAreOffWithNothingToDo() {

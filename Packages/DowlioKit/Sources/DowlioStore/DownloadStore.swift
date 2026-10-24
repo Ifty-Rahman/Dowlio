@@ -103,7 +103,9 @@ public final class DownloadStore: Sendable {
 
     public init(databaseAt url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        database = try DatabaseQueue(path: url.path)
+        var configuration = Configuration()
+        configuration.busyMode = .timeout(5)
+        database = try DatabaseQueue(path: url.path, configuration: configuration)
         try Self.migrator.migrate(database)
     }
 

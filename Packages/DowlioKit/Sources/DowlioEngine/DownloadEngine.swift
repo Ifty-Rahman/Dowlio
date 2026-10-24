@@ -134,6 +134,12 @@ public actor DownloadEngine {
         return stream
     }
 
+    /// The download's snapshot now, or `nil` for one the engine doesn't have. The streams can run
+    /// behind, so a caller that acts on a state change checks it here.
+    public func snapshot(of id: DownloadID) -> DownloadSnapshot? {
+        entries[id]?.snapshot
+    }
+
     /// Every download's current snapshot, in no particular order, then one snapshot per change of
     /// any download, including each new download's first snapshot and a cancelled download's
     /// last. The stream never ends on its own.

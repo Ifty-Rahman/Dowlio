@@ -116,7 +116,7 @@ struct LibraryWindow: View {
             }
         } else if view.rows.isEmpty {
             if search.trimmingCharacters(in: .whitespaces).isEmpty {
-                ContentUnavailableView("Nothing here", systemImage: filter.symbolName, description: Text(filter.emptyText))
+                ContentUnavailableView(filter.emptyText, systemImage: filter.symbolName)
             } else {
                 ContentUnavailableView.search(text: search)
             }
@@ -186,12 +186,12 @@ extension LibraryFilter {
 
     var emptyText: String {
         switch self {
-        case .all: "No downloads yet."
-        case .downloading: "Nothing is downloading right now."
-        case .paused: "No paused downloads."
-        case .queued: "Nothing is waiting in the queue."
-        case .failed: "No failed downloads."
-        case .completed: "No completed downloads."
+        case .all: "No downloads yet"
+        case .downloading: "Nothing is downloading"
+        case .paused: "No paused downloads"
+        case .queued: "No queued downloads"
+        case .failed: "No failed downloads"
+        case .completed: "No completed downloads"
         }
     }
 }

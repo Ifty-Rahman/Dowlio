@@ -120,6 +120,89 @@ struct QueueTests {
         _ = try await fixture.library.row(b) { $0.state == .completed }
     }
 
+    @Test func quickPausesAndResumesNeverRunMoreThanTheLimit() async throws {
+        let fixture = try await LibraryFixture()
+        await fixture.library.setMaximumActive(1)
+        let server = try await TestServer()
+        _ = try Self.serveHeld(["a", "b", "c"], on: server)
+        let recording = Task {
+            var most = 0
+            for await rows in await fixture.library.rows() {
+                most = max(most, rows.count { LibraryFilter.downloading.includes($0) })
+                if rows.count == 3, rows.allSatisfy({ $0.state == .completed }) { break }
+            }
+            return most
+        }
+
+        let a = await fixture.add(server.url(for: "/a.bin"))
+        _ = await fixture.add(server.url(for: "/b.bin"))
+        _ = await fixture.add(server.url(for: "/c.bin"))
+        _ = try await fixture.library.row(a) { $0.receivedBytes > 0 }
+        for _ in 0..<5 {
+            await fixture.library.pause(a)
+            await fixture.library.resume(a)
+        }
+        server.releaseHeldResponses()
+
+        #expect(await recording.value == 1)
+    }
+
+    @Test func pauseAllNeverStartsAQueuedDownload() async throws {
+        let fixture = try await LibraryFixture()
+        await fixture.library.setMaximumActive(2)
+        let server = try await TestServer()
+        _ = try Self.serveHeld(["a", "b", "c", "d"], on: server)
+
+        let a = await fixture.add(server.url(for: "/a.bin"))
+        let b = await fixture.add(server.url(for: "/b.bin"))
+        let c = await fixture.add(server.url(for: "/c.bin"))
+        let d = await fixture.add(server.url(for: "/d.bin"))
+        _ = try await fixture.library.row(a) { $0.receivedBytes > 0 }
+        _ = try await fixture.library.row(b) { $0.receivedBytes > 0 }
+        await fixture.library.pauseAll()
+        _ = try await fixture.library.firstRows { rows in [a, b, c, d].allSatisfy { id in rows.first { $0.id == id }?.state == .paused } }
+
+        #expect(!server.requests.contains { $0.path == "/c.bin" || $0.path == "/d.bin" })
+        server.releaseHeldResponses()
+    }
+
+    @Test func aQueuedDownloadBroughtBackByARelaunchStartsOnResume() async throws {
+        let fixture = try await LibraryFixture()
+        await fixture.library.setMaximumActive(1)
+        let server = try await TestServer()
+        _ = try Self.serveHeld(["a", "b"], on: server)
+
+        let a = await fixture.add(server.url(for: "/a.bin"))
+        let b = await fixture.add(server.url(for: "/b.bin"))
+        _ = try await fixture.library.row(a) { $0.receivedBytes > 0 }
+        _ = try await fixture.library.row(b) { $0.state == .queued }
+
+        let relaunched = try await fixture.relaunched()
+        #expect(try await relaunched.library.row(b) { _ in true }.state == .queued)
+        await relaunched.library.resume(b)
+        server.releaseHeldResponses()
+        _ = try await relaunched.library.row(b) { $0.state == .completed }
+    }
+
+    @Test func aDownloadAddedToStartIsNeverShownPaused() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        _ = try Self.serveHeld(["a"], on: server)
+        let recording = Task {
+            var states: [DownloadRow.State] = []
+            for await rows in await fixture.library.rows() {
+                if let row = rows.first { states.append(row.state) }
+                if rows.first?.state == .completed { break }
+            }
+            return states
+        }
+
+        _ = await fixture.add(server.url(for: "/a.bin"))
+        server.releaseHeldResponses()
+
+        #expect(await !recording.value.contains(.paused))
+    }
+
     /// One held file per name, at `/<name>.bin`. Each reply stops after 64 KiB until released.
     private static func serveHeld(_ names: [String], on server: TestServer) throws -> [String: Data] {
         var files: [String: Data] = [:]
