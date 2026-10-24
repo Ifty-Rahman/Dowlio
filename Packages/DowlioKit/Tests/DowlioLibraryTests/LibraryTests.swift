@@ -129,6 +129,32 @@ struct LibraryTests {
         #expect(try TestFiles.sha256(of: fixture.folder.appending(path: "again.bin")) == TestFiles.sha256(data))
     }
 
+    @Test func cancelLeavesACompletedDownloadAlone() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 208), eTag: "\"l8\""), at: "/done.txt")
+
+        let id = await fixture.add(server.url(for: "/done.txt"))
+        _ = try await fixture.library.row(id) { $0.state == .completed }
+        await fixture.library.cancel(id)
+
+        #expect(try await fixture.library.firstRows { _ in true }.map(\.id) == [id])
+        #expect(try await fixture.relaunched().library.firstRows { _ in true }.map(\.id) == [id])
+    }
+
+    @Test func theContentTypeDecidesTheCategoryWhenTheNameDoesnt() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        let headers = ["Content-Disposition": #"attachment; filename="talk""#, "Content-Type": "video/mp4"]
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 209), eTag: "\"l9\"", headers: headers), at: "/watch")
+
+        let id = await fixture.add(server.url(for: "/watch"))
+        let row = try await fixture.library.row(id) { $0.state == .completed }
+
+        #expect(row.category == .video)
+        #expect(try await fixture.relaunched().library.row(id) { _ in true }.category == .video)
+    }
+
     @Test func aRowIsPublishedOnlyWhenSomethingItShowsChanges() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()

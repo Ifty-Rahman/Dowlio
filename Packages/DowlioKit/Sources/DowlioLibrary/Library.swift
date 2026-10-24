@@ -112,7 +112,8 @@ public actor Library {
 
     /// Throws the download away: its partial file, its row and its record.
     public func cancel(_ id: DownloadID) async {
-        guard let record = records.removeValue(forKey: id), record.state != .completed else { return }
+        guard let record = records[id], record.state != .completed else { return }
+        records[id] = nil
         snapshots[id] = nil
         inEngine.remove(id)
         waitingCookies[id] = nil
