@@ -33,7 +33,7 @@ struct DowlioApp: App {
         .defaultSize(width: 620, height: 520)
 
         Settings {
-            ContentUnavailableView("Settings come in the next build", systemImage: "gearshape")
+            ContentUnavailableView("Settings aren't ready yet", systemImage: "gearshape")
                 .frame(width: 420, height: 240)
         }
     }

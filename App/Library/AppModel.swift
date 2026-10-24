@@ -88,7 +88,6 @@ final class AppModel {
         }
     }
 
-    /// Whether the library window is on screen, for routing ⌘N.
     var isLibraryWindowOpen = false
 
     func showLibraryWindow() {

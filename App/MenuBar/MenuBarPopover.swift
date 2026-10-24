@@ -11,7 +11,7 @@ struct MenuBarPopover: View {
     var body: some View {
         Group {
             if panel.showsQuickAdd {
-                QuickAddView(model: model, close: close) { panel.showsQuickAdd = false }
+                QuickAddView(model: model, close: close)
             } else {
                 summary
             }
@@ -24,7 +24,7 @@ struct MenuBarPopover: View {
         let summary = MenuBarSummary(rows: model.rows)
         return VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                     Text("Dowlio").font(DowlioDesign.TypeRole.title).accessibilityAddTraits(.isHeader)
                     Text(summary.status).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                 }
@@ -49,7 +49,7 @@ struct MenuBarPopover: View {
             }
             HStack {
                 Button("Pause All") { model.pauseAll() }
-                    .disabled(!LibraryView(rows: model.rows, selection: .filter(.all), search: "").canPauseAll)
+                    .disabled(!summary.canPauseAll)
                 Button("Add Link…") { panel.showsQuickAdd = true }
                 Spacer()
                 Button("Open Dowlio") {

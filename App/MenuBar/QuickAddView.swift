@@ -2,11 +2,9 @@ import DowlioCore
 import DowlioLibrary
 import SwiftUI
 
-/// The popover's second face: start a download from a link without opening the main window.
 struct QuickAddView: View {
     let model: AppModel
     let close: () -> Void
-    let back: () -> Void
     @State private var sheet: NewDownloadModel?
     @FocusState private var linkFocused: Bool
 
@@ -47,7 +45,7 @@ struct QuickAddView: View {
                 model.requestNewDownload(sheet.draft.text)
             }
             Spacer()
-            Button("Cancel", role: .cancel) { back() }
+            Button("Cancel", role: .cancel) { close() }
                 .keyboardShortcut(.cancelAction)
             Button(downloadTitle(sheet)) { download(sheet) }
                 .buttonStyle(.borderedProminent)

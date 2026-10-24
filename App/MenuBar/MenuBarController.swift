@@ -40,6 +40,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             popover.performClose(nil)
         } else if let button = item.button {
             panel.showsQuickAdd = false
+            NSApp.activate()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
@@ -66,7 +67,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     }
 }
 
-/// Which face the popover shows. It goes back to the list each time the popover opens.
+/// The popover goes back to the list each time it opens.
 @MainActor
 @Observable
 final class MenuBarPanel {

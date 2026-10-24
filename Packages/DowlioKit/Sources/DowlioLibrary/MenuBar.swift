@@ -7,13 +7,14 @@ public struct MenuBarSummary: Equatable, Sendable {
 
     private let running: [DownloadRow]
     private let waiting: [DownloadRow]
+    private let paused: [DownloadRow]
 
     public init(rows: [DownloadRow]) {
         running = rows.filter { LibraryFilter.downloading.includes($0) }
         waiting = rows.filter { $0.state == .queued }
+        paused = rows.filter { $0.state == .paused }
     }
 
-    /// "2 downloading · 1 queued", or "Nothing downloading".
     public var status: String {
         var parts: [String] = []
         if !running.isEmpty { parts.append("\(running.count) downloading") }
@@ -26,15 +27,16 @@ public struct MenuBarSummary: Equatable, Sendable {
         return speed > 0 ? "\(ByteText.string(speed))/s" : nil
     }
 
-    /// Running downloads, then Queued ones, at most five.
+    /// Running, then Queued, then Paused, so a paused download can be resumed from here.
     public var active: [DownloadRow] {
-        Array((running + waiting).prefix(Self.listLimit))
+        Array((running + waiting + paused).prefix(Self.listLimit))
     }
 
-    /// Active downloads the list leaves out.
     public var moreActive: Int {
-        max(running.count + waiting.count - Self.listLimit, 0)
+        max(running.count + waiting.count + paused.count - Self.listLimit, 0)
     }
+
+    public var canPauseAll: Bool { !running.isEmpty || !waiting.isEmpty }
 
     /// How full the icon's ring is, or `nil` to hide it because nothing is downloading. Downloads
     /// of unknown size don't count; with only those, the ring is full.
