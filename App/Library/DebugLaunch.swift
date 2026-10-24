@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// For checking the interface by hand without touching the real History: debug builds read a
 /// support folder, a download folder and links to add from the environment.
@@ -33,9 +33,24 @@ enum DebugLaunch {
         #endif
     }
 
-    static var showsInspector: Bool {
+    static var showsInspector: Bool { flag("DOWLIO_DEBUG_SHOW_INSPECTOR") }
+    static var togglesSidebar: Bool { flag("DOWLIO_DEBUG_TOGGLE_SIDEBAR") }
+
+    /// Sets the library window's width from `DOWLIO_DEBUG_WINDOW_WIDTH`, as a drag would.
+    @MainActor
+    static func applyWindowWidth() {
         #if DEBUG
-        ProcessInfo.processInfo.environment["DOWLIO_DEBUG_SHOW_INSPECTOR"] == "1"
+        guard let value = ProcessInfo.processInfo.environment["DOWLIO_DEBUG_WINDOW_WIDTH"], let width = Double(value),
+              let window = NSApp.windows.first(where: \.isVisible) else { return }
+        var frame = window.frame
+        frame.size.width = width
+        window.setFrame(frame, display: true)
+        #endif
+    }
+
+    private static func flag(_ name: String) -> Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment[name] == "1"
         #else
         false
         #endif

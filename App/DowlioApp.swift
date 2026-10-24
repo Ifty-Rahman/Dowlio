@@ -10,11 +10,13 @@ struct DowlioApp: App {
         Window("Dowlio", id: LibraryWindow.sceneID) {
             LibraryWindow(model: model)
         }
+        .defaultSize(width: 700, height: 520)
+        .windowResizability(.contentMinSize)
         .commands {
             NewDownloadCommands(model: model)
             DownloadCommands(model: model)
             FindCommands()
-            InspectorToggleCommands()
+            PanelCommands()
         }
 
         WindowGroup("Download", id: DetailWindow.sceneID, for: DownloadID.self) { $id in
