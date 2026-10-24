@@ -139,8 +139,6 @@ struct LibraryWindow: View {
             Button("Clear Completed", systemImage: "checkmark.circle") { model.clearCompleted() }
                 .help("Clear Completed")
                 .disabled(!view.canClearCompleted)
-            Button("New Download", systemImage: "plus") { model.requestNewDownload() }
-                .help("New Download")
             Button("Resume", systemImage: "play.fill") {
                 if selectedRows.isEmpty { model.resumeAll() } else { actions.resume(selectedRows) }
             }
@@ -151,6 +149,8 @@ struct LibraryWindow: View {
             }
             .help(selectedRows.isEmpty ? "Pause All" : "Pause Selected")
             .disabled(selectedRows.isEmpty ? !view.canPauseAll : SelectionSummary(rows: selectedRows).pausable.isEmpty)
+            Button("New Download", systemImage: "plus") { model.requestNewDownload() }
+                .help("New Download")
         }
         ToolbarItem {
             Button("Inspector", systemImage: "sidebar.right") { togglePanel($showsInspector) }
