@@ -7,6 +7,9 @@ struct MenuBarPopover: View {
     let model: AppModel
     @Bindable var panel: MenuBarPanel
     let close: () -> Void
+    /// Settings, Report a Problem and Quit, as a native menu. A SwiftUI menu inside the popover
+    /// closed again on its first click while Dowlio was still becoming the active app.
+    let showMore: () -> Void
 
     var body: some View {
         Group {
@@ -63,24 +66,11 @@ struct MenuBarPopover: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            Button("Settings…") {
-                close()
-                model.showSettings()
-            }
-            Button("Report a Problem") {
-                close()
-                model.reportProblem()
-            }
-            Divider()
-            Button("Quit Dowlio") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
-        } label: {
+        Button(action: showMore) {
             Image(systemName: "ellipsis.circle")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.borderless)
+        .help("More")
         .accessibilityLabel("More")
     }
 }

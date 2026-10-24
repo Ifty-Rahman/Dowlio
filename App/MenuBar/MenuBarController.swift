@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
+    private var outsideClicks: Any?
 
     init(model: AppModel) {
         self.model = model
@@ -20,9 +21,11 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: MenuBarPopover(model: model, panel: panel) { [weak self] in
-            self?.popover.performClose(nil)
-        })
+        popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
+            model: model, panel: panel,
+            close: { [weak self] in self?.popover.performClose(nil) },
+            showMore: { [weak self] in self?.showMoreMenu() }
+        ))
         item.button?.target = self
         item.button?.action = #selector(toggle)
         model.menuBar = self
@@ -53,11 +56,41 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             NSApp.activate()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            watchOutsideClicks()
         }
     }
 
     func popoverDidClose(_ notification: Notification) {
         panel.showsQuickAdd = false
+        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
+        outsideClicks = nil
+    }
+
+    /// A click anywhere outside Dowlio closes the popover, even after a menu inside it was used.
+    private func watchOutsideClicks() {
+        guard outsideClicks == nil else { return }
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+        }
+    }
+
+    private func showMoreMenu() {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Report a Problem", action: #selector(reportProblem), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit Dowlio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @objc private func openSettings() {
+        popover.performClose(nil)
+        model.showSettings()
+    }
+
+    @objc private func reportProblem() {
+        popover.performClose(nil)
+        model.reportProblem()
     }
 
     private func follow() {
