@@ -41,6 +41,40 @@ struct CookieTests {
         #expect(toOtherHost.allSatisfy { $0.headers["cookie"] == nil })
     }
 
+    @Test func cookiesNeverFollowARedirectToAnotherPortOnTheSameHost() async throws {
+        let linkServer = try await TestServer()
+        let fileServer = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 75)
+        fileServer.serve(.init(data: data, eTag: "\"x2\""), at: "/real.bin")
+        linkServer.redirect("/start.bin", to: fileServer.url(for: "/real.bin").absoluteString)
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: linkServer.url(for: "/start.bin"), to: folder, options: Self.options)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(!linkServer.requests.isEmpty)
+        #expect(linkServer.requests.allSatisfy { $0.headers["cookie"] == Self.header })
+        #expect(!fileServer.requests.isEmpty)
+        #expect(fileServer.requests.allSatisfy { $0.headers["cookie"] == nil })
+    }
+
+    @Test(arguments: [
+        ("https://files.example.com/a", "https://files.example.com/b", true),
+        ("https://Files.Example.com/a", "https://files.example.com:443/b", true),
+        ("http://files.example.com/a", "http://files.example.com:80/b", true),
+        ("https://files.example.com/a", "http://files.example.com/a", false),
+        ("https://files.example.com/a", "https://files.example.com:8443/a", false),
+        ("http://127.0.0.1:8080/a", "http://127.0.0.1:8081/a", false),
+        ("https://files.example.com/a", "https://cdn.example.com/a", false),
+    ])
+    func cookiesGoOnlyToTheSameSchemeHostAndPort(from: String, to: String, sameOrigin: Bool) throws {
+        let from = try #require(URL(string: from))
+        let to = try #require(URL(string: to))
+        #expect(from.hasSameOrigin(as: to) == sameOrigin)
+    }
+
     @Test func everyRequestSendsTheCookiesIncludingRetries() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 71)

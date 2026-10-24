@@ -34,7 +34,7 @@ struct ConnectionOpener: Sendable {
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
         // Cookies came from the link's own site, and a redirect may lead to another one.
-        if !options.cookies.isEmpty, url.hasSameHost(as: originalURL) {
+        if !options.cookies.isEmpty, url.hasSameOrigin(as: originalURL) {
             let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
         }
@@ -43,8 +43,14 @@ struct ConnectionOpener: Sendable {
 }
 
 extension URL {
-    func hasSameHost(as other: URL) -> Bool {
-        guard let host = host()?.lowercased(), let otherHost = other.host()?.lowercased() else { return false }
-        return host == otherHost
+    /// Same scheme, host and port, with a missing port read as the scheme's default.
+    func hasSameOrigin(as other: URL) -> Bool {
+        guard let scheme = scheme?.lowercased(), let host = host()?.lowercased(),
+              let otherHost = other.host()?.lowercased() else { return false }
+        return scheme == other.scheme?.lowercased() && host == otherHost && effectivePort == other.effectivePort
+    }
+
+    private var effectivePort: Int? {
+        port ?? (scheme?.lowercased() == "https" ? 443 : scheme?.lowercased() == "http" ? 80 : nil)
     }
 }
