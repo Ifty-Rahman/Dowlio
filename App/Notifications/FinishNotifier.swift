@@ -1,6 +1,9 @@
 import AppKit
 import DowlioLibrary
+import os
 import UserNotifications
+
+private let log = Logger(subsystem: "io.github.ifty-rahman.Dowlio", category: "notifications")
 
 @MainActor
 final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
@@ -28,8 +31,15 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// The question comes when the first download is added, so it has a reason.
     func askPermissionIfNeeded() {
         Task {
-            guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
-            _ = try? await center.requestAuthorization(options: [.alert, .sound])
+            let status = await center.notificationSettings().authorizationStatus
+            log.info("Notification permission is \(status.rawValue, privacy: .public)")
+            guard status == .notDetermined else { return }
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound])
+                log.info("Notification permission granted: \(granted, privacy: .public)")
+            } catch {
+                log.error("Notification permission request failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -42,7 +52,10 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             try? await Task.sleep(for: .seconds(max(due.timeIntervalSinceNow, 0) + 0.05))
             guard let self else { return }
             armedFor = nil
-            if let notice = grouper.takeDue(at: Date()) { deliver(notice) }
+            if let notice = grouper.takeDue(at: Date()) {
+                log.info("Delivering a notice for \(notice.rows.count, privacy: .public) finished downloads")
+                deliver(notice)
+            }
         }
     }
 
@@ -60,7 +73,13 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             content.categoryIdentifier = Self.category
             content.userInfo = ["file": file.path]
         }
-        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
+            if let error {
+                log.error("Posting a notification failed: \(error.localizedDescription, privacy: .public)")
+            } else {
+                log.info("Posted a notification")
+            }
+        }
     }
 
     private static func perform(_ action: ThenAction, on file: URL) {
