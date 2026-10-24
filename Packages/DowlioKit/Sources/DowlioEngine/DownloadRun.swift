@@ -34,7 +34,8 @@ struct DownloadRun: Sendable {
         self.configuration = configuration
         self.changeSnapshot = changeSnapshot
         connections = ConnectionOpener(
-            originalURL: url, options: options, idleTimeout: configuration.idleTimeout, now: configuration.now
+            originalURL: url, options: options, idleTimeout: configuration.idleTimeout,
+            sessions: configuration.sessions, now: configuration.now
         )
         probe = ServerProbe(connections: connections)
     }

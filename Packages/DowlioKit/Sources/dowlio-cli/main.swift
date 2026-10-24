@@ -5,11 +5,13 @@ import DowlioEngine
 import Foundation
 
 let usage = """
-usage: dowlio-cli get <url> [-c <connections>] [-o <folder>]
+usage: dowlio-cli get <url> [-c <connections>] [-o <folder>] [--shared-session]
        dowlio-cli resume <partial file>
 
   get     Download <url> into <folder> (default: the current folder) over up to
           <connections> connections (default: 8, at most 16).
+          --shared-session runs all connections in one URLSession instead of one
+          session each, for the benchmark.
   resume  Continue the download held by a .dowlio partial file.
 
   Ctrl-C pauses the download and prints its partial file, for resume.
@@ -24,7 +26,7 @@ func fail(_ message: String) -> Never {
 }
 
 enum Command {
-    case get(URL, folder: URL, options: RequestOptions)
+    case get(URL, folder: URL, options: RequestOptions, sessions: SessionMode)
     case resume(URL)
 }
 
@@ -34,6 +36,7 @@ func parse(_ arguments: [String]) -> Command {
         guard arguments.count >= 2, let url = URL(string: arguments[1]), url.scheme != nil else { fail(usage) }
         var folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         var options = RequestOptions()
+        var sessions = SessionMode.onePerConnection
         var rest = arguments.dropFirst(2)
         while let option = rest.popFirst() {
             switch option {
@@ -43,11 +46,13 @@ func parse(_ arguments: [String]) -> Command {
             case "-c":
                 guard let count = rest.popFirst().flatMap({ Int($0) }) else { fail(usage) }
                 options.connections = count
+            case "--shared-session":
+                sessions = .oneShared
             default:
                 fail(usage)
             }
         }
-        return .get(url, folder: folder, options: options)
+        return .get(url, folder: folder, options: options, sessions: sessions)
     case "resume":
         guard arguments.count == 2 else { fail(usage) }
         return .resume(URL(fileURLWithPath: arguments[1], isDirectory: true))
@@ -83,10 +88,12 @@ enum ProgressEvent {
 }
 
 let command = parse(Array(CommandLine.arguments.dropFirst()))
-let engine = DownloadEngine()
+var configuration = EngineConfiguration()
+if case .get(_, _, _, let sessions) = command { configuration.sessions = sessions }
+let engine = DownloadEngine(configuration: configuration)
 let id: DownloadID
 switch command {
-case .get(let url, let folder, let options):
+case .get(let url, let folder, let options, _):
     id = await engine.add(url: url, to: folder, options: options)
 case .resume(let package):
     do {

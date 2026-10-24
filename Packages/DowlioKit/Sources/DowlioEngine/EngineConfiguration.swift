@@ -3,11 +3,18 @@ import Foundation
 package struct EngineConfiguration: Sendable {
     package var retry = RetryPolicy()
     package var idleTimeout: Duration = .seconds(60)
+    package var sessions = SessionMode.onePerConnection
     var now: @Sendable () -> Date = { Date() }
     var random: @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }
     var hostLimits: any HostLimitStore = InMemoryHostLimitStore()
 
     package init() {}
+}
+
+/// `oneShared` is only for the connection benchmark in `docs/benchmarks.md`. Never use it in the app.
+package enum SessionMode: Sendable {
+    case onePerConnection
+    case oneShared
 }
 
 package struct RetryPolicy: Sendable {

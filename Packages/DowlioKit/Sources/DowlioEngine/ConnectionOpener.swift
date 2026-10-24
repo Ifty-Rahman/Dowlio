@@ -6,10 +6,26 @@ struct ConnectionOpener: Sendable {
     let options: RequestOptions
     let idleTimeout: Duration
     let now: @Sendable () -> Date
+    let shared: SharedSession?
+
+    init(
+        originalURL: URL,
+        options: RequestOptions,
+        idleTimeout: Duration,
+        sessions: SessionMode,
+        now: @escaping @Sendable () -> Date
+    ) {
+        self.originalURL = originalURL
+        self.options = options
+        self.idleTimeout = idleTimeout
+        self.now = now
+        shared = sessions == .oneShared ? SharedSession(idleTimeout: idleTimeout) : nil
+    }
 
     func open(_ url: URL, range: ByteRange?, ifRange validator: String? = nil) -> Connection {
         var request = request(for: url, range: range)
         if let validator { request.setValue(validator, forHTTPHeaderField: "If-Range") }
+        if let shared { return Connection(request: request, shared: shared) }
         return Connection(request: request, idleTimeout: idleTimeout)
     }
 
