@@ -48,6 +48,15 @@ struct ServerProbe: Sendable {
                 totalBytes: reply.total,
                 probeResponse: response
             )
+        case 416 where response.value(forHTTPHeaderField: "Content-Range")?.trimmingCharacters(in: .whitespaces) == "bytes */0":
+            // An empty file has no byte 0 to send.
+            connection.cancel()
+            return Probed(
+                body: .ranges(total: 0, validator: response.validator),
+                finalURL: response.url ?? target,
+                totalBytes: 0,
+                probeResponse: response
+            )
         default:
             connection.cancel()
             throw connections.failure(for: response)

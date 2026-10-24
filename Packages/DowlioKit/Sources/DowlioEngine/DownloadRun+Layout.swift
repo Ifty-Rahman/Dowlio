@@ -2,12 +2,12 @@ import Foundation
 
 extension DownloadRun {
     func layOut(_ probed: Probed, fileName: String, in partial: PartialFile) throws -> DownloadPlan {
-        if let total = probed.totalBytes { try partial.reserve(bytes: total) }
+        if let total = probed.totalBytes, total > 0 { try partial.reserve(bytes: total) }
 
         let plan: DownloadPlan
         switch probed.body {
         case .whole(let connection):
-            let segments = probed.totalBytes.map { [ByteRange(start: 0, end: $0 - 1)] } ?? []
+            let segments = probed.totalBytes.flatMap { $0 > 0 ? [ByteRange(start: 0, end: $0 - 1)] : nil } ?? []
             plan = DownloadPlan(
                 fileName: fileName, finalURL: probed.finalURL, totalBytes: probed.totalBytes,
                 layout: .whole, segments: segments, partial: partial, board: ProgressBoard(segments: segments)
