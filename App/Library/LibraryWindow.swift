@@ -17,6 +17,7 @@ struct LibraryWindow: View {
     @SceneStorage("libraryFilter") private var filter = LibraryFilter.all
     @SceneStorage("showsInspector") private var showsInspector = false
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var actions: RowActions {
         RowActions(model: model) { confirmation = $0 }
@@ -35,18 +36,25 @@ struct LibraryWindow: View {
             LibrarySidebar(counts: view.counts, selection: $filter, freeSpace: model.freeSpace)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
-            detail
-                .navigationTitle(filter.title)
-                .navigationSubtitle(view.summary)
-                .searchable(text: $search, placement: .toolbar, prompt: "Search downloads")
-                .modifier(SearchFocus(isFocused: $isSearching))
-                .toolbar { toolbar }
-                .inspector(isPresented: $showsInspector) {
+            HStack(spacing: 0) {
+                detail.frame(minWidth: Self.listMinimumWidth, maxWidth: .infinity, maxHeight: .infinity)
+                if showsInspector {
+                    Divider()
                     InspectorView(row: selectedRow, actions: actions)
-                        .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+                        .frame(width: Self.inspectorWidth)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
+            }
+            .clipped()
+            .frame(minWidth: Self.listMinimumWidth + Self.inspectorWidth)
+            .navigationTitle(filter.title)
+            .navigationSubtitle(view.summary)
+            .searchable(text: $search, placement: .toolbar, prompt: "Search downloads")
+            .modifier(SearchFocus(isFocused: $isSearching))
+            .toolbar { toolbar }
         }
-        .frame(minWidth: 760, minHeight: 420)
+        .frame(minWidth: 220 + Self.listMinimumWidth + Self.inspectorWidth, minHeight: 420)
+        .focusedSceneValue(\.inspectorToggle, InspectorToggle(isShown: showsInspector) { toggleInspector() })
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
@@ -54,6 +62,13 @@ struct LibraryWindow: View {
             isFocused = true
             model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
         }
+        .task {
+            guard DebugLaunch.showsInspector else { return }
+            try? await Task.sleep(for: .seconds(1))
+            toggleInspector()
+        }
+        .onKeyPress(.downArrow) { moveSelection(by: 1) }
+        .onKeyPress(.upArrow) { moveSelection(by: -1) }
         .onKeyPress(.space) {
             guard let file = selectedRow?.finishedFile else { return .ignored }
             quickLookFile = quickLookFile == nil ? file : nil
@@ -101,7 +116,7 @@ struct LibraryWindow: View {
                 .disabled(!view.canPauseAll)
         }
         ToolbarItem {
-            Button("Inspector", systemImage: "sidebar.right") { showsInspector.toggle() }
+            Button("Inspector", systemImage: "sidebar.right") { toggleInspector() }
                 .help(showsInspector ? "Hide Inspector" : "Show Inspector")
         }
     }
@@ -124,17 +139,28 @@ struct LibraryWindow: View {
                 ContentUnavailableView.search(text: search)
             }
         } else {
-            List(view.rows, selection: $selection) { row in
-                DownloadRowView(row: row, actions: actions)
-            }
-            .contextMenu(forSelectionType: DownloadID.self) { ids in
-                if let id = ids.first, let row = model.row(id) {
-                    RowMenuItems(row: row, actions: actions) { quickLookFile = $0.finishedFile }
-                }
-            } primaryAction: { ids in
-                for id in ids { openWindow(id: DetailWindow.sceneID, value: id) }
+            DownloadList(rows: view.rows, selection: $selection, actions: actions) { quickLookFile = $0.finishedFile } open: {
+                openWindow(id: DetailWindow.sceneID, value: $0.id)
             }
         }
+    }
+
+    /// Wide enough for the toolbar's title, buttons and a usable search field, so nothing folds
+    /// into the overflow menu while the sidebar or inspector opens.
+    private static let listMinimumWidth: CGFloat = 520
+    private static let inspectorWidth: CGFloat = 280
+
+    private func moveSelection(by step: Int) -> KeyPress.Result {
+        let rows = view.rows
+        guard !rows.isEmpty else { return .ignored }
+        let current = rows.firstIndex { $0.id == selection }
+        let next = current.map { min(max($0 + step, 0), rows.count - 1) } ?? (step > 0 ? 0 : rows.count - 1)
+        selection = rows[next].id
+        return .handled
+    }
+
+    private func toggleInspector() {
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.28)) { showsInspector.toggle() }
     }
 
     private var isConfirming: Binding<Bool> {
@@ -229,6 +255,28 @@ struct FindCommands: Commands {
             Button("Find…") { find?.focusSearch() }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(find == nil)
+        }
+    }
+}
+
+struct InspectorToggle {
+    let isShown: Bool
+    let toggle: () -> Void
+}
+
+extension FocusedValues {
+    @Entry var inspectorToggle: InspectorToggle?
+}
+
+/// View › Show Inspector (⌃⌘I).
+struct InspectorToggleCommands: Commands {
+    @FocusedValue(\.inspectorToggle) private var inspector
+
+    var body: some Commands {
+        CommandGroup(after: .sidebar) {
+            Button(inspector?.isShown == true ? "Hide Inspector" : "Show Inspector") { inspector?.toggle() }
+                .keyboardShortcut("i", modifiers: [.control, .command])
+                .disabled(inspector == nil)
         }
     }
 }

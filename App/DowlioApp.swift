@@ -14,7 +14,7 @@ struct DowlioApp: App {
             NewDownloadCommands(model: model)
             DownloadCommands(model: model)
             FindCommands()
-            InspectorCommands()
+            InspectorToggleCommands()
         }
 
         WindowGroup("Download", id: DetailWindow.sceneID, for: DownloadID.self) { $id in

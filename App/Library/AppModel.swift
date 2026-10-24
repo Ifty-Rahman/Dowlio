@@ -18,14 +18,14 @@ final class AppModel {
     /// that arrives while it's closed can open it again.
     var openLibraryWindow: (() -> Void)?
 
-    let downloadsFolder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    let downloadsFolder = DebugLaunch.downloadsFolder ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
     private(set) var freeSpace: Int64?
 
     private let library: Library?
 
     init() {
         do {
-            let support = try FileManager.default.url(
+            let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
@@ -36,6 +36,19 @@ final class AppModel {
             return
         }
         Task { await follow() }
+        DebugLaunch.addLinks { [weak self] links in
+            guard let self else { return }
+            var draft = NewDownloadDraft(text: links, folder: downloadsFolder)
+            draft.startImmediately = true
+            add(draft)
+        }
+        DebugLaunch.useSheet { [weak self] links in
+            self?.requestNewDownload(links)
+        } download: { [weak self] in
+            guard let self, let sheet = newDownload else { return }
+            add(sheet.draft)
+            newDownload = nil
+        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
