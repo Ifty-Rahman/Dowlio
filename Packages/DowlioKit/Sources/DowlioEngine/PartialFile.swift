@@ -95,7 +95,7 @@ final class PartialFile: @unchecked Sendable {
     }
 
     /// Writes `data` at `offset` in the data file. Segments call this from several connections,
-    /// and the lock makes it the one serial writer the spec asks for.
+    /// and the lock makes it the one serial writer.
     func write(_ data: Data, at offset: Int64) throws {
         try withOpenHandle { handle in
             try data.withUnsafeBytes { buffer in

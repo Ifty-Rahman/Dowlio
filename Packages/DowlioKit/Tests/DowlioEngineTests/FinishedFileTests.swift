@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// File names, name conflicts and what a finished file carries (ticket 09).
+/// File names, name conflicts and what a finished file carries.
 @Suite(.timeLimit(.minutes(1)))
 struct FinishedFileTests {
     /// Downloads `path` from a server serving `file` there, and returns the finished snapshot.
@@ -207,7 +207,7 @@ struct FinishedFileTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["notes.zip"])
     }
 
-    /// Story 41: the finished file is the partial file's data file, renamed into the folder in one
+    /// The finished file is the partial file's data file, renamed into the folder in one
     /// step. It has the same inode, so it was never copied, and its name doesn't exist before.
     @Test func theFinishedFileAppearsInOneStep() async throws {
         let server = try await TestServer()

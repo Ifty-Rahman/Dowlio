@@ -93,7 +93,7 @@ public struct NetworkFailure: Equatable, Sendable, CustomStringConvertible {
     public var description: String { message }
 }
 
-/// How a download should run. Each ticket adds the options it needs (spec, engine interface).
+/// How a download should run.
 public struct RequestOptions: Equatable, Sendable {
     /// Connections per download, 1 to 16. Values outside that range are clamped.
     public var connections: Int = 8

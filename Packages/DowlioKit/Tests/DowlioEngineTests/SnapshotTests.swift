@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// The stream of all downloads' snapshots, and snapshot fields that don't belong to one ticket.
+/// The stream of all downloads' snapshots, and snapshot fields no other suite covers.
 @Suite(.timeLimit(.minutes(1)))
 struct SnapshotTests {
     @Test func theStreamOfAllDownloadsStartsWithEachDownloadAndFollowsEveryChange() async throws {

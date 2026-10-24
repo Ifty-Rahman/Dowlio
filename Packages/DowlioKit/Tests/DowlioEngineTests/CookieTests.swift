@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// Cookies go with every request of their download, and never onto disk (stories 55 and 56).
+/// Cookies go with every request of their download, and never onto disk.
 @Suite(.timeLimit(.minutes(1)))
 struct CookieTests {
     static let size = 4 * 1024 * 1024

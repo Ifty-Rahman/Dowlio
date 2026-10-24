@@ -1,4 +1,4 @@
-/// Splits a file into segments. Pure logic: no I/O and no clock (spec, segment planner).
+/// Splits a file into segments. Pure logic: no I/O and no clock.
 enum SegmentPlanner {
     /// No segment is ever smaller than this.
     static let minimumSegmentSize: Int64 = 1_048_576

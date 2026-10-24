@@ -1,8 +1,8 @@
 @testable import DowlioEngine
 import Testing
 
-/// Seam 2: the segment planner as pure logic. Expected segments are worked out by hand from the
-/// spec: at most the connection setting (1 to 16), and never a segment under 1 MiB.
+/// The segment planner as pure logic. Expected segments are worked out by hand: at most the
+/// connection setting (1 to 16), and never a segment under 1 MiB.
 struct SegmentPlannerTests {
     struct Case: Sendable, CustomTestStringConvertible {
         let size: Int64
@@ -59,7 +59,7 @@ struct SegmentPlannerTests {
     }
 }
 
-/// Seam 2: stealing. Expected splits are worked out by hand: a free connection takes the second
+/// Stealing. Expected splits are worked out by hand: a free connection takes the second
 /// half of the largest remaining range, and only when both halves stay at 1 MiB or more.
 struct SegmentStealTests {
     static let mebibyte: Int64 = 1_048_576
@@ -140,8 +140,8 @@ struct SegmentStealTests {
     }
 }
 
-/// Seam 2: lowering a host's connection limit after a refusal (spec, retry policy). Each refusal
-/// lowers it by one, never below 1.
+/// Lowering a host's connection limit after a refusal. Each refusal lowers it by one, never
+/// below 1.
 struct HostLimitRuleTests {
     @Test(arguments: [(8, 7), (16, 15), (2, 1), (1, 1)])
     func aRefusalLowersTheLimitByOneNeverBelowOne(limit: Int, lowered: Int) {

@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// Ticket 05: servers that refuse connections, and servers whose range replies can't be used.
+/// Servers that refuse connections, and servers whose range replies can't be used.
 @Suite(.timeLimit(.minutes(1)))
 struct RefusalTests {
     static let held = 64 * 1024

@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// A network failure keeps the underlying error (spec, errors).
+/// A network failure keeps the underlying error.
 @Suite(.timeLimit(.minutes(1)))
 struct NetworkErrorTests {
     @Test func aNetworkFailureKeepsTheURLErrorCode() async throws {

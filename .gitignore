@@ -8,6 +8,7 @@ docs
 .agents
 AGENTS.md
 GLOSSARY.md
+skills-lock.json
 
 # Generated and build output
 Dowlio.xcodeproj/

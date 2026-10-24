@@ -219,7 +219,7 @@ public actor DownloadEngine {
         guard var record = entries[id] else { return }
         let before = record.snapshot
         change(&record.snapshot)
-        // A change that leaves the snapshot as it was sends nothing (story 26).
+        // A change that leaves the snapshot as it was sends nothing.
         guard record.snapshot != before else { return }
         let snapshot = record.snapshot
         for observer in record.observers.values {

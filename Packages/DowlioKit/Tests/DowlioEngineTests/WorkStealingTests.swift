@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// Seam 1: work stealing through the engine's interface. One segment's replies trickle out, and
+/// Work stealing through the engine's interface. One segment's replies trickle out, and
 /// connections that finish early take over half of what it has left.
 @Suite(.timeLimit(.minutes(1)))
 struct WorkStealingTests {

@@ -97,7 +97,7 @@ struct OneConnectionDownloadTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "report 2.pdf")) == TestFiles.sha256(data))
     }
 
-    /// Replies that end early are resumed from the missing bytes (ticket 04), so the file that
+    /// Replies that end early are resumed from the missing bytes, so the file that
     /// goes into place is complete, never short.
     @Test func aShortReplyIsResumedNeverPutInPlaceShort() async throws {
         let server = try await TestServer()
@@ -113,7 +113,7 @@ struct OneConnectionDownloadTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "short.bin")) == TestFiles.sha256(data))
     }
 
-    /// Story 40: a download that ends with bytes missing never puts its file in place. Every reply
+    /// A download that ends with bytes missing never puts its file in place. Every reply
     /// drops partway, so the retries run out long before the last byte arrives.
     @Test(arguments: [true, false])
     func aDownloadThatEndsWithBytesMissingNeverPutsItsFileInPlace(rangesSupported: Bool) async throws {

@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 enum FileNaming {
     /// The finished file's name: from `Content-Disposition`, otherwise from the final URL after
-    /// redirects, otherwise "download" (spec, file names). A name without an extension gets one
+    /// redirects, otherwise "download". A name without an extension gets one
     /// from the content type.
     static func name(for response: HTTPURLResponse, finalURL: URL) -> String {
         var name = name(for: finalURL)

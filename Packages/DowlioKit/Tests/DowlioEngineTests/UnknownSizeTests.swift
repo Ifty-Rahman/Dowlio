@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// A file whose size the server doesn't report, such as a streamed or generated one (story 4).
+/// A file whose size the server doesn't report, such as a streamed or generated one.
 @Suite(.timeLimit(.minutes(1)))
 struct UnknownSizeTests {
     @Test func aFileOfUnknownSizeDownloadsOverOneConnection() async throws {

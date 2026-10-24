@@ -1,6 +1,6 @@
 import Foundation
 
-/// The connection limits Dowlio learned per host (spec, host limit store). A host that refused
+/// The connection limits Dowlio learned per host. A host that refused
 /// connections gets fewer the next time. The engine keeps them in memory by default. Phase 3
 /// persists them behind this protocol.
 public protocol HostLimitStore: Sendable {
