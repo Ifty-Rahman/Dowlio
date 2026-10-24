@@ -21,6 +21,7 @@ struct DetailWindow: View {
             }
         }
         .frame(minWidth: 520, minHeight: 420)
+        .windowGlass()
         .task(id: id) { await sample() }
     }
 
@@ -54,6 +55,7 @@ struct DetailWindow: View {
                     Text(line.status).foregroundStyle(line.segment.isActive ? .primary : .secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
         }
         .padding(DowlioDesign.Spacing.xl)
     }

@@ -49,6 +49,7 @@ struct LibraryWindow: View {
             }
         }
         .clipped()
+        .windowGlass()
         .frame(minWidth: minimumWidth, minHeight: 420)
         .navigationTitle(filter.title)
         .navigationSubtitle(view.summary)
@@ -208,6 +209,7 @@ private struct LibrarySidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .safeAreaInset(edge: .bottom) {
             if let freeSpace {
                 Label(FreeSpaceText.string(freeSpace), systemImage: "internaldrive")
