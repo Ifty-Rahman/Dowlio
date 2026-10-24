@@ -71,6 +71,26 @@ struct PauseResumeTests {
         try Self.checkManifest(in: package, id: id, server: server, data: data)
     }
 
+    @Test func theManifestIsSavedWhenTheDownloadStartsRetrying() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 2 * 1024 * 1024, seed: 38)
+        server.serve(.init(data: data, eTag: "\"w1\"", dropFirst: .init(afterBytes: 1024 * 1024, count: 1)), at: "/wait.bin")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.connections = 1
+        // The wait outlasts the test, so the download is still Retrying when the manifest is read.
+        var configuration = EngineConfiguration.fast
+        configuration.retry.firstDelay = .seconds(30)
+        configuration.retry.maximumDelay = .seconds(30)
+
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/wait.bin"), to: folder, options: options)
+        _ = try await engine.firstSnapshot(of: id) { if case .retrying = $0.state { true } else { false } }
+
+        #expect(try Self.manifestReceived(in: folder.appending(path: "wait.bin.dowlio")) > 0)
+        await engine.cancel(id)
+    }
+
     private static func manifest(in package: URL) throws -> [String: Any] {
         let json = try Data(contentsOf: package.appending(path: "manifest.json"))
         return try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])

@@ -10,6 +10,7 @@ extension DownloadRun {
             $0.timeRemaining = nil
             $0.state = .finalizing
         }
+        saveManifest(plan)
         if let expected = plan.totalBytes, !plan.board.coversFile(of: expected) {
             throw DownloadError.incompleteFile
         }

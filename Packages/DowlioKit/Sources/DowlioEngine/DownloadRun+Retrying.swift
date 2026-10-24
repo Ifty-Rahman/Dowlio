@@ -23,6 +23,7 @@ extension DownloadRun {
 
                 let delay = policy.delay(afterFailure: failures, retryAfter: retryable.retryAfter, random: configuration.random)
                 retries.begin(key, attempt: failures, nextTry: configuration.now().addingTimeInterval(delay.timeInterval))
+                if let plan = planStore.plan { saveManifest(plan) }
                 await publishRetryState()
                 do {
                     try await Task.sleep(for: delay)
