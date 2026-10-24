@@ -4,19 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NewDownloadSheet: View {
-    @State private var sheet: NewDownloadModel
-    let shown: (NewDownloadModel) -> Void
-    let add: (NewDownloadModel) -> Void
-
-    init(
-        sheet: @autoclosure @escaping () -> NewDownloadModel,
-        shown: @escaping (NewDownloadModel) -> Void,
-        add: @escaping (NewDownloadModel) -> Void
-    ) {
-        _sheet = State(wrappedValue: sheet())
-        self.shown = shown
-        self.add = add
-    }
+    @Bindable var sheet: NewDownloadModel
+    let onDownload: (NewDownloadDraft) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var choosingFolder = false
 
@@ -24,18 +13,18 @@ struct NewDownloadSheet: View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
             Text("New Download").font(DowlioDesign.TypeRole.title)
             linkField
-            if !sheet.lines.isEmpty { cards }
-            if let explanation = sheet.explanation {
+            if !sheet.draft.lines.isEmpty { cards }
+            if let explanation = sheet.draft.explanation {
                 Text(explanation).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.md) {
                 GridRow {
                     Text("Save to")
                     HStack {
-                        Label(sheet.folder.lastPathComponent, systemImage: "folder")
+                        Label(sheet.draft.folder.lastPathComponent, systemImage: "folder")
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .help(sheet.folder.path(percentEncoded: false))
+                            .help(sheet.draft.folder.path(percentEncoded: false))
                         Spacer()
                         Button("Choose…") { choosingFolder = true }
                     }
@@ -43,8 +32,8 @@ struct NewDownloadSheet: View {
                 GridRow {
                     Text("Connections")
                     HStack {
-                        Stepper(value: Bindable(sheet).connections, in: 1...16) {
-                            Text("\(sheet.connections)").monospacedDigit()
+                        Stepper(value: $sheet.draft.connections, in: 1...16) {
+                            Text("\(sheet.draft.connections)").monospacedDigit()
                         }
                         Text("8 to 16 is fastest").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     }
@@ -54,40 +43,40 @@ struct NewDownloadSheet: View {
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.sm) {
                     GridRow {
                         Text("Referrer")
-                        TextField("https://example.com/page", text: Bindable(sheet).referrer).textFieldStyle(.roundedBorder)
+                        TextField("https://example.com/page", text: $sheet.draft.referrer).textFieldStyle(.roundedBorder)
                     }
                     GridRow {
                         Text("User agent")
-                        TextField("Your Mac's default", text: Bindable(sheet).userAgent).textFieldStyle(.roundedBorder)
+                        TextField("Your Mac's default", text: $sheet.draft.userAgent).textFieldStyle(.roundedBorder)
                     }
                 }
                 .padding(.top, DowlioDesign.Spacing.sm)
             }
             HStack {
-                Toggle("Start immediately", isOn: Bindable(sheet).startImmediately).toggleStyle(.switch)
+                Toggle("Start immediately", isOn: $sheet.draft.startImmediately).toggleStyle(.switch)
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(sheet.downloadsAnyway ? "Download Anyway" : "Download") {
-                    add(sheet)
+                Button(sheet.draft.downloadsAnyway ? "Download Anyway" : "Download") {
+                    onDownload(sheet.draft)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!sheet.canDownload)
+                .disabled(!sheet.draft.canDownload)
             }
         }
         .padding(DowlioDesign.Spacing.xl)
         .frame(width: 520)
-        .onAppear { shown(sheet) }
+        .task { sheet.checkLinks() }
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
-            if case .success(let folder) = result { sheet.folder = folder }
+            if case .success(let folder) = result { sheet.draft.folder = folder }
         }
     }
 
     private var linkField: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
             Text("Link")
-            TextEditor(text: Bindable(sheet).text)
+            TextEditor(text: $sheet.draft.text)
                 .font(DowlioDesign.TypeRole.body)
                 .frame(height: 64)
                 .scrollContentBackground(.hidden)
@@ -103,11 +92,11 @@ struct NewDownloadSheet: View {
 
     @ViewBuilder private var cards: some View {
         let list = VStack(spacing: DowlioDesign.Spacing.sm) {
-            ForEach(Array(sheet.lines.enumerated()), id: \.offset) { _, line in
+            ForEach(Array(sheet.draft.lines.enumerated()), id: \.offset) { _, line in
                 FileCard(line: line, sheet: sheet)
             }
         }
-        if sheet.lines.count > 3 {
+        if sheet.draft.lines.count > 3 {
             ScrollView { list }.frame(height: 260)
         } else {
             list
@@ -115,25 +104,24 @@ struct NewDownloadSheet: View {
     }
 }
 
-/// One pasted line: the file a link gives, or why the line is skipped.
 private struct FileCard: View {
     let line: PastedLinks.Line
-    let sheet: NewDownloadModel
+    @Bindable var sheet: NewDownloadModel
 
     var body: some View {
         HStack(alignment: .top, spacing: DowlioDesign.Spacing.md) {
-            FileTypeBadge(text: badge)
+            FileTypeBadge(text: (title as NSString).pathExtension.uppercased())
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                 name
                 if let problem = line.problem {
-                    Text(problem).font(DowlioDesign.TypeRole.detail).foregroundStyle(Color(nsColor: .systemRed))
-                } else if let status {
+                    Text(problem).font(DowlioDesign.TypeRole.detail).foregroundStyle(LinkStatus.Tone.problem.color)
+                } else if let status = check?.status {
                     HStack(spacing: DowlioDesign.Spacing.sm) {
                         if status.tone == .neutral { ProgressView().controlSize(.small) }
                         Text(status.line).foregroundStyle(status.tone.color)
-                        if let size { Text("· \(size)").foregroundStyle(.secondary).monospacedDigit() }
-                        if inspection?.isNotSecure ?? (url?.scheme?.lowercased() == "http") {
-                            Label("Not secure", systemImage: "lock.open.fill").foregroundStyle(Color(nsColor: .systemOrange))
+                        if let size = inspection?.totalBytes { Text("· \(ByteText.string(size))").foregroundStyle(.secondary).monospacedDigit() }
+                        if inspection?.isNotSecure ?? (line.url?.scheme?.lowercased() == "http") {
+                            Label("Not secure", systemImage: "lock.open.fill").foregroundStyle(LinkStatus.Tone.caution.color)
                         }
                     }
                     .font(DowlioDesign.TypeRole.detail)
@@ -153,8 +141,8 @@ private struct FileCard: View {
     }
 
     @ViewBuilder private var name: some View {
-        if sheet.isSingleLink, line.problem == nil {
-            TextField("File name", text: Binding(get: { sheet.fileName }, set: { sheet.nameEdited($0) }))
+        if sheet.draft.isSingleLink, line.problem == nil {
+            TextField("File name", text: Binding(get: { sheet.draft.fileName }, set: { sheet.draft.rename($0) }))
                 .textFieldStyle(.plain)
                 .font(DowlioDesign.TypeRole.heading)
         } else {
@@ -162,13 +150,7 @@ private struct FileCard: View {
         }
     }
 
-    private var url: URL? {
-        if case .link(let url) = line { url } else { nil }
-    }
-
-    private var check: NewDownloadModel.Check? { url.flatMap { sheet.checks[$0] } }
-
-    private var status: LinkStatus? { check?.status }
+    private var check: NewDownloadDraft.Check? { line.url.flatMap(sheet.draft.check(for:)) }
 
     private var inspection: LinkInspection? {
         if case .inspected(let inspection) = check { inspection } else { nil }
@@ -182,23 +164,15 @@ private struct FileCard: View {
         case .unsupported(let url): return url.absoluteString
         }
     }
-
-    private var badge: String {
-        (title as NSString).pathExtension.uppercased()
-    }
-
-    private var size: String? {
-        inspection?.totalBytes.map(ByteText.string)
-    }
 }
 
 extension LinkStatus.Tone {
     var color: Color {
         switch self {
         case .neutral: .secondary
-        case .good: Color(nsColor: .systemGreen)
-        case .caution: Color(nsColor: .systemOrange)
-        case .problem: Color(nsColor: .systemRed)
+        case .good: DownloadRow.State.completed.tone
+        case .caution: DownloadRow.State.retrying(attempt: 0, nextTry: .distantPast).tone
+        case .problem: DownloadRow.State.failed(.notFound).tone
         }
     }
 }

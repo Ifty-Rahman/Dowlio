@@ -9,6 +9,10 @@ public enum PastedLinks {
         /// A link Dowlio can't download, such as `ftp:` or `magnet:`.
         case unsupported(URL)
 
+        public var url: URL? {
+            if case .link(let url) = self { url } else { nil }
+        }
+
         /// Why the line is skipped, or `nil` for a link Dowlio downloads.
         public var problem: String? {
             switch self {
@@ -33,10 +37,6 @@ public enum PastedLinks {
             lines.append(line)
         }
         return lines
-    }
-
-    public static func links(in text: String) -> [URL] {
-        parse(text).compactMap { if case .link(let url) = $0 { url } else { nil } }
     }
 
     private static func line(_ text: String) -> Line {
@@ -90,8 +90,134 @@ public struct LinkStatus: Equatable, Sendable {
         }
     }
 
+    /// A link that couldn't be checked. Where trying again later may work, the next step is
+    /// Download Anyway, since the sheet has no Retry.
     public init(failure: DownloadError) {
         let text = FailureText(failure)
-        self.init(line: text.reason, reason: text.nextStep, tone: .problem)
+        switch failure {
+        case .network, .tooManyRetries:
+            self.init(line: text.reason, reason: "Download Anyway still adds it, and Dowlio tries again when it starts.", tone: .problem)
+        default:
+            self.init(line: text.reason, reason: text.nextStep, tone: .problem)
+        }
+    }
+}
+
+/// What the New Download sheet holds while the user fills it in.
+public struct NewDownloadDraft: Equatable, Sendable {
+    public enum Check: Equatable, Sendable {
+        case checking
+        case inspected(LinkInspection)
+        case failed(DownloadError)
+
+        public var status: LinkStatus {
+            switch self {
+            case .checking: .checking
+            case .inspected(let inspection): LinkStatus(inspection)
+            case .failed(let error): LinkStatus(failure: error)
+            }
+        }
+    }
+
+    public var text: String {
+        didSet { lines = PastedLinks.parse(text) }
+    }
+
+    public private(set) var lines: [PastedLinks.Line]
+    public var folder: URL
+    public var connections = 8
+    public var referrer = ""
+    public var userAgent = ""
+    public var startImmediately = true
+
+    private var checks: [URL: (check: Check, headers: RequestOptions)] = [:]
+    private var renamed: (url: URL, name: String)?
+
+    public init(text: String, folder: URL) {
+        self.text = text
+        self.folder = folder
+        lines = PastedLinks.parse(text)
+    }
+
+    public var links: [URL] { lines.compactMap(\.url) }
+
+    public var isSingleLink: Bool { links.count == 1 }
+
+    public var canDownload: Bool { !links.isEmpty }
+
+    /// Some link couldn't be checked, so Download adds it anyway.
+    public var downloadsAnyway: Bool {
+        links.contains { if case .failed = check(for: $0) { true } else { false } }
+    }
+
+    /// Why Download is off, once the field has text.
+    public var explanation: String? {
+        guard links.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return "Paste an http or https link, one per line."
+    }
+
+    public func check(for url: URL) -> Check? {
+        checks[url]?.check
+    }
+
+    /// The single link's name: the user's edit, then the inspected name, then the link's own.
+    public var fileName: String {
+        guard isSingleLink, let url = links.first else { return "" }
+        if let renamed, renamed.url == url { return renamed.name }
+        if case .inspected(let inspection) = check(for: url) { return inspection.fileName }
+        return url.lastPathComponent
+    }
+
+    public mutating func rename(_ name: String) {
+        guard isSingleLink, let url = links.first else { return }
+        renamed = (url, name)
+    }
+
+    /// The headers a check is made with. A change means every link needs checking again.
+    public var inspectionOptions: RequestOptions {
+        var options = RequestOptions()
+        let referrer = referrer.trimmingCharacters(in: .whitespaces)
+        options.referrer = URL(string: referrer).flatMap { $0.scheme == nil || $0.host() == nil ? nil : $0 }
+        let agent = userAgent.trimmingCharacters(in: .whitespaces)
+        options.userAgent = agent.isEmpty ? nil : agent
+        return options
+    }
+
+    /// What Download adds each link with.
+    public var options: RequestOptions {
+        var options = inspectionOptions
+        options.connections = connections
+        if isSingleLink, let url = links.first, let renamed, renamed.url == url {
+            let name = renamed.name.trimmingCharacters(in: .whitespaces)
+            options.fileName = name.isEmpty ? nil : name
+        }
+        return options
+    }
+
+    /// The links that need checking now: new ones, and all of them after the headers changed.
+    /// They're marked as checking, and links no longer in the field are forgotten.
+    public mutating func linksToCheck() -> [URL] {
+        let current = links
+        checks = checks.filter { current.contains($0.key) }
+        let headers = inspectionOptions
+        let due = current.filter { url in
+            guard let existing = checks[url] else { return true }
+            return existing.headers != headers
+        }
+        for url in due { checks[url] = (.checking, headers) }
+        return due
+    }
+
+    /// Keeps a check's result, unless the link left the field or the headers changed since.
+    public mutating func record(_ check: Check, for url: URL, checkedWith headers: RequestOptions) {
+        guard let existing = checks[url], existing.headers == headers else { return }
+        checks[url] = (check, headers)
+    }
+
+    public static func == (lhs: NewDownloadDraft, rhs: NewDownloadDraft) -> Bool {
+        lhs.text == rhs.text && lhs.folder == rhs.folder && lhs.connections == rhs.connections
+            && lhs.referrer == rhs.referrer && lhs.userAgent == rhs.userAgent && lhs.startImmediately == rhs.startImmediately
+            && lhs.renamed?.url == rhs.renamed?.url && lhs.renamed?.name == rhs.renamed?.name
+            && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check)
     }
 }

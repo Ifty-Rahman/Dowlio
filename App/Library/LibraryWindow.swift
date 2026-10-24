@@ -46,13 +46,8 @@ struct LibraryWindow: View {
                 model.requestNewDownload(urls.map(\.absoluteString).joined(separator: "\n"))
                 return true
             }
-            .sheet(item: Bindable(model).newDownload) { request in
-                NewDownloadSheet(
-                    sheet: NewDownloadModel(text: request.text, folder: model.downloadsFolder, inspect: model.inspect),
-                    shown: { model.openSheet = $0 }
-                ) { sheet in
-                    model.add(sheet.links, into: sheet.folder, options: sheet.options, startImmediately: sheet.startImmediately)
-                }
+            .sheet(item: Bindable(model).newDownload) { sheet in
+                NewDownloadSheet(sheet: sheet) { model.add($0) }
             }
             .toolbar {
                 ToolbarItem {
