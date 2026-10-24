@@ -1,14 +1,13 @@
-<h1 align="left">
-  <img
-    src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128.png"
-    alt="Dowlio"
-    width="64"
-    height="64"
-    style="vertical-align: middle;"
-  />
-  &nbsp;&nbsp;
-  <span style="font-size: 64px; vertical-align: middle;">Dowlio</span>
-</h1>
+<table>
+  <tr>
+    <td align="center" valign="middle">
+      <img src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="104" alt="Dowlio">
+    </td>
+    <td align="center" valign="middle">
+      <h1 style="font-size: 104px; margin: 0;">Dowlio</h1>
+    </td>
+  </tr>
+</table>
 
 *A fast, private, native download manager for Mac*
 
