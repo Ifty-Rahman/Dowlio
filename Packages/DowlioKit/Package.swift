@@ -7,7 +7,6 @@ let package = Package(
     products: [
         .library(name: "DowlioCore", targets: ["DowlioCore"]),
         .library(name: "DowlioEngine", targets: ["DowlioEngine"]),
-        .executable(name: "dowlio-cli", targets: ["dowlio-cli"]),
     ],
     targets: [
         .target(name: "DowlioCore"),
