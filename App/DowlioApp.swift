@@ -1,10 +1,18 @@
 import DowlioCore
+import DowlioLibrary
 import SwiftUI
 
 @main
 struct DowlioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    @State private var menuBar: MenuBarController
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        _menuBar = State(initialValue: MenuBarController(model: model))
+    }
 
     var body: some Scene {
         Window("Dowlio", id: LibraryWindow.sceneID) {
@@ -23,6 +31,11 @@ struct DowlioApp: App {
             if let id { DetailWindow(id: id, model: model) }
         }
         .defaultSize(width: 620, height: 520)
+
+        Settings {
+            ContentUnavailableView("Settings come in the next build", systemImage: "gearshape")
+                .frame(width: 420, height: 240)
+        }
     }
 }
 
@@ -33,7 +46,9 @@ struct NewDownloadCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Download…") {
-                openWindow(id: LibraryWindow.sceneID)
+                if NewLinkRoute(entry: .newDownloadCommand, windowIsOpen: model.isLibraryWindowOpen) == .openWindowThenSheet {
+                    openWindow(id: LibraryWindow.sceneID)
+                }
                 model.requestNewDownload()
             }
             .keyboardShortcut("n", modifiers: .command)

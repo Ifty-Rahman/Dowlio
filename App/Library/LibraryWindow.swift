@@ -66,8 +66,10 @@ struct LibraryWindow: View {
         .focusEffectDisabled()
         .onAppear {
             isFocused = true
+            model.isLibraryWindowOpen = true
             model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
         }
+        .onDisappear { model.isLibraryWindowOpen = false }
         .task {
             guard DebugLaunch.isOn else { return }
             try? await Task.sleep(for: .seconds(1))

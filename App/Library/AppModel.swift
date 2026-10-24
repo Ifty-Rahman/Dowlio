@@ -72,14 +72,40 @@ final class AppModel {
     /// Shows the New Download sheet with `text` in its link field, opening the window first. With
     /// the sheet already up, the links join it.
     func requestNewDownload(_ text: String = "") {
-        openLibraryWindow?()
+        showLibraryWindow()
         if let newDownload {
             newDownload.append(text)
-        } else if let library {
-            newDownload = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
-                try await library.inspect(url, options: options)
-            }
+        } else {
+            newDownload = makeNewDownload(text)
         }
+    }
+
+    /// A draft for the New Download sheet or Quick add, checking links through the library.
+    func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
+        guard let library else { return nil }
+        return NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
+            try await library.inspect(url, options: options)
+        }
+    }
+
+    /// Whether the library window is on screen, for routing ⌘N.
+    var isLibraryWindowOpen = false
+
+    func showLibraryWindow() {
+        NSApp.activate()
+        openLibraryWindow?()
+    }
+
+    func showSettings() {
+        NSApp.activate()
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    func reportProblem() {
+        let info = Bundle.main.infoDictionary
+        let app = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        NSWorkspace.shared.open(ProblemReport.url(appVersion: app, macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
     }
 
     static let sortsIntoCategoryFoldersKey = "sortsIntoCategoryFolders"
