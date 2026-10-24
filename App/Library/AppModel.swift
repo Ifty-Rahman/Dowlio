@@ -1,4 +1,5 @@
 import AppKit
+import DowlioConnect
 import DowlioCore
 import DowlioEngine
 import DowlioLibrary
@@ -34,6 +35,7 @@ final class AppModel {
     private(set) var freeSpace: Int64?
 
     private let library: Library?
+    private var connectServer: ConnectServer?
 
     init() {
         do {
@@ -42,6 +44,7 @@ final class AppModel {
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
             library = Library(engine: DownloadEngine(), store: store)
+            startConnectServer(store: store)
         } catch {
             library = nil
             problem = "Dowlio can't open its history: \(error.localizedDescription)"
@@ -75,6 +78,14 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
+    }
+
+    private func startConnectServer(store: DownloadStore) {
+        let server = ConnectServer(store: store, vault: KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")) { request in
+            await MainActor.run { PairingAlert.ask(request) }
+        }
+        connectServer = server
+        Task { _ = try? await server.start() }
     }
 
     func row(_ id: DownloadID) -> DownloadRow? {

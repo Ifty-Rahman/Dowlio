@@ -29,6 +29,8 @@ targets:
         product: DowlioStore
       - package: DowlioKit
         product: DowlioLibrary
+      - package: DowlioKit
+        product: DowlioConnect
     info:
       path: App/Info.plist
       properties:

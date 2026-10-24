@@ -127,6 +127,14 @@ public final class DownloadStore: Sendable {
         try database.write { try download.save($0) }
     }
 
+    func read<T>(_ work: (Database) throws -> T) throws -> T {
+        try database.read(work)
+    }
+
+    func write<T>(_ work: (Database) throws -> T) throws -> T {
+        try database.write(work)
+    }
+
     public func delete(_ id: UUID) throws {
         _ = try database.write { try StoredDownload.deleteOne($0, key: id) }
     }
@@ -173,6 +181,16 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("planned segments") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "plannedSegments", .text)
+            }
+        }
+        migrator.registerMigration("browser pairings") { db in
+            try db.create(table: BrowserPairing.databaseTableName) { table in
+                table.primaryKey("id", .blob)
+                table.column("browserName", .text).notNull()
+                table.column("extensionID", .text).notNull()
+                table.column("extensionVersion", .text).notNull()
+                table.column("pairedAt", .datetime).notNull()
+                table.column("lastSeenAt", .datetime).notNull()
             }
         }
         return migrator

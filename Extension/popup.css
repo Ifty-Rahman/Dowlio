@@ -1,0 +1,42 @@
+:root {
+  color-scheme: light dark;
+  font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  width: 280px;
+  margin: 0;
+  padding: 14px 16px 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h1 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+#headline {
+  font-weight: 600;
+  margin: 14px 0 4px;
+}
+
+#code {
+  font: 600 28px ui-monospace, SFMono-Regular, monospace;
+  letter-spacing: 6px;
+  margin: 8px 0;
+}
+
+#detail {
+  color: GrayText;
+  margin: 4px 0 0;
+}
+
+button {
+  margin-top: 12px;
+}

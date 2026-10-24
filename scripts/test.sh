@@ -6,6 +6,9 @@ source "$(dirname "$0")/common.sh"
 log "Running DowlioKit tests"
 (cd "$ROOT/Packages/DowlioKit" && swift test)
 
+log "Running Dowlio Connect tests"
+(cd "$ROOT/Extension" && node --test "test/*.test.js")
+
 "$ROOT/scripts/bootstrap.sh"
 
 log "Building the app"
