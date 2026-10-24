@@ -101,7 +101,7 @@ struct PauseResumeTests {
         return segments.reduce(0) { $0 + (($1["received"] as? NSNumber)?.int64Value ?? 0) }
     }
 
-    /// Checks every field the spec lists, that no cookie is stored, and that each segment's
+    /// Checks every field the manifest holds, that no cookie is stored, and that each segment's
     /// received count never exceeds the bytes actually in the data file.
     private static func checkManifest(in package: URL, id: DownloadID, server: TestServer, data: Data) throws {
         let manifest = try manifest(in: package)

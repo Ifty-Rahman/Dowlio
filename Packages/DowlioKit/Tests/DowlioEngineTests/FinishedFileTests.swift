@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// File names, name conflicts and what a finished file carries (ticket 09).
+/// File names, name conflicts and what a finished file carries.
 @Suite(.timeLimit(.minutes(1)))
 struct FinishedFileTests {
     /// Downloads `path` from a server serving `file` there, and returns the finished snapshot.
@@ -207,7 +207,7 @@ struct FinishedFileTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["notes.zip"])
     }
 
-    /// Story 41: the finished file is the partial file's data file, renamed into the folder in one
+    /// The finished file is the partial file's data file, renamed into the folder in one
     /// step. It has the same inode, so it was never copied, and its name doesn't exist before.
     @Test func theFinishedFileAppearsInOneStep() async throws {
         let server = try await TestServer()
@@ -254,5 +254,26 @@ struct FinishedFileTests {
         let first = try await engine.firstSnapshot(of: id) { _ in true }
 
         #expect(!first.isNotSecure)
+    }
+}
+
+extension FinishedFileTests {
+    /// The New Download sheet lets the user rename the file before it starts.
+    @Test func aNameTheUserChoseWinsOverTheServersName() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 1024, seed: 61)
+        let headers = ["Content-Disposition": #"attachment; filename="server-name.pdf""#]
+        server.serve(.init(data: data, eTag: "\"n1\"", headers: headers), at: "/get")
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.fileName = "My: Report.pdf"
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/get"), to: folder, options: options)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(finished.fileName == "My Report.pdf")
+        #expect(try TestFiles.sha256(of: folder.appending(path: "My Report.pdf")) == TestFiles.sha256(data))
     }
 }

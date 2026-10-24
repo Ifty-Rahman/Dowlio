@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// Story 26: progress goes out at most about 4 times a second, and not at all while nothing changes.
+/// Progress goes out at most about 4 times a second, and not at all while nothing changes.
 @Suite(.timeLimit(.minutes(1)))
 struct ProgressTests {
     @Test func noSnapshotGoesOutWhileNothingChanges() async throws {
@@ -34,7 +34,7 @@ struct ProgressTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "still.bin")) == TestFiles.sha256(data))
     }
 
-    /// Story 22: while bytes arrive, the snapshots carry the speed and the time left, and the time
+    /// While bytes arrive, the snapshots carry the speed and the time left, and the time
     /// left goes down as the download goes on.
     @Test func snapshotsShowTheSpeedAndTheTimeLeft() async throws {
         let server = try await TestServer()

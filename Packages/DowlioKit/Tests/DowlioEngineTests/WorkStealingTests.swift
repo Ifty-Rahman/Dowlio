@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// Seam 1: work stealing through the engine's interface. One segment's replies trickle out, and
+/// Work stealing through the engine's interface. One segment's replies trickle out, and
 /// connections that finish early take over half of what it has left.
 @Suite(.timeLimit(.minutes(1)))
 struct WorkStealingTests {
@@ -56,6 +56,10 @@ struct WorkStealingTests {
             starts.contains(segment.start) && segment.receivedBytes == segment.end - segment.start + 1
         })
         #expect(completed.segments.count > 4)
+        // The plan stays what the download started with, so the interface can keep showing it.
+        let planned = (0..<4).map { SegmentBounds(start: Int64($0 * 8 * Self.mebibyte), end: Int64(($0 + 1) * 8 * Self.mebibyte - 1)) }
+        #expect(snapshots.filter { !$0.plannedSegments.isEmpty }.allSatisfy { $0.plannedSegments == planned })
+        #expect(completed.plannedSegments == planned)
     }
 
     /// After a split, the manifest describes the new segments, every byte it counts is in the
@@ -115,5 +119,27 @@ struct WorkStealingTests {
         })
         #expect(missingStarts.isSubset(of: resumeStarts))
         #expect(!resumeStarts.contains(0))
+    }
+}
+
+extension WorkStealingTests {
+    /// With stealing turned off, the slow segment keeps its own range to the end.
+    @Test func withStealingOffEverySegmentKeepsItsRange() async throws {
+        let server = try await TestServer()
+        let size = 16 * Self.mebibyte
+        let data = TestServer.makeData(size: size, seed: 33)
+        server.serve(.init(data: data, eTag: "\"v3\"", throttle: .init(rangeStart: 12 * Self.mebibyte, bytesPerSecond: 4 * Self.mebibyte)), at: "/plain.iso")
+        let folder = try TestFiles.makeFolder()
+
+        var options = RequestOptions()
+        options.connections = 4
+        options.allowsWorkStealing = false
+        let engine = DownloadEngine()
+        let id = await engine.add(url: server.url(for: "/plain.iso"), to: folder, options: options)
+        let completed = try await engine.completedOrFailed(id)
+
+        #expect(completed.state == .completed)
+        #expect(completed.segments.count == 4)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "plain.iso")) == TestFiles.sha256(data))
     }
 }

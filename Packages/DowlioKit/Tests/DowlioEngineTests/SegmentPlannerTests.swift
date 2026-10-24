@@ -1,8 +1,8 @@
 @testable import DowlioEngine
 import Testing
 
-/// Seam 2: the segment planner as pure logic. Expected segments are worked out by hand from the
-/// spec: at most the connection setting (1 to 16), and never a segment under 1 MiB.
+/// The segment planner as pure logic. Expected segments are worked out by hand: at most the
+/// connection setting (1 to 16), and never a segment under 1 MiB.
 struct SegmentPlannerTests {
     struct Case: Sendable, CustomTestStringConvertible {
         let size: Int64
@@ -59,7 +59,7 @@ struct SegmentPlannerTests {
     }
 }
 
-/// Seam 2: stealing. Expected splits are worked out by hand: a free connection takes the second
+/// Stealing. Expected splits are worked out by hand: a free connection takes the second
 /// half of the largest remaining range, and only when both halves stay at 1 MiB or more.
 struct SegmentStealTests {
     static let mebibyte: Int64 = 1_048_576
@@ -98,6 +98,16 @@ struct SegmentStealTests {
         ),
         Case(name: "just under 2 MiB can't be split", remaining: [0...2_097_150, nil], expected: nil),
         Case(name: "every segment finished", remaining: [nil, nil, nil], expected: nil),
+        Case(
+            name: "31 segments can still split one more",
+            remaining: Array(repeating: nil, count: 30) + [0...4_194_303],
+            expected: Expected(victim: 30, kept: 0...2_097_151, taken: 2_097_152...4_194_303)
+        ),
+        Case(
+            name: "32 segments split no further",
+            remaining: Array(repeating: nil, count: 31) + [0...4_194_303],
+            expected: nil
+        ),
         Case(
             name: "a tie goes to the first segment",
             remaining: [0...3_145_727, 4_194_304...7_340_031],
@@ -140,8 +150,8 @@ struct SegmentStealTests {
     }
 }
 
-/// Seam 2: lowering a host's connection limit after a refusal (spec, retry policy). Each refusal
-/// lowers it by one, never below 1.
+/// Lowering a host's connection limit after a refusal. Each refusal lowers it by one, never
+/// below 1.
 struct HostLimitRuleTests {
     @Test(arguments: [(8, 7), (16, 15), (2, 1), (1, 1)])
     func aRefusalLowersTheLimitByOneNeverBelowOne(limit: Int, lowered: Int) {

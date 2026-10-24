@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// The stream of all downloads' snapshots, and snapshot fields that don't belong to one ticket.
+/// The stream of all downloads' snapshots, and snapshot fields no other suite covers.
 @Suite(.timeLimit(.minutes(1)))
 struct SnapshotTests {
     @Test func theStreamOfAllDownloadsStartsWithEachDownloadAndFollowsEveryChange() async throws {
@@ -98,5 +98,23 @@ struct SnapshotTests {
         let snapshot = try await engine.firstSnapshot(of: restored) { _ in true }
 
         #expect(snapshot.displayHost == "files.example.com")
+    }
+}
+
+extension SnapshotTests {
+    /// A caller that follows the stream can check what's true now, since the stream can run behind.
+    @Test func theCurrentSnapshotIsTheEnginesLatestState() async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 2 * 1024 * 1024, seed: 120), holdAfterBytes: 64 * 1024, eTag: "\"cs\""), at: "/now.bin")
+        let folder = try TestFiles.makeFolder()
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: server.url(for: "/now.bin"), to: folder)
+        _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
+        await engine.pause(id)
+
+        #expect(await engine.snapshot(of: id)?.state == .paused)
+        #expect(await engine.snapshot(of: DownloadID()) == nil)
+        server.releaseHeldResponses()
     }
 }

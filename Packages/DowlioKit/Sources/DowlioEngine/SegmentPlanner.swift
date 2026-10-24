@@ -1,9 +1,11 @@
-/// Splits a file into segments. Pure logic: no I/O and no clock (spec, segment planner).
+/// Splits a file into segments. Pure logic: no I/O and no clock.
 enum SegmentPlanner {
     /// No segment is ever smaller than this.
     static let minimumSegmentSize: Int64 = 1_048_576
     /// The most connections one download may use.
     static let maximumConnections = 16
+    /// The most segments stealing may split a download into, counting the planned ones.
+    static let maximumSegments = 32
 
     /// Contiguous segments that cover `size` bytes exactly. Their count is the smallest of the
     /// connection setting (clamped to 1...16), the host's learned limit, and the number of 1 MiB
@@ -28,8 +30,10 @@ enum SegmentPlanner {
     /// The steal for a connection that finished its segment. `remaining` holds each segment's part
     /// that isn't downloaded yet, or `nil` when the segment is finished. The connection takes the
     /// second half of the largest remaining range, the first on a tie, and only when both halves
-    /// stay at 1 MiB or more. `nil` means nothing can be stolen, so the connection closes.
+    /// stay at 1 MiB or more, and while the download has fewer than 32 segments. `nil` means
+    /// nothing can be stolen, so the connection closes.
     static func steal(from remaining: [ByteRange?]) -> Steal? {
+        guard remaining.count < maximumSegments else { return nil }
         var largest: (index: Int, range: ByteRange)?
         for (index, range) in remaining.enumerated() {
             guard let range else { continue }

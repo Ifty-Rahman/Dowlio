@@ -12,14 +12,17 @@ struct SegmentedDownloadTests {
         server.serve(.init(data: data), at: "/big.iso")
         let folder = try TestFiles.makeFolder()
 
+        var options = RequestOptions()
+        options.allowsWorkStealing = false
+
         let engine = DownloadEngine()
-        let id = await engine.add(url: server.url(for: "/big.iso"), to: folder)
+        let id = await engine.add(url: server.url(for: "/big.iso"), to: folder, options: options)
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
-        // Each planned segment is asked for once. Connections that finish early may then steal
-        // parts of the others, which adds requests that start inside a planned segment.
+        // Stealing is off. With it on, a connection that finishes before a slow runner has opened
+        // the others can split a segment that hasn't started, so its request changes.
         let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }
         let planned = [
             "bytes=0-8388607", "bytes=8388608-16777215", "bytes=16777216-25165823", "bytes=25165824-33554431",

@@ -7,7 +7,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.0.1"
+    MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Manual
@@ -23,6 +23,12 @@ targets:
     dependencies:
       - package: DowlioKit
         product: DowlioCore
+      - package: DowlioKit
+        product: DowlioEngine
+      - package: DowlioKit
+        product: DowlioStore
+      - package: DowlioKit
+        product: DowlioLibrary
     info:
       path: App/Info.plist
       properties:
@@ -40,7 +46,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio
         PRODUCT_NAME: Dowlio
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
-        # Scripts sign the app, so Xcode doesn't.
+        # Scripts sign release builds, so Xcode doesn't.
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
+      configs:
+        # Debug builds are signed ad hoc under the bundle ID. macOS refuses notifications to an app
+        # whose signature names anything else, as the linker's own signature does.
+        Debug:
+          CODE_SIGNING_ALLOWED: YES
+          CODE_SIGN_IDENTITY: "-"

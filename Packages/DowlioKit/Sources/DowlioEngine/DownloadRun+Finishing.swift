@@ -16,7 +16,7 @@ extension DownloadRun {
         }
         try Task.checkCancellation()
         let finished = try plan.partial.finish(
-            named: plan.fileName, in: folder, policy: options.nameConflictPolicy, source: url
+            named: plan.fileName, in: plan.partial.packageURL.deletingLastPathComponent(), policy: options.nameConflictPolicy, source: url
         )
         partialFile.url = nil
         await changeSnapshot {

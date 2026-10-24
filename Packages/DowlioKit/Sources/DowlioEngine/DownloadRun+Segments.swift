@@ -34,7 +34,7 @@ extension DownloadRun {
                             }
                             gate.release()
                         }
-                        guard let stolen = board.steal() else { return }
+                        guard options.allowsWorkStealing, let stolen = board.steal() else { return }
                         current = stolen
                     }
                 }

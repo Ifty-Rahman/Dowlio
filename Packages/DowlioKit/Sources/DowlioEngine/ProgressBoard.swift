@@ -72,7 +72,7 @@ final class ProgressBoard: @unchecked Sendable {
     }
 
     /// Whether the segments cover byte 0 to `total` exactly, each one after the other with no gap
-    /// and no overlap, and each holds exactly its own length (spec, finalizer).
+    /// and no overlap, and each holds exactly its own length.
     func coversFile(of total: Int64) -> Bool {
         lock.withLock {
             var next: Int64 = 0

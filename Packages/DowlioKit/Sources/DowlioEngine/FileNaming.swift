@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 enum FileNaming {
     /// The finished file's name: from `Content-Disposition`, otherwise from the final URL after
-    /// redirects, otherwise "download" (spec, file names). A name without an extension gets one
+    /// redirects, otherwise "download". A name without an extension gets one
     /// from the content type.
     static func name(for response: HTTPURLResponse, finalURL: URL) -> String {
         var name = name(for: finalURL)
@@ -19,6 +19,11 @@ enum FileNaming {
     }
 
     static let maximumBytes = 200
+
+    /// A name the user typed, made safe the same way as a server's.
+    static func chosen(_ name: String) -> String {
+        capped(clean(name))
+    }
 
     /// Cuts `name` to at most 200 UTF-8 bytes on a character boundary. The extension is kept when
     /// it's short enough to leave room for a name.

@@ -1,0 +1,221 @@
+import AppKit
+import DowlioCore
+import DowlioEngine
+import DowlioLibrary
+import DowlioStore
+import Observation
+
+@MainActor
+@Observable
+final class AppModel {
+    private(set) var rows: [DownloadRow] = []
+    private(set) var problem: String?
+    /// A failed action to tell the user about, such as a file the Trash refused.
+    var actionFailure: String?
+    /// The New Download sheet, made once each time it's asked for and dropped when it closes.
+    var newDownload: NewDownloadModel?
+    /// Opens the library window. The window hands it over the first time it appears, so a link
+    /// that arrives while it's closed can open it again.
+    var openLibraryWindow: (() -> Void)?
+
+    var settings: DownloadSettings {
+        var settings = UserDefaults.standard.downloadSettings
+        if let folder = DebugLaunch.downloadsFolder { settings.folder = folder }
+        return settings
+    }
+
+    var downloadsFolder: URL { settings.folder }
+
+    /// The library window, kept so Open Dowlio can bring it back even when it has never shown,
+    /// as after a quiet start at login.
+    weak var libraryWindow: NSWindow?
+    weak var menuBar: MenuBarController?
+    private let notifier = FinishNotifier()
+    private(set) var freeSpace: Int64?
+
+    private let library: Library?
+
+    init() {
+        do {
+            let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
+                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+            ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
+            let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
+            library = Library(engine: DownloadEngine(), store: store)
+        } catch {
+            library = nil
+            problem = "Dowlio can't open its history: \(error.localizedDescription)"
+            return
+        }
+        Task { await follow() }
+        DebugLaunch.addLinks { [weak self] links in
+            guard let self else { return }
+            var draft = NewDownloadDraft(text: links, folder: downloadsFolder)
+            draft.startImmediately = true
+            add(draft)
+        }
+        DebugLaunch.useSheet { [weak self] links in
+            self?.requestNewDownload(links)
+        } download: { [weak self] in
+            guard let self, let sheet = newDownload else { return }
+            add(sheet.draft)
+            newDownload = nil
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.perform { await $0.checkFinishedFiles() }
+                self?.measureFreeSpace()
+            }
+        }
+        Task { [weak self] in
+            while !Task.isCancelled {
+                self?.measureFreeSpace()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    func row(_ id: DownloadID) -> DownloadRow? {
+        rows.first { $0.id == id }
+    }
+
+    /// Shows the New Download sheet with `text` in its link field, opening the window first. With
+    /// the sheet already up, the links join it.
+    func requestNewDownload(_ text: String = "") {
+        showLibraryWindow()
+        if let newDownload {
+            newDownload.append(text)
+        } else {
+            newDownload = makeNewDownload(text)
+        }
+    }
+
+    /// A draft for the New Download sheet or Quick add, checking links through the library.
+    func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
+        guard let library else { return nil }
+        let model = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
+            try await library.inspect(url, options: options)
+        }
+        model.draft.connections = settings.connections
+        return model
+    }
+
+    var isLibraryWindowOpen = false
+
+    func showLibraryWindow() {
+        NSApp.activate()
+        if let libraryWindow, libraryWindow.isVisible || libraryWindow.isMiniaturized {
+            libraryWindow.makeKeyAndOrderFront(nil)
+        } else if let libraryWindow, openLibraryWindow == nil {
+            libraryWindow.makeKeyAndOrderFront(nil)
+        } else {
+            openLibraryWindow?()
+        }
+    }
+
+    /// Shows Dowlio in the Dock, the menu bar or both, as Settings › General says. A start at login
+    /// doesn't take focus.
+    func applyPresence(activating: Bool = true) {
+        let presence = UserDefaults.standard.presence
+        menuBar?.isVisible = presence.menuBar
+        NSApp.setActivationPolicy(presence.dock ? .regular : .accessory)
+        if activating { NSApp.activate() }
+    }
+
+    func applyDownloadsAtOnce() {
+        let limit = settings.downloadsAtOnce
+        perform { await $0.setMaximumActive(limit) }
+    }
+
+    /// Pauses everything, so every partial file has its latest manifest before Dowlio quits.
+    func stopForQuit() async {
+        await library?.pauseAll()
+    }
+
+    /// SwiftUI's own way to open Settings, handed over by the library window.
+    var openSettingsWindow: (() -> Void)?
+
+    func showSettings() {
+        NSApp.activate()
+        openSettingsWindow?()
+    }
+
+    func reportProblem() {
+        let info = Bundle.main.infoDictionary
+        let app = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        NSWorkspace.shared.open(ProblemReport.url(appVersion: app, macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
+    }
+
+    func add(_ draft: NewDownloadDraft) {
+        notifier.askPermissionIfNeeded()
+        let settings = settings
+        let chosen = draft.options
+        var options = settings.options(connections: chosen.connections)
+        options.referrer = chosen.referrer
+        options.userAgent = chosen.userAgent
+        options.fileName = chosen.fileName
+        let destination = settings.destination(in: draft.folder)
+        perform { library in
+            for url in draft.links {
+                await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately)
+            }
+        }
+    }
+
+    func pause(_ row: DownloadRow) { perform { await $0.pause(row.id) } }
+    func resume(_ row: DownloadRow) { perform { await $0.resume(row.id) } }
+    func retry(_ row: DownloadRow) { perform { await $0.retry(row.id) } }
+    func cancel(_ row: DownloadRow) { perform { await $0.cancel(row.id) } }
+    func removeFromList(_ row: DownloadRow) { perform { await $0.removeFromList(row.id) } }
+    func clearCompleted() { perform { await $0.clearCompleted() } }
+    func pauseAll() { perform { await $0.pauseAll() } }
+    func resumeAll() { perform { await $0.resumeAll() } }
+
+    private func measureFreeSpace() {
+        let values = try? downloadsFolder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        freeSpace = values?.volumeAvailableCapacityForImportantUsage
+    }
+
+    func moveToTrash(_ row: DownloadRow) {
+        perform { [weak self] library in
+            do {
+                try await library.moveToTrash(row.id)
+            } catch {
+                self?.actionFailure = "Dowlio couldn't move “\(row.fileName)” to the Trash. \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func showInFinder(_ row: DownloadRow) {
+        guard let file = row.finishedFile else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+
+    func open(_ row: DownloadRow) {
+        guard let file = row.finishedFile else { return }
+        NSWorkspace.shared.open(file)
+    }
+
+    func copyLink(_ row: DownloadRow) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(row.sourceURL.absoluteString, forType: .string)
+    }
+
+    private func perform(_ work: @escaping @MainActor (Library) async -> Void) {
+        guard let library else { return }
+        Task { await work(library) }
+    }
+
+    private func follow() async {
+        guard let library else { return }
+        await library.start(maximumFailures: settings.maximumFailures, allowsWorkStealing: settings.takesOverSlowSegments)
+        await library.setMaximumActive(settings.downloadsAtOnce)
+        for await rows in await library.rows() {
+            self.rows = rows
+            notifier.update(rows)
+        }
+    }
+}

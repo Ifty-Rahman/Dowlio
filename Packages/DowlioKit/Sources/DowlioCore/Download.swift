@@ -1,7 +1,7 @@
 import Foundation
 
 /// Identifies one download, in the sense of `GLOSSARY.md`.
-public struct DownloadID: Hashable, Sendable, CustomStringConvertible {
+public struct DownloadID: Hashable, Codable, Sendable, CustomStringConvertible {
     public let rawValue: UUID
 
     public init(rawValue: UUID = UUID()) {
@@ -93,7 +93,7 @@ public struct NetworkFailure: Equatable, Sendable, CustomStringConvertible {
     public var description: String { message }
 }
 
-/// How a download should run. Each ticket adds the options it needs (spec, engine interface).
+/// How a download should run.
 public struct RequestOptions: Equatable, Sendable {
     /// Connections per download, 1 to 16. Values outside that range are clamped.
     public var connections: Int = 8
@@ -113,6 +113,15 @@ public struct RequestOptions: Equatable, Sendable {
     /// signed-in visitor. Held in memory only: they never go into the partial file, so a restored
     /// download has none.
     public var cookies: [Cookie] = []
+    /// How many failed attempts in a row one segment may have before the download is Failed, up
+    /// to 11, which is ten retries. `nil` uses the engine's own default of 5.
+    public var maximumFailures: Int?
+    /// A connection that finishes its segment takes over half of the slowest segment's remaining
+    /// work. With this off, each connection closes when its own segment is done.
+    public var allowsWorkStealing = true
+    /// The name the user chose for the finished file. Unsafe characters are removed. `nil` takes
+    /// the name the server or the link gives.
+    public var fileName: String?
 }
 
 /// One cookie a download sends, as the browser had it for the download's link.
@@ -173,6 +182,9 @@ public struct DownloadSnapshot: Equatable, Sendable {
     public var totalBytes: Int64?
     /// One entry per segment, in file order. Empty while the size is unknown.
     public var segments: [SegmentProgress] = []
+    /// The segments as planned when the download started or last started over. Work stealing
+    /// splits `segments`, never these.
+    public var plannedSegments: [SegmentBounds] = []
     public var activeConnections: Int = 0
     /// Speed smoothed over the last 5 seconds.
     public var bytesPerSecond: Int64 = 0
@@ -188,6 +200,9 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// and a file with its name already existed. `fileName` is the download's own planned name,
     /// which the existing file has.
     public var wasSkipped: Bool = false
+    /// The Category, from the name and the server's content type. `nil` until the probe answers,
+    /// and for a file that matches no Category.
+    public var category: FileCategory?
     /// The original link's host, lowercased, for showing where the download comes from. It stays
     /// the same when redirects lead elsewhere. `nil` for a link without a host.
     public var displayHost: String?
@@ -210,5 +225,16 @@ public struct DownloadSnapshot: Equatable, Sendable {
         self.totalBytes = totalBytes
         self.isNotSecure = isNotSecure
         self.displayHost = displayHost
+    }
+}
+
+/// Where one segment starts and ends, without its progress. Bytes from `start` to `end` inclusive.
+public struct SegmentBounds: Codable, Equatable, Hashable, Sendable {
+    public var start: Int64
+    public var end: Int64
+
+    public init(start: Int64, end: Int64) {
+        self.start = start
+        self.end = end
     }
 }

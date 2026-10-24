@@ -19,7 +19,7 @@ extension DownloadRun {
                 guard let retryable = RetryableFailure(classifying: error) else { throw error }
                 if retryable.isRefusal { lowerLimit(of: host) }
                 failures += 1
-                guard failures < policy.maximumFailures else { throw DownloadError.tooManyRetries }
+                guard failures < maximumFailures else { throw DownloadError.tooManyRetries }
 
                 let delay = policy.delay(afterFailure: failures, retryAfter: retryable.retryAfter, random: configuration.random)
                 retries.begin(key, attempt: failures, nextTry: configuration.now().addingTimeInterval(delay.timeInterval))
@@ -35,6 +35,10 @@ extension DownloadRun {
                 await publishRetryState()
             }
         }
+    }
+
+    private var maximumFailures: Int {
+        options.maximumFailures.map { min(max($0, 0), 11) } ?? configuration.retry.maximumFailures
     }
 
     private func lowerLimit(of host: URL) {
