@@ -1,13 +1,4 @@
-<table>
-  <tr>
-    <td align="center" valign="middle">
-      <img src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="104" alt="Dowlio">
-    </td>
-    <td align="center" valign="middle">
-      <h1 style="font-size: 104px; margin: 0;">Dowlio</h1>
-    </td>
-  </tr>
-</table>
+# <img src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Dowlio" width="100" height="100" style="vertical-align: -50px;"> Dowlio
 
 *A fast, private, native download manager for Mac*
 
