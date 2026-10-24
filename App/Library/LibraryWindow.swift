@@ -14,9 +14,9 @@ struct LibraryWindow: View {
     @State private var confirmation: Confirmation?
     @State private var quickLookFile: URL?
     @State private var search = ""
-    @SceneStorage("libraryFilter") private var filter = LibraryFilter.all
-    @SceneStorage("showsInspector") private var showsInspector = false
-    @SceneStorage("showsSidebar") private var showsSidebar = true
+    @AppStorage("libraryFilter") private var filter = LibraryFilter.all
+    @AppStorage("showsInspector") private var showsInspector = false
+    @AppStorage("showsSidebar") private var showsSidebar = true
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
