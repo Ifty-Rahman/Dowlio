@@ -17,7 +17,7 @@ struct SegmentedBar: View {
             HStack(spacing: gap) {
                 ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
                     pieceView(fill: piece.fill)
-                        .frame(width: max(width(of: piece, in: proxy.size.width), height))
+                        .frame(width: width(of: piece, in: proxy.size.width))
                 }
             }
         }

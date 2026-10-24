@@ -2,8 +2,6 @@ import DowlioCore
 import DowlioLibrary
 import SwiftUI
 
-/// One download in the library list: badge, name, state, bar, detail line, speed, time left and
-/// one action.
 struct DownloadRowView: View {
     let row: DownloadRow
     let model: AppModel?
@@ -11,36 +9,40 @@ struct DownloadRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: DowlioDesign.Spacing.md) {
             FileTypeBadge(text: row.badge)
-            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
-                HStack(spacing: DowlioDesign.Spacing.sm) {
-                    Text(row.fileName)
-                        .font(DowlioDesign.TypeRole.heading)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Label(row.stateWord, systemImage: row.state.symbolName)
-                        .font(DowlioDesign.TypeRole.caption)
-                        .foregroundStyle(row.state.tone)
-                    if row.isNotSecure {
-                        Label("Not secure", systemImage: "lock.open.fill")
-                            .font(DowlioDesign.TypeRole.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-                SegmentedBar(segments: row.segments, fraction: row.fractionDone, tint: row.state.tone)
-                HStack {
-                    Text(row.detailLine)
-                    Spacer(minLength: DowlioDesign.Spacing.sm)
-                    if let speed = row.speedText { Text(speed) }
-                    if let timeLeft = row.timeLeftText { Text(timeLeft) }
-                }
-                .font(DowlioDesign.TypeRole.detailMetric)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
+            details
             action
         }
         .padding(.vertical, DowlioDesign.Spacing.xs)
-        .accessibilityElement(children: .combine)
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+            HStack(spacing: DowlioDesign.Spacing.sm) {
+                Text(row.fileName)
+                    .font(DowlioDesign.TypeRole.heading)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Label(row.stateWord, systemImage: row.state.symbolName)
+                    .font(DowlioDesign.TypeRole.caption)
+                    .foregroundStyle(row.state.tone)
+                if row.isNotSecure {
+                    Label("Not secure", systemImage: "lock.open.fill")
+                        .font(DowlioDesign.TypeRole.caption)
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                }
+            }
+            SegmentedBar(segments: row.segments, fraction: row.fractionDone, tint: row.state.tone)
+            HStack {
+                Text(row.detailLine)
+                Spacer(minLength: DowlioDesign.Spacing.sm)
+                if let speed = row.speedText { Text(speed) }
+                if let timeLeft = row.timeLeftText { Text(timeLeft) }
+            }
+            .font(DowlioDesign.TypeRole.detailMetric)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }
 
@@ -76,15 +78,15 @@ struct DownloadRowView: View {
     }
 }
 
-/// The extension in capitals on a small neutral tile.
 struct FileTypeBadge: View {
     let text: String
+    @ScaledMetric(relativeTo: .caption) private var side: CGFloat = 44
 
     var body: some View {
         Text(text.isEmpty ? "FILE" : String(text.prefix(4)))
             .font(DowlioDesign.TypeRole.caption)
             .foregroundStyle(.secondary)
-            .frame(width: 44, height: 44)
+            .frame(width: side, height: side)
             .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
             .accessibilityHidden(true)
     }

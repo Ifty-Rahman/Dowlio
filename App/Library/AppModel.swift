@@ -5,7 +5,6 @@ import DowlioLibrary
 import DowlioStore
 import Observation
 
-/// The views' view of the library, on the main actor.
 @MainActor
 @Observable
 final class AppModel {
