@@ -188,7 +188,7 @@ struct FinishedFileTests {
         let folder = try TestFiles.makeFolder()
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/notes.zip"), to: folder)
         _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
         // The partial file stays writable, but the folder can't take the finished file.

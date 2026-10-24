@@ -243,7 +243,7 @@ struct PauseResumeTests {
         var options = RequestOptions()
         options.connections = 2
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/build.zip"), to: folder, options: options)
         let finished = try await engine.completedOrFailed(id)
 
@@ -258,7 +258,7 @@ struct PauseResumeTests {
         var options = RequestOptions()
         options.connections = 2
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/live.log"), to: folder, options: options)
         let failed = try await engine.completedOrFailed(id)
 
@@ -273,7 +273,7 @@ struct PauseResumeTests {
         server.serve(.init(data: data, supportsRanges: rangesSupported, holdAfterBytes: 64 * 1024, eTag: "\"c\""), at: "/c.bin")
         let folder = try TestFiles.makeFolder()
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/c.bin"), to: folder)
         let downloading = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
 
@@ -291,7 +291,7 @@ struct PauseResumeTests {
         options.referrer = URL(string: "https://example.com/downloads")
         options.userAgent = "DowlioTest/1.0"
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/page-file.zip"), to: folder, options: options)
         _ = try await engine.completedOrFailed(id)
 

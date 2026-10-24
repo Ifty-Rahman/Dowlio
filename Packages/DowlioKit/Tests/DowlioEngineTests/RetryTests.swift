@@ -172,7 +172,7 @@ extension RetryTests {
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 2
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/live.log"), to: folder, options: options)
         #expect(try await engine.completedOrFailed(id).state == .failed(.serverChangedFile))
 
@@ -277,7 +277,7 @@ extension RetryTests {
         var options = RequestOptions()
         options.connections = 1
         var configuration = EngineConfiguration.fast
-        configuration.idleTimeout = .milliseconds(300)
+        configuration.idleTimeout = .seconds(2)
         let engine = DownloadEngine(configuration: configuration)
         let id = await engine.add(url: server.url(for: "/quiet.bin"), to: folder, options: options)
         let finished = try await engine.completedOrFailed(id)

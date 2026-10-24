@@ -14,7 +14,7 @@ struct UnknownSizeTests {
         server.serve(.init(data: data, holdAfterBytes: held, eTag: "\"u1\"", omitsLength: true), at: "/stream.bin")
         let folder = try TestFiles.makeFolder()
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/stream.bin"), to: folder)
         let midway = try await engine.firstSnapshot(of: id) { $0.receivedBytes >= Int64(held) }
 

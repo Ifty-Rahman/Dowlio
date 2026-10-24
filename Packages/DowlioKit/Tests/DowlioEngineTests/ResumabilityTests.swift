@@ -16,7 +16,7 @@ struct ResumabilityTests {
         let data = TestServer.makeData(size: Self.size, seed: 51)
         server.serve(.init(data: data, supportsRanges: false, holdAfterBytes: Self.held, eTag: "\"w1\""), at: "/whole.bin")
         let folder = try TestFiles.makeFolder()
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/whole.bin"), to: folder)
         let downloading = try await engine.firstSnapshot(of: id) { $0.receivedBytes == Int64(Self.held) }
         #expect(downloading.totalBytes == Int64(Self.size))
@@ -24,7 +24,7 @@ struct ResumabilityTests {
         await engine.pause(id)
         let package = try TestFiles.partialFile(in: folder)
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         let snapshot = try await fresh.firstSnapshot(of: restored) { _ in true }
         #expect(snapshot.state == .paused)
@@ -83,7 +83,7 @@ struct ResumabilityTests {
         var options = RequestOptions()
         options.connections = 2
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/v.bin"), to: folder, options: options)
         let downloading = try await engine.firstSnapshot(of: id) { $0.receivedBytes > 0 }
 
@@ -99,12 +99,12 @@ struct ResumabilityTests {
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 2
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/nov.bin"), to: folder, options: options)
         _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes == Int64(2 * Self.held) }
         await engine.pause(id)
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: try TestFiles.partialFile(in: folder))
         let snapshot = try await fresh.firstSnapshot(of: restored) { _ in true }
 
@@ -141,7 +141,7 @@ struct ResumabilityTests {
         )
         try JSONEncoder().encode(manifest).write(to: package.appending(path: "manifest.json"))
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         await #expect(throws: RestoreError.invalidManifest) {
             try await engine.restore(partialFile: package)
         }

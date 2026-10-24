@@ -23,7 +23,7 @@ struct RefusalTests {
         server.serve(.init(data: data, holdAfterBytes: Self.held, maxParallel: 3), at: "/capped.iso")
         let folder = try TestFiles.makeFolder()
         let limits = InMemoryHostLimitStore()
-        var configuration = EngineConfiguration.fastWithHolds
+        var configuration = EngineConfiguration.fast
         configuration.hostLimits = limits
 
         let engine = DownloadEngine(configuration: configuration)
@@ -58,7 +58,7 @@ struct RefusalTests {
         var options = RequestOptions()
         options.connections = 8
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let firstID = await engine.add(url: server.url(for: "/first.iso"), to: folder, options: options)
         try await waitUntil { server.refusals(at: "/first.iso") == 6 }
         server.releaseHeldResponses()
@@ -209,7 +209,7 @@ struct RefusalTests {
         var options = RequestOptions()
         options.connections = 2
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/mixed.iso"), to: folder, options: options)
         let package = folder.appending(path: "mixed.iso.dowlio")
 

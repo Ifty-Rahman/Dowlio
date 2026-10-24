@@ -115,7 +115,7 @@ struct CookieTests {
         server.serve(.init(data: data, holdAfterBytes: held, eTag: "\"k3\""), at: "/kept.bin")
         let folder = try TestFiles.makeFolder()
 
-        let engine = DownloadEngine(configuration: .fastWithHolds)
+        let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/kept.bin"), to: folder, options: Self.options)
         _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes == Int64(2 * held) }
         await engine.pause(id)
@@ -128,7 +128,7 @@ struct CookieTests {
             #expect(bytes.range(of: Data(Self.secret.utf8)) == nil, "\(file.lastPathComponent) holds the cookie")
         }
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         server.releaseHeldResponses()
         let requestsBeforeResume = server.requests.count

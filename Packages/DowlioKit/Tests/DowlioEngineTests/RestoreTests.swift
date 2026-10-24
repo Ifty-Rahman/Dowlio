@@ -20,7 +20,7 @@ struct RestoreTests {
         await engine.pause(id)
         let package = try TestFiles.partialFile(in: folder)
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         let snapshot = try await fresh.firstSnapshot(of: restored) { _ in true }
 
@@ -67,7 +67,7 @@ struct RestoreTests {
         try FileManager.default.moveItem(at: crashImage, to: package)
         let saved = try JSONDecoder().decode(PartialFileManifest.self, from: Data(contentsOf: manifestURL))
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         let snapshot = try await fresh.firstSnapshot(of: restored) { _ in true }
         #expect(snapshot.receivedBytes == saved.segments.reduce(0) { $0 + $1.received })
@@ -97,7 +97,7 @@ struct RestoreTests {
 
         let limits = InMemoryHostLimitStore()
         limits.updateLimit(for: "127.0.0.1:\(server.port)") { _ in 1 }
-        var configuration = EngineConfiguration.fastWithHolds
+        var configuration = EngineConfiguration.fast
         configuration.hostLimits = limits
         let fresh = DownloadEngine(configuration: configuration)
         let restored = try await fresh.restore(partialFile: package)
@@ -261,7 +261,7 @@ extension RestoreTests {
         saved.connections = 99
         try JSONEncoder().encode(saved).write(to: manifestURL)
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         await fresh.resume(restored)
         // Both resumed connections got their held bytes, so the resume is past its probe.
@@ -282,7 +282,7 @@ extension RestoreTests {
         let package = try TestFiles.partialFile(in: folder)
         try Data("old".utf8).write(to: folder.appending(path: "report.bin"))
 
-        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         server.releaseHeldResponses()
         await fresh.resume(restored)

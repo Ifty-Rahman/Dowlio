@@ -3,18 +3,12 @@ import DowlioEngine
 import Foundation
 
 extension EngineConfiguration {
+    /// Fast retries, but an idle timeout long enough that a held reply or a busy machine is never
+    /// mistaken for a stalled connection. A test about stalls sets its own.
     package static var fast: EngineConfiguration {
         var configuration = EngineConfiguration()
         configuration.retry.firstDelay = .milliseconds(10)
         configuration.retry.maximumDelay = .milliseconds(40)
-        configuration.idleTimeout = .milliseconds(500)
-        return configuration
-    }
-
-    /// Fast retries, but an idle timeout longer than any held reply in these tests, so a held reply
-    /// isn't mistaken for a stalled connection.
-    package static var fastWithHolds: EngineConfiguration {
-        var configuration = EngineConfiguration.fast
         configuration.idleTimeout = .seconds(30)
         return configuration
     }
@@ -33,7 +27,7 @@ public func startHeld(
     let folder = try TestFiles.makeFolder()
     var options = options
     options.connections = 2
-    let engine = DownloadEngine(configuration: .fastWithHolds)
+    let engine = DownloadEngine(configuration: .fast)
     let id = await engine.add(url: server.url(for: start ?? path), to: folder, options: options)
     let held = Int64(2 * (file.holdAfterBytes ?? 0))
     _ = try await engine.firstSnapshot(of: id) { $0.receivedBytes == held }

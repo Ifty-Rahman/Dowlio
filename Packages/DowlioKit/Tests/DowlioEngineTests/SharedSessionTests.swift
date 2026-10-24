@@ -11,7 +11,7 @@ struct SharedSessionTests {
         let data = TestServer.makeData(size: 32 * 1024 * 1024, seed: 91)
         server.serve(.init(data: data, holdAfterBytes: 64 * 1024, maxParallel: 32), at: "/shared.iso")
         let folder = try TestFiles.makeFolder()
-        var configuration = EngineConfiguration.fastWithHolds
+        var configuration = EngineConfiguration.fast
         configuration.sessions = .oneShared
         var options = RequestOptions()
         options.connections = 16
