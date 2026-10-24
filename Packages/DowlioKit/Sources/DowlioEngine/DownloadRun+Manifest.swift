@@ -20,7 +20,8 @@ extension DownloadRun {
             referrer: options.referrer,
             userAgent: options.userAgent,
             segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) },
-            layout: layout
+            layout: layout,
+            nameConflictPolicy: options.nameConflictPolicy
         )
         try? plan.partial.saveManifest(manifest)
     }

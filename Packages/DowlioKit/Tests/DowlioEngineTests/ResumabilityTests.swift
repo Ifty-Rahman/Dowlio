@@ -142,12 +142,12 @@ struct ResumabilityTests {
         try JSONEncoder().encode(manifest).write(to: package.appending(path: "manifest.json"))
 
         let engine = DownloadEngine(configuration: .fastWithHolds)
-        let restored = try await engine.restore(partialFile: package)
-        await engine.resume(restored)
-        let finished = try await engine.completedOrFailed(restored)
+        await #expect(throws: RestoreError.invalidManifest) {
+            try await engine.restore(partialFile: package)
+        }
 
-        #expect(finished.state == .failed(.incompleteFile))
         #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "holey.bin").path))
         #expect(FileManager.default.fileExists(atPath: package.path))
+        #expect(server.requests.isEmpty)
     }
 }

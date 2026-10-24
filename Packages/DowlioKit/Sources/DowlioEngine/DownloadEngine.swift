@@ -13,6 +13,9 @@ extension URL {
 public enum RestoreError: Error, Equatable, Sendable {
     /// The partial file has no manifest, or one this version of Dowlio can't read.
     case unreadableManifest
+    /// The manifest's segments don't fit its file, so resuming it could write bytes in the wrong
+    /// place.
+    case invalidManifest
 }
 
 /// Owns every download and is the only way in: add a download, then follow its snapshots.
@@ -149,26 +152,29 @@ public actor DownloadEngine {
 
     /// Adds the download held by the partial file at `package` as Paused, with the bytes it has,
     /// so Resume continues it. Returns the download's identifier. A partial file the engine already
-    /// has returns that download. Throws `RestoreError.unreadableManifest`, and leaves the partial
-    /// file alone, when its manifest is missing or unreadable.
+    /// has returns that download. Throws `RestoreError`, and leaves the partial file alone, when its
+    /// manifest is missing, unreadable or describes segments that don't fit the file.
     public func restore(partialFile package: URL) throws -> DownloadID {
         let package = package.standardizedFileURL
         if let known = entries.first(where: { $0.value.partialFile.url?.standardizedFileURL == package }) {
             return known.key
         }
         let manifest = try PartialFile.readManifest(in: package)
+        guard manifest.segmentsFitTheFile else { throw RestoreError.invalidManifest }
         let partial = try PartialFile.openExisting(package)
+        let fileName = FileNaming.capped(FileNaming.clean(manifest.fileName))
 
         let id = UUID(uuidString: manifest.downloadID).map(DownloadID.init(rawValue:)) ?? DownloadID()
         let folder = package.deletingLastPathComponent()
         var options = RequestOptions()
-        options.connections = manifest.connections
+        options.connections = min(max(manifest.connections, 1), SegmentPlanner.maximumConnections)
         options.referrer = manifest.referrer
         options.userAgent = manifest.userAgent
+        options.nameConflictPolicy = manifest.nameConflictPolicy ?? .keepBoth
 
         let segments = manifest.segments.map { ByteRange(start: $0.start, end: $0.end) }
         let plan = DownloadPlan(
-            fileName: manifest.fileName,
+            fileName: fileName,
             finalURL: manifest.finalURL,
             totalBytes: manifest.totalBytes,
             layout: manifest.layout == .ranges && manifest.totalBytes != nil ? .ranges(validator: manifest.validator) : .whole,
@@ -180,7 +186,7 @@ public actor DownloadEngine {
         var snapshot = DownloadSnapshot(
             id: id,
             state: .paused,
-            fileName: manifest.fileName,
+            fileName: fileName,
             destinationFolder: folder,
             totalBytes: manifest.totalBytes,
             isNotSecure: manifest.originalURL.isPlainHTTP || manifest.finalURL.isPlainHTTP,

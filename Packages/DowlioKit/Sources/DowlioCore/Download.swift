@@ -127,7 +127,7 @@ public struct Cookie: Equatable, Sendable {
 }
 
 /// What to do when the destination already has a file with the finished file's name.
-public enum NameConflictPolicy: Equatable, Sendable {
+public enum NameConflictPolicy: String, Codable, Equatable, Sendable {
     /// Save the new file as "name 2.ext", "name 3.ext" and so on.
     case keepBoth
     /// Overwrite the existing file. The interface confirms this first.

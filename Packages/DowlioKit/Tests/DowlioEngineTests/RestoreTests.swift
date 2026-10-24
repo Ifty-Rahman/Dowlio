@@ -167,3 +167,143 @@ struct RestoreTests {
         #expect(try Data(contentsOf: package.appending(path: "manifest.json")) == Data("not a manifest".utf8))
     }
 }
+
+/// A partial file is data on disk that anyone could have edited, so restoring one checks it.
+extension RestoreTests {
+    private static func manifest(
+        fileName: String = "a.bin",
+        totalBytes: Int64? = 2048,
+        connections: Int = 8,
+        segments: [PartialFileManifest.Segment] = [.init(start: 0, end: 2047, received: 1024)]
+    ) -> PartialFileManifest {
+        PartialFileManifest(
+            formatVersion: PartialFileManifest.currentFormatVersion,
+            downloadID: UUID().uuidString,
+            originalURL: URL(string: "https://files.example.com/a.bin")!,
+            finalURL: URL(string: "https://files.example.com/a.bin")!,
+            validator: "\"a1\"",
+            totalBytes: totalBytes,
+            fileName: fileName,
+            connections: connections,
+            segments: segments,
+            layout: .ranges
+        )
+    }
+
+    private static func writePackage(_ manifest: PartialFileManifest, in folder: URL) throws -> URL {
+        let package = folder.appending(path: "a.bin.dowlio", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: false)
+        try Data(count: 1024).write(to: package.appending(path: "data"))
+        try JSONEncoder().encode(manifest).write(to: package.appending(path: "manifest.json"))
+        return package
+    }
+
+    @Test(arguments: [
+        ("../../escape.bin", "escape.bin"),
+        ("/etc/passwd", "etcpasswd"),
+        (".hidden", "hidden"),
+        ("", "download"),
+    ])
+    func aRestoredFileNameIsCleanedLikeANewOne(saved: String, expected: String) async throws {
+        let package = try Self.writePackage(Self.manifest(fileName: saved), in: try TestFiles.makeFolder())
+
+        let engine = DownloadEngine()
+        let restored = try await engine.restore(partialFile: package)
+        let snapshot = try await engine.firstSnapshot(of: restored) { _ in true }
+
+        #expect(snapshot.fileName == expected)
+    }
+
+    struct BrokenSegments: Sendable, CustomTestStringConvertible {
+        let testDescription: String
+        let totalBytes: Int64?
+        let segments: [PartialFileManifest.Segment]
+    }
+
+    static let brokenSegments: [BrokenSegments] = [
+        .init(testDescription: "past the end", totalBytes: 2048, segments: [.init(start: 0, end: 4095, received: 0)]),
+        .init(testDescription: "overlapping", totalBytes: 2048, segments: [
+            .init(start: 0, end: 1023, received: 0), .init(start: 1000, end: 2047, received: 0),
+        ]),
+        .init(testDescription: "out of order", totalBytes: 2048, segments: [
+            .init(start: 1024, end: 2047, received: 0), .init(start: 0, end: 1023, received: 0),
+        ]),
+        .init(testDescription: "more received than the length", totalBytes: 2048, segments: [.init(start: 0, end: 2047, received: 4096)]),
+        .init(testDescription: "negative received", totalBytes: 2048, segments: [.init(start: 0, end: 2047, received: -1)]),
+        .init(testDescription: "ending before it starts", totalBytes: 2048, segments: [.init(start: 100, end: 50, received: 0)]),
+        .init(testDescription: "starting before the file", totalBytes: 2048, segments: [.init(start: -10, end: 2047, received: 0)]),
+        .init(testDescription: "segments without a size", totalBytes: nil, segments: [.init(start: 0, end: 1023, received: 0)]),
+    ]
+
+    @Test(arguments: brokenSegments)
+    func aManifestWhoseSegmentsDontFitTheFileIsRefusedAndLeftAlone(_ broken: BrokenSegments) async throws {
+        let package = try Self.writePackage(
+            Self.manifest(totalBytes: broken.totalBytes, segments: broken.segments), in: try TestFiles.makeFolder()
+        )
+        let manifestBytes = try Data(contentsOf: package.appending(path: "manifest.json"))
+
+        let engine = DownloadEngine()
+        await #expect(throws: RestoreError.invalidManifest) {
+            try await engine.restore(partialFile: package)
+        }
+        #expect(try Data(contentsOf: package.appending(path: "manifest.json")) == manifestBytes)
+        #expect(try Data(contentsOf: package.appending(path: "data")) == Data(count: 1024))
+    }
+
+    @Test func aRestoredConnectionSettingIsClampedTo16() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 46)
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/many.bin")
+        await engine.pause(id)
+        let package = try TestFiles.partialFile(in: folder)
+        let manifestURL = package.appending(path: "manifest.json")
+        var saved = try JSONDecoder().decode(PartialFileManifest.self, from: Data(contentsOf: manifestURL))
+        saved.connections = 99
+        try JSONEncoder().encode(saved).write(to: manifestURL)
+
+        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let restored = try await fresh.restore(partialFile: package)
+        await fresh.resume(restored)
+        // Both resumed connections got their held bytes, so the resume is past its probe.
+        _ = try await fresh.firstSnapshot(of: restored) { $0.receivedBytes == Int64(4 * Self.held) }
+        await fresh.pause(restored)
+
+        let resaved = try JSONDecoder().decode(PartialFileManifest.self, from: Data(contentsOf: manifestURL))
+        #expect(resaved.connections == 16)
+    }
+
+    @Test func aRestoredDownloadKeepsItsNameConflictPolicy() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 47)
+        var options = RequestOptions()
+        options.nameConflictPolicy = .replace
+        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/report.bin", options: options)
+        await engine.pause(id)
+        let package = try TestFiles.partialFile(in: folder)
+        try Data("old".utf8).write(to: folder.appending(path: "report.bin"))
+
+        let fresh = DownloadEngine(configuration: .fastWithHolds)
+        let restored = try await fresh.restore(partialFile: package)
+        server.releaseHeldResponses()
+        await fresh.resume(restored)
+        let finished = try await fresh.completedOrFailed(restored)
+
+        #expect(finished.state == .completed)
+        #expect(finished.fileName == "report.bin")
+        #expect(try TestFiles.sha256(of: folder.appending(path: "report.bin")) == TestFiles.sha256(data))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["report.bin"])
+    }
+
+    @Test func aManifestFromBeforeTheNameConflictPolicyKeepsBoth() throws {
+        var older = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(Self.manifest())) as? [String: Any])
+        older["formatVersion"] = 2
+        older["nameConflictPolicy"] = nil
+        let package = try Self.writePackage(Self.manifest(), in: try TestFiles.makeFolder())
+        try JSONSerialization.data(withJSONObject: older).write(to: package.appending(path: "manifest.json"))
+
+        let manifest = try PartialFile.readManifest(in: package)
+
+        #expect(manifest.nameConflictPolicy == nil)
+        #expect(PartialFileManifest.currentFormatVersion == 3)
+    }
+}
