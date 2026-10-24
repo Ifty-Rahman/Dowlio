@@ -2,7 +2,7 @@ import Foundation
 
 /// What kind of file a download is, in the sense of `GLOSSARY.md`. The extension decides first and
 /// the content type second. A file that matches neither has no category.
-public enum Category: String, CaseIterable, Codable, Sendable {
+public enum FileCategory: String, CaseIterable, Codable, Sendable {
     case video
     case audio
     case documents
@@ -31,8 +31,8 @@ public enum Category: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    private static let byExtension: [String: Category] = {
-        let extensions: [Category: [String]] = [
+    private static let byExtension: [String: FileCategory] = {
+        let extensions: [FileCategory: [String]] = [
             .video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mpg", "mpeg", "3gp", "ts"],
             .audio: ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus", "wma", "alac"],
             .documents: [
@@ -42,21 +42,21 @@ public enum Category: String, CaseIterable, Codable, Sendable {
             .archives: ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "tbz", "xz", "txz", "zst", "lz", "lzma", "z"],
             .appsAndDiskImages: ["dmg", "pkg", "mpkg", "iso", "img", "app", "xip", "exe", "msi", "deb", "rpm", "apk", "appimage"],
         ]
-        var map: [String: Category] = [:]
+        var map: [String: FileCategory] = [:]
         for (category, list) in extensions {
             for fileExtension in list { map[fileExtension] = category }
         }
         return map
     }()
 
-    private static func category(forContentType contentType: String) -> Category? {
+    private static func category(forContentType contentType: String) -> FileCategory? {
         let mimeType = contentType.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
         if mimeType.hasPrefix("video/") { return .video }
         if mimeType.hasPrefix("audio/") { return .audio }
         return byContentType[mimeType]
     }
 
-    private static let byContentType: [String: Category] = [
+    private static let byContentType: [String: FileCategory] = [
         "application/pdf": .documents,
         "text/plain": .documents,
         "text/csv": .documents,

@@ -12,7 +12,7 @@ public enum Destination: Equatable, Sendable {
         case .folder(let folder):
             folder
         case .categoryFolders(let root):
-            Category(fileName: fileName, contentType: contentType)
+            FileCategory(fileName: fileName, contentType: contentType)
                 .map { root.appending(path: $0.folderName, directoryHint: .isDirectory) } ?? root
         }
     }

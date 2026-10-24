@@ -40,7 +40,7 @@ extension DownloadEngine {
             fileName: fileName,
             totalBytes: probed.totalBytes,
             contentType: contentType,
-            category: Category(fileName: fileName, contentType: contentType),
+            category: FileCategory(fileName: fileName, contentType: contentType),
             splitsIntoSegments: splits,
             cannotResumeBecause: cannotResume,
             isNotSecure: url.isPlainHTTP || probed.finalURL.isPlainHTTP

@@ -7,7 +7,7 @@ public struct LinkInspection: Equatable, Sendable {
     public var totalBytes: Int64?
     /// The `Content-Type` without its parameters, lowercased.
     public var contentType: String?
-    public var category: Category?
+    public var category: FileCategory?
     /// The server answers byte ranges, so the download uses several connections.
     public var splitsIntoSegments: Bool
     /// Why pausing would start the file over, or `nil` when the download can resume.
@@ -19,7 +19,7 @@ public struct LinkInspection: Equatable, Sendable {
         fileName: String,
         totalBytes: Int64?,
         contentType: String?,
-        category: Category?,
+        category: FileCategory?,
         splitsIntoSegments: Bool,
         cannotResumeBecause: CannotResumeReason?,
         isNotSecure: Bool

@@ -48,9 +48,17 @@ public actor DownloadEngine {
         add(url: url, destination: .folder(folder), options: options)
     }
 
-    /// Starts downloading `url` into `destination` and returns the new download's identifier.
-    public func add(url: URL, destination: Destination, options: RequestOptions = RequestOptions()) -> DownloadID {
-        let id = DownloadID()
+    /// Starts downloading `url` into `destination` and returns the download's identifier. A caller
+    /// that already named the download, before it ever started, passes that name as `id`. An `id`
+    /// the engine already has returns it unchanged.
+    @discardableResult
+    public func add(
+        url: URL,
+        destination: Destination,
+        options: RequestOptions = RequestOptions(),
+        id: DownloadID = DownloadID()
+    ) -> DownloadID {
+        guard entries[id] == nil else { return id }
         let snapshot = DownloadSnapshot(
             id: id,
             state: .probing,
