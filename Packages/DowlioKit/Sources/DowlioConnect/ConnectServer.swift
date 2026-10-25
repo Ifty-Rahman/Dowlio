@@ -50,6 +50,8 @@ public actor ConnectServer {
     private var listenFailed = false
     private let testTimeout: Duration
     private let nameBrowser: @Sendable (String) -> String
+    private let extensionVersion: String?
+    private var toldToReload: Set<UUID> = []
     private var waitingPongs: [String: (session: UUID, answer: CheckedContinuation<LinkTestResult, Never>)] = [:]
     private var sessions: [UUID: Session] = [:]
     private let caught: AsyncStream<CaughtDownload>.Continuation
@@ -78,6 +80,7 @@ public actor ConnectServer {
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
+        extensionVersion: String? = nil,
         approve: @escaping @Sendable (PairingRequest) async -> Bool
     ) {
         self.catcher = catcher
@@ -89,6 +92,7 @@ public actor ConnectServer {
         self.approve = approve
         self.testTimeout = testTimeout
         self.nameBrowser = nameBrowser
+        self.extensionVersion = extensionVersion
         self.preferences = preferences
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
@@ -208,6 +212,7 @@ public actor ConnectServer {
             session.pairing = pairing
             send(.helloAccepted.replying(to: requestID), to: session)
             send(.settingsUpdate(preferences), to: session)
+            if isOutdated(version), toldToReload.insert(pairing).inserted { send(.extensionReload, to: session) }
         case .ping:
             if let pairing = session.pairing { markSeen(pairing) }
             send(.pong.replying(to: requestID), to: session)
@@ -272,8 +277,19 @@ public actor ConnectServer {
         let open = Set(sessions.values.filter(\.isOpen).compactMap(\.pairing))
         return ((try? store.browserPairings()) ?? []).map { pairing in
             let live = open.contains(pairing.id) && time.timeIntervalSince(pairing.lastSeenAt) <= 60
-            return BrowserLink(id: pairing.id, name: pairing.browserName, state: live ? .connected : .notConnected)
+            let state: BrowserState = !live ? .notConnected : isOutdated(pairing.extensionVersion) ? .needsReload : .connected
+            return BrowserLink(id: pairing.id, name: pairing.browserName, state: state)
         }
+    }
+
+    public func reload(_ id: UUID) async -> Bool {
+        guard let session = sessions.values.first(where: { $0.isOpen && $0.pairing == id }) else { return false }
+        return await deliver(.extensionReload, to: session)
+    }
+
+    private func isOutdated(_ version: String) -> Bool {
+        guard let extensionVersion else { return false }
+        return ExtensionVersion.isOlder(version, than: extensionVersion)
     }
 
     public func test(_ id: UUID) async -> LinkTestResult {

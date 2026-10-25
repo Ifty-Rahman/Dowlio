@@ -35,10 +35,29 @@ final class BrowserSetup {
     private let added: AddedBrowser
     private let folder: URL
 
+    static var bundled: URL? { Bundle.main.url(forResource: "Dowlio Connect", withExtension: nil) }
+
+    static var bundledVersion: String? { bundled.flatMap(ExtensionFolder.version(at:)) }
+
     init(server: ConnectServer, added: AddedBrowser, supportFolder: URL) {
         self.server = server
         self.added = added
         folder = supportFolder.appending(path: "Browser Extension", directoryHint: .isDirectory)
+        if let bundled = Self.bundled {
+            let folder = folder
+            Task.detached { _ = try? ExtensionFolder.updateIfOlder(from: bundled, to: folder) }
+        }
+    }
+
+    func reload(_ row: BrowserRow) {
+        guard let link = row.link else { return }
+        testResults[row.name] = nil
+        Task {
+            if await !server.reload(link.id) {
+                testResults[row.name] = "Dowlio couldn't reach Dowlio Connect in \(row.name). Open \(row.name), then try Reload again."
+            }
+            await refresh()
+        }
     }
 
     private var installed: [InstalledBrowser]?
@@ -51,7 +70,7 @@ final class BrowserSetup {
     }
 
     func add(_ row: BrowserRow) {
-        guard let bundled = Bundle.main.url(forResource: "Dowlio Connect", withExtension: nil) else {
+        guard let bundled = Self.bundled else {
             addFailure = "Dowlio Connect is missing from this copy of Dowlio. Download Dowlio again."
             return
         }

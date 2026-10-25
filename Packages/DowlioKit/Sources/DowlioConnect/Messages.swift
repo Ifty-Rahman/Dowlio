@@ -124,6 +124,7 @@ struct Outgoing: Encodable {
     static let helloRejected = Outgoing(type: "hello.rejected")
     static let pong = Outgoing(type: "pong")
     static let ping = Outgoing(type: "ping")
+    static let extensionReload = Outgoing(type: "extension.reload")
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
     static let linkReceived = Outgoing(type: "link.received")

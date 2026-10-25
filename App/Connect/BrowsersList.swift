@@ -54,6 +54,8 @@ private struct BrowserRowView: View {
                 switch row.state {
                 case .connected:
                     testButton
+                case .needsReload:
+                    Button("Reload") { setup.reload(row) }
                 case .notConnected:
                     if row.appURL != nil { Button("Open the browser") { setup.open(row) } }
                     testButton
@@ -136,6 +138,7 @@ private extension BrowserState {
     var word: String {
         switch self {
         case .connected: "Connected"
+        case .needsReload: "Needs reload"
         case .notConnected: "Not connected"
         case .notInstalled: "Not installed"
         }
@@ -144,6 +147,7 @@ private extension BrowserState {
     var symbol: String {
         switch self {
         case .connected: "checkmark.circle.fill"
+        case .needsReload: "arrow.clockwise.circle"
         case .notConnected: "exclamationmark.circle"
         case .notInstalled: "plus.circle"
         }
@@ -152,6 +156,7 @@ private extension BrowserState {
     var color: Color {
         switch self {
         case .connected: .green
+        case .needsReload: .accentColor
         case .notConnected: .orange
         case .notInstalled: .secondary
         }

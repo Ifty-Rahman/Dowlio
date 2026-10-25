@@ -124,6 +124,9 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
           socket.send(JSON.stringify({ v: PROTOCOL, type: "pong", requestId: message.requestId }));
         }
         break;
+      case "extension.reload":
+        chrome.runtime.reload();
+        break;
       case "signin.needed":
         if (typeof message.url === "string") signIn.askForSignIn(message.url);
         break;
@@ -204,6 +207,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   }
 
   chrome.runtime.onStartup.addListener(reconnectIfAway);
+  chrome.runtime.onInstalled.addListener(reconnectIfAway);
   chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 0.5 });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === WAKE_ALARM) reconnectIfAway();

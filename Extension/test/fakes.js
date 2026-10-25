@@ -182,6 +182,12 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       getManifest: () => ({ version }),
       onMessage: { addListener: (listener) => listeners.push(listener) },
       onStartup: { addListener: () => {} },
+      installedListeners: [],
+      onInstalled: { addListener: (listener) => chrome.runtime.installedListeners.push(listener) },
+      reloads: 0,
+      reload: () => {
+        chrome.runtime.reloads += 1;
+      },
       sendMessage: (message) => listeners.forEach((listener) => listener(message)),
     },
   };

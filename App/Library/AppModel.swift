@@ -102,7 +102,7 @@ final class AppModel {
         let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
         let server = ConnectServer(
             store: store, vault: vault, catcher: catcher, preferences: catchPreferences,
-            nameBrowser: { added.name(for: $0) }
+            nameBrowser: { added.name(for: $0) }, extensionVersion: BrowserSetup.bundledVersion
         ) { request in
             await MainActor.run { PairingAlert.ask(request) }
         }

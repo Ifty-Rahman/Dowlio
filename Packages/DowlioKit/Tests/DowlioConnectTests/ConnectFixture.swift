@@ -49,7 +49,8 @@ struct ConnectFixture {
         catchDeadline: Duration = .seconds(4),
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
-        nameBrowser: @escaping @Sendable (String) -> String = { $0 }
+        nameBrowser: @escaping @Sendable (String) -> String = { $0 },
+        extensionVersion: String? = nil
     ) async throws {
         base = try TestFiles.makeFolder()
         dowlioFolder = base.appending(path: "Dowlio Downloads", directoryHint: .isDirectory)
@@ -67,7 +68,7 @@ struct ConnectFixture {
         let catcher = Catcher(library: library, settings: chosenSettings, browserDownloadsFolder: browserDownloads)
         server = ConnectServer(
             ports: ports ?? Self.freePorts(), store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, preferences: preferences,
-            testTimeout: testTimeout, nameBrowser: nameBrowser
+            testTimeout: testTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion
         ) { request in
             await approvals.decide(request)
         }

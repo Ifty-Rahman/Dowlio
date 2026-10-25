@@ -41,6 +41,7 @@ public enum ChromiumBrowsers {
 
 public enum BrowserState: Equatable, Sendable {
     case connected
+    case needsReload
     case notConnected
     case notInstalled
 }
@@ -77,7 +78,7 @@ public enum BrowserList {
 
     private static func bestLink(named name: String, in links: [BrowserLink]) -> BrowserLink? {
         let matching = links.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-        return matching.first { $0.state == .connected } ?? matching.first
+        return matching.first { $0.state == .connected } ?? matching.first { $0.state == .needsReload } ?? matching.first
     }
 }
 
@@ -103,7 +104,38 @@ extension LinkTestResult {
     }
 }
 
+public enum ExtensionVersion {
+    public static func isOlder(_ installed: String, than bundled: String) -> Bool {
+        let old = parts(installed)
+        let new = parts(bundled)
+        for index in 0..<max(old.count, new.count) {
+            let left = index < old.count ? old[index] : 0
+            let right = index < new.count ? new[index] : 0
+            if left != right { return left < right }
+        }
+        return false
+    }
+
+    private static func parts(_ version: String) -> [Int] {
+        version.split(separator: ".").map { Int($0) ?? 0 }
+    }
+}
+
 public enum ExtensionFolder {
+    public static func version(at folder: URL) -> String? {
+        guard let data = try? Data(contentsOf: folder.appending(path: "manifest.json")),
+              let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return manifest["version"] as? String
+    }
+
+    public static func updateIfOlder(from bundled: URL, to destination: URL) throws -> Bool {
+        guard FileManager.default.fileExists(atPath: destination.path), let new = version(at: bundled) else { return false }
+        guard ExtensionVersion.isOlder(version(at: destination) ?? "0", than: new) else { return false }
+        try install(from: bundled, to: destination)
+        return true
+    }
+
     public static func install(from bundled: URL, to destination: URL) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)

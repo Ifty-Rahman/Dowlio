@@ -38,6 +38,16 @@ struct BrowserScanTests {
 struct BrowserListTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test func aBrowserPairedTwiceShowsItsConnectedPairingFirstThenOneNeedingReload() {
+        let helium = InstalledBrowser(name: "Helium", appURL: URL(filePath: "/Applications/Helium.app"))
+        let stale = BrowserLink(id: UUID(), name: "Helium", state: .notConnected)
+        let old = BrowserLink(id: UUID(), name: "Helium", state: .needsReload)
+        let live = BrowserLink(id: UUID(), name: "Helium", state: .connected)
+
+        #expect(BrowserList.rows(installed: [helium], links: [stale, old, live]).first?.link == live)
+        #expect(BrowserList.rows(installed: [helium], links: [stale, old]).first?.link == old)
+    }
+
     @Test func eachInstalledBrowserShowsWhetherDowlioConnectIsThereAndAPairedOneTheScanMissedStillShows() {
         let arc = InstalledBrowser(name: "Arc", appURL: URL(filePath: "/Applications/Arc.app"))
         let helium = InstalledBrowser(name: "Helium", appURL: URL(filePath: "/Applications/Helium.app"))

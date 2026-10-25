@@ -172,3 +172,24 @@ test("answers Dowlio's ping with a pong, so Test in Dowlio can pass", async () =
 
   assert.deepEqual(net.last().sent.filter((message) => message.type === "pong"), [{ v: 1, type: "pong", requestId: "test-1" }]);
 });
+
+test("reloads itself when Dowlio says a newer Dowlio Connect is on disk", async () => {
+  const { chrome, net } = await boot({ stored: { token: "tok" } });
+  await net.last().accept();
+  await net.last().reply({ type: "hello.ok" });
+
+  await net.last().reply({ type: "extension.reload" });
+
+  assert.equal(chrome.runtime.reloads, 1);
+});
+
+test("connects when the browser starts it again after a reload or update", async () => {
+  const { chrome, net } = await boot({ stored: { token: "tok" } });
+  for (let port = 0; port < 4; port += 1) await net.last().fail();
+  const before = net.sockets.length;
+
+  chrome.runtime.installedListeners.forEach((listener) => listener({ reason: "update" }));
+  await flush();
+
+  assert.equal(net.sockets.length, before + 1);
+});
