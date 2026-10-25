@@ -7,9 +7,7 @@ struct MenuBarPopover: View {
     let model: AppModel
     @Bindable var panel: MenuBarPanel
     let close: () -> Void
-    /// Settings, Report a Problem and Quit, as a native menu. A SwiftUI menu inside the popover
-    /// closed again on its first click while Dowlio was still becoming the active app.
-    let showMore: () -> Void
+    @State private var showsMore = false
 
     var body: some View {
         Group {
@@ -21,6 +19,30 @@ struct MenuBarPopover: View {
         }
         .padding(DowlioDesign.Spacing.lg)
         .frame(width: 320, alignment: .leading)
+        .overlay(alignment: .topTrailing) {
+            if showsMore {
+                ZStack(alignment: .topTrailing) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { showsMore = false }
+                        .accessibilityHidden(true)
+                    MoreMenu(
+                        settings: { run(model.showSettings) },
+                        reportProblem: { run(model.reportProblem) },
+                        quit: { NSApp.terminate(nil) }
+                    )
+                    .padding(.top, DowlioDesign.Spacing.xxl + DowlioDesign.Spacing.lg)
+                    .padding(.trailing, DowlioDesign.Spacing.md)
+                }
+            }
+        }
+        .onChange(of: panel.showsQuickAdd) { showsMore = false }
+    }
+
+    private func run(_ action: () -> Void) {
+        showsMore = false
+        close()
+        action()
     }
 
     private var summary: some View {
@@ -80,12 +102,63 @@ struct MenuBarPopover: View {
     }
 
     private var moreMenu: some View {
-        Button(action: showMore) {
+        Button { showsMore.toggle() } label: {
             Image(systemName: "ellipsis.circle")
         }
         .buttonStyle(.borderless)
         .help("More")
         .accessibilityLabel("More")
+    }
+}
+
+/// Settings, Report a Problem and Quit, drawn inside the popover on its own material, so the
+/// menu matches the popover and opens wherever the popover is.
+private struct MoreMenu: View {
+    let settings: () -> Void
+    let reportProblem: () -> Void
+    let quit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            MoreMenuItem(title: "Settings…", shortcut: "⌘,", action: settings)
+            MoreMenuItem(title: "Report a Problem", shortcut: nil, action: reportProblem)
+            Divider().padding(.vertical, DowlioDesign.Spacing.xs)
+            MoreMenuItem(title: "Quit Dowlio", shortcut: "⌘Q", action: quit)
+        }
+        .padding(DowlioDesign.Spacing.xs)
+        .frame(width: 190)
+        .popoverGlass()
+        .clipShape(RoundedRectangle(cornerRadius: DowlioDesign.Radius.container))
+        .overlay(RoundedRectangle(cornerRadius: DowlioDesign.Radius.container).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("More")
+    }
+}
+
+private struct MoreMenuItem: View {
+    let title: String
+    let shortcut: String?
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                if let shortcut {
+                    Text(shortcut).foregroundStyle(isHovered ? .white.opacity(0.8) : .secondary)
+                }
+            }
+            .padding(.horizontal, DowlioDesign.Spacing.sm)
+            .padding(.vertical, DowlioDesign.Spacing.xs)
+            .foregroundStyle(isHovered ? .white : .primary)
+            .background(isHovered ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested - 2))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 

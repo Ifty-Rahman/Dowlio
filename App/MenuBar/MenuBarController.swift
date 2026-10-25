@@ -14,22 +14,21 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
-    private var outsideClicks: Any?
-    private var spaceChanges: NSObjectProtocol?
-    /// When the popover last closed. The click on the icon that closes it also reaches `toggle`,
-    /// which must not open it again.
-    private var closedAt: TimeInterval = 0
+    /// What closes the popover, live only while it's shown.
+    private var eventMonitors: [Any] = []
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     private lazy var catchToast = CatchToast(model: model)
 
     init(model: AppModel) {
         self.model = model
         super.init()
-        popover.behavior = .transient
+        // Dowlio decides when the popover closes, so a click on the icon only ever toggles it.
+        popover.behavior = .applicationDefined
+        popover.animates = false
         popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
             model: model, panel: panel,
-            close: { [weak self] in self?.popover.performClose(nil) },
-            showMore: { [weak self] in self?.showMoreMenu() }
+            close: { [weak self] in self?.close() }
         ))
         item.button?.target = self
         item.button?.action = #selector(toggle)
@@ -49,7 +48,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         get { item.isVisible }
         set {
             if !newValue {
-                popover.performClose(nil)
+                close()
                 catchToast.hide()
             }
             item.isVisible = newValue
@@ -71,77 +70,85 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     @objc private func toggle() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else if ProcessInfo.processInfo.systemUptime - closedAt > 0.3 {
-            open()
-        }
+        if popover.isShown { close() } else { open() }
+    }
+
+    private func close() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
     }
 
     private func open() {
-        if let button = item.button {
-            catchToast.hide()
-            panel.showsQuickAdd = false
-            panel.quickAdd = nil
-            popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            let window = popover.contentViewController?.view.window
-            window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
-            NSApp.activate()
-            window?.makeKey()
-            watchOutsideClicks()
-            watchSpaceChanges()
-        }
+        guard let button = item.button else { return }
+        catchToast.hide()
+        panel.showsQuickAdd = false
+        panel.quickAdd = nil
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        let window = popover.contentViewController?.view.window
+        window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
+        NSApp.activate()
+        window?.makeKey()
+        watchForClosing()
     }
 
     func popoverDidClose(_ notification: Notification) {
-        closedAt = ProcessInfo.processInfo.systemUptime
         panel.showsQuickAdd = false
         panel.quickAdd = nil
-        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
-        outsideClicks = nil
-        if let spaceChanges { NSWorkspace.shared.notificationCenter.removeObserver(spaceChanges) }
-        spaceChanges = nil
+        stopWatchingForClosing()
     }
 
-    /// Switching to another Space closes the popover rather than carrying it along.
-    private func watchSpaceChanges() {
-        guard spaceChanges == nil else { return }
-        spaceChanges = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+    /// A click outside the popover, in another app or another Dowlio window, Escape, leaving
+    /// Dowlio, or switching Spaces closes it. A click on the icon is left to `toggle`.
+    private func watchForClosing() {
+        guard eventMonitors.isEmpty else { return }
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isPointerOnIcon else { return }
+                self.close()
+            }
+        }) { eventMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
+            let clicked = event.window
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if clicked !== self.popover.contentViewController?.view.window, !self.isPointerOnIcon { self.close() }
+            }
+            return event
+        }) { eventMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            let window = event.window
+            guard event.keyCode == 53 else { return event }
+            let closed = MainActor.assumeIsolated {
+                guard let self, self.popover.isShown, window === self.popover.contentViewController?.view.window else { return false }
+                self.close()
+                return true
+            }
+            return closed ? nil : event
+        }) { eventMonitors.append(monitor) }
+        for (center, name) in [
+            (NotificationCenter.default, NSApplication.didResignActiveNotification),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification),
+        ] {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.close() }
+            }
+            observers.append((center, token))
         }
     }
 
-    /// A click anywhere outside Dowlio closes the popover, even after a menu inside it was used.
-    private func watchOutsideClicks() {
-        guard outsideClicks == nil else { return }
-        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated { self?.popover.performClose(nil) }
-        }
+    /// The menu bar shows the icon in a window macOS may own, so its clicks can look like another
+    /// app's. They're left to `toggle`.
+    private var isPointerOnIcon: Bool {
+        guard let button = item.button, let window = button.window else { return false }
+        return window.convertToScreen(button.convert(button.bounds, to: nil)).contains(NSEvent.mouseLocation)
     }
 
-    private func showMoreMenu() {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "Report a Problem", action: #selector(reportProblem), keyEquivalent: "").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Dowlio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        // Shown in the popover's own window, so it opens on the popover's Space, full screen too.
-        guard let view = popover.contentViewController?.view, let window = view.window else { return }
-        let point = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-        menu.popUp(positioning: nil, at: point, in: view)
-    }
-
-    @objc private func openSettings() {
-        popover.performClose(nil)
-        model.showSettings()
-    }
-
-    @objc private func reportProblem() {
-        popover.performClose(nil)
-        model.reportProblem()
+    private func stopWatchingForClosing() {
+        eventMonitors.forEach(NSEvent.removeMonitor)
+        eventMonitors.removeAll()
+        for observer in observers { observer.center.removeObserver(observer.token) }
+        observers.removeAll()
     }
 
     private func follow() {

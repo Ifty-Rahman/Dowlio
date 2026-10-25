@@ -51,6 +51,7 @@ private struct GeneralSettings: View {
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
+                .pickerStyle(.segmented)
             }
         }
         .settingsForm()
