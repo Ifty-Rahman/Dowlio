@@ -47,6 +47,12 @@ final class PlanStore: @unchecked Sendable {
         }
     }
 
+    /// Closes the probe's reply if no connection took it, so a paused or failed download stops
+    /// receiving it.
+    func closeProbeConnection() {
+        takeProbeConnection()?.cancel()
+    }
+
     func forget() {
         let dropped: Connection? = lock.withLock {
             defer {

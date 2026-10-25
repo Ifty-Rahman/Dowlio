@@ -63,7 +63,7 @@ struct DownloadRun: Sendable {
                 } catch is FileChangedOnServer {
                     guard !startedOverForChange else { throw DownloadError.serverChangedFile }
                     startedOverForChange = true
-                    let probed = try await probeWithRetries(url)
+                    let probed = try await probeWithRetries(url, readsFirstSegment: true)
                     plan = try await startOver(attempt, with: probed)
                     current = plan
                     saveManifest(plan)
@@ -78,6 +78,7 @@ struct DownloadRun: Sendable {
             }
             try await finish(plan)
         } catch where Task.isCancelled {
+            planStore.closeProbeConnection()
             if let current {
                 saveManifest(current)
                 let reading = current.board.reading
@@ -116,7 +117,7 @@ struct DownloadRun: Sendable {
             return plan
         }
 
-        let probed = try await probeWithRetries(url)
+        let probed = try await probeWithRetries(url, readsFirstSegment: true)
         let fileName = options.fileName.map(FileNaming.chosen)
             ?? FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
         let contentType = probed.probeResponse.contentTypeHeader
@@ -157,7 +158,7 @@ struct DownloadRun: Sendable {
 
     private func revalidate(_ plan: DownloadPlan) async throws -> DownloadPlan {
         let probed = try await probeForResume(plan)
-        if case .ranges(let total, let validator?) = probed.body,
+        if case .ranges(let total, let validator?, _) = probed.body,
            case .ranges(let saved?) = plan.layout,
            total == plan.totalBytes, validator == saved {
             var kept = plan
@@ -193,6 +194,7 @@ struct DownloadRun: Sendable {
     }
 
     private func fail(with error: DownloadError, _ plan: DownloadPlan?) async {
+        planStore.closeProbeConnection()
         if let plan { saveManifest(plan) }
         let reading = plan?.board.reading
         await changeSnapshot {

@@ -127,12 +127,13 @@ struct WorkStealingTests {
 }
 
 extension WorkStealingTests {
-    /// With stealing turned off, the slow segment keeps its own range to the end.
+    /// With stealing turned off, every segment keeps its own range to the end. Every reply is slow,
+    /// so the ramp-up opens every connection before the first one ends.
     @Test func withStealingOffEverySegmentKeepsItsRange() async throws {
         let server = try await TestServer()
         let size = 16 * Self.mebibyte
         let data = TestServer.makeData(size: size, seed: 33)
-        server.serve(.init(data: data, eTag: "\"v3\"", throttle: .init(rangeStart: 12 * Self.mebibyte, bytesPerSecond: 4 * Self.mebibyte)), at: "/plain.iso")
+        server.serve(.init(data: data, eTag: "\"v3\"", throttle: .init(rangeStart: 0, bytesPerSecond: 4 * Self.mebibyte, andLater: true)), at: "/plain.iso")
         let folder = try TestFiles.makeFolder()
 
         var options = RequestOptions()

@@ -37,13 +37,15 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
-        // Resume sends exactly one probe, then asks for each segment's missing part once.
+        // Resume sends exactly one probe, then asks for each segment's missing part from its first
+        // missing byte. A new connection may split a segment before its own request goes out.
         let resumed = server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused)
             .map { $0.headers["range"] }
-        let missing = Set(paused.segments.map { "bytes=\($0.start + $0.receivedBytes)-\($0.end)" })
+        let missing = Set(paused.segments.map { "bytes=\($0.start + $0.receivedBytes)-" })
+        let asked = resumed.dropFirst().compactMap { $0 }
         #expect(resumed.first == "bytes=0-0")
         #expect(paused.segments.count == 2)
-        #expect(missing.isSubset(of: Set(resumed.dropFirst().compactMap { $0 })))
+        #expect(missing.allSatisfy { start in asked.contains { $0.hasPrefix(start) } })
     }
 
     @Test func theManifestOnDiskDescribesTheDownloadAndNeverLeadsTheData() async throws {
@@ -233,9 +235,15 @@ struct PauseResumeTests {
         let server = try await TestServer()
         let old = TestServer.makeData(size: Self.size, seed: 39)
         let new = TestServer.makeData(size: Self.size, seed: 40)
-        // The probe and the first segment's request see the old file. The second segment's
+        // The first request sees the old file, and its reply is slow. The second segment's
         // request, sent with If-Range "old", gets the new file with 200.
-        server.serve(.init(data: old, eTag: "\"old\"", changeAfter: .init(afterRequests: 2, data: new, eTag: "\"new\"")), at: "/build.zip")
+        server.serve(
+            .init(
+                data: old, eTag: "\"old\"", changeAfter: .init(afterRequests: 1, data: new, eTag: "\"new\""),
+                throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)
+            ),
+            at: "/build.zip"
+        )
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 2
@@ -250,7 +258,11 @@ struct PauseResumeTests {
 
     @Test func aFileThatKeepsChangingFailsAsServerChangedFile() async throws {
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: Self.size, seed: 41), newETagEveryRequest: true), at: "/live.log")
+        // The first reply is slow, so a second connection asks with the validator it gave.
+        server.serve(
+            .init(data: TestServer.makeData(size: Self.size, seed: 41), newETagEveryRequest: true, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)),
+            at: "/live.log"
+        )
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 2
@@ -281,7 +293,7 @@ struct PauseResumeTests {
 
     @Test func everyRequestSendsTheReferrerAndUserAgent() async throws {
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 3 * 1024 * 1024), eTag: "\"a\""), at: "/page-file.zip")
+        server.serve(.init(data: TestServer.makeData(size: 3 * 1024 * 1024), holdAfterBytes: Self.held, eTag: "\"a\""), at: "/page-file.zip")
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 3
@@ -290,9 +302,10 @@ struct PauseResumeTests {
 
         let engine = DownloadEngine(configuration: .fast)
         let id = await engine.add(url: server.url(for: "/page-file.zip"), to: folder, options: options)
+        try await waitUntil { server.requests.count >= 2 }
+        server.releaseHeldResponses()
         _ = try await engine.completedOrFailed(id)
 
-        #expect(server.requests.count >= 2)
         #expect(server.requests.allSatisfy { $0.headers["referer"] == "https://example.com/downloads" })
         #expect(server.requests.allSatisfy { $0.headers["user-agent"] == "DowlioTest/1.0" })
     }

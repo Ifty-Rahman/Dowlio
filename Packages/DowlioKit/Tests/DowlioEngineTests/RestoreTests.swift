@@ -41,9 +41,11 @@ struct RestoreTests {
         let segmentRanges = Set(server.requests[requestsBeforeResume...]
             .compactMap { $0.headers["range"] }
             .filter { $0 != "bytes=0-0" })
-        let missing = Set(snapshot.segments.map { "bytes=\($0.start + $0.receivedBytes)-\($0.end)" })
+        // A new connection may split a segment before its own request goes out, so each missing
+        // part is asked for from its first missing byte, up to its end or less.
+        let missing = Set(snapshot.segments.map { "bytes=\($0.start + $0.receivedBytes)-" })
         #expect(snapshot.segments.count == 2)
-        #expect(missing.isSubset(of: segmentRanges))
+        #expect(missing.allSatisfy { start in segmentRanges.contains { $0.hasPrefix(start) } })
         #expect(!segmentRanges.contains { $0.hasPrefix("bytes=0-") })
     }
 
@@ -129,9 +131,9 @@ struct RestoreTests {
         #expect(last?.state == .completed)
         #expect(!states.contains { if case .failed = $0 { true } else { false } })
         #expect(try TestFiles.sha256(of: folder.appending(path: "gone.pkg")) == TestFiles.sha256(data))
-        // It started over: the first segment is fetched from byte 0 again.
+        // It started over as a new download: its first request asks for the whole file again.
         let ranges = server.requests[requestsBeforeResume...].compactMap { $0.headers["range"] }
-        #expect(ranges.contains("bytes=0-\(Self.size - 1)"))
+        #expect(ranges.first == "bytes=0-")
     }
 
     @Test func aPartialFileTheEngineAlreadyHasReturnsThatDownload() async throws {

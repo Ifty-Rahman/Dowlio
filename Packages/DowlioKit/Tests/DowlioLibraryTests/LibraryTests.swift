@@ -390,7 +390,7 @@ struct RelaunchTests {
         await relaunched.library.resume(id)
         _ = try await relaunched.library.row(id) { $0.state == .completed }
         #expect(try TestFiles.sha256(of: fixture.folder.appending(path: "gone.bin")) == TestFiles.sha256(data))
-        #expect(server.requests.dropFirst(requestsBefore).last?.headers["range"] == "bytes=0-\(data.count - 1)")
+        #expect(server.requests.dropFirst(requestsBefore).last?.headers["range"] == "bytes=0-")
     }
 
     @Test func aCompletedDownloadStaysInHistoryAndSaysWhenItsFileIsGone() async throws {

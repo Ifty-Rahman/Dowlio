@@ -10,16 +10,16 @@ struct ProgressTests {
     @Test func noSnapshotGoesOutWhileNothingChanges() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 4 * 1024 * 1024, seed: 61)
-        // Every body is held at its first byte, so the first connection opens and then receives
-        // nothing, and the other connections wait for its first data.
+        // Every body is held before its first byte, except the first reply's first bytes. They open a
+        // second connection, which receives nothing, so the others wait for its first data.
         server.serve(.init(data: data, holdAfterBytes: 0), at: "/still.bin")
         let folder = try TestFiles.makeFolder()
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/still.bin"), to: folder)
         let (log, following) = await SnapshotLog.follow(id, in: engine)
-        // A progress tick has seen the open connection.
-        try await waitUntil { log.snapshots.contains { $0.activeConnections == 1 } }
+        // A progress tick has seen both open connections, and the speed of the first bytes has gone.
+        try await waitUntil { log.snapshots.last.map { $0.activeConnections == 2 && $0.bytesPerSecond == 0 } ?? false }
         let countAfterTick = log.snapshots.count
 
         // Two manifest saves mean at least 4 more progress ticks found the same reading.

@@ -69,8 +69,7 @@ struct RefusalTests {
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "second.bin")) == TestFiles.sha256(second))
         #expect(server.refusals(at: "/second.bin") == 0)
-        let segmentRequests = server.requests.filter { $0.path == "/second.bin" && $0.headers["range"] != "bytes=0-0" }
-        #expect(segmentRequests.first?.headers["range"] == "bytes=0-3145727")
+        #expect(server.requests.first { $0.path == "/second.bin" }?.headers["range"] == "bytes=0-")
         #expect(server.peakParallel(at: "/second.bin") <= 2)
     }
 
@@ -178,9 +177,12 @@ struct RefusalTests {
     }
 
     /// Downloads a file whose server behaves as `file` describes, and checks that it completes
-    /// with the served bytes, the last request asking for the whole file without a range.
+    /// with the served bytes, after a request for the whole file without a range. The first reply
+    /// is slow, so the download asks for a second segment before it has the whole file.
     private func downloadFallsBackToOneConnection(_ file: TestServer.File, name: String) async throws -> TestServer {
         let server = try await TestServer()
+        var file = file
+        file.throttle = .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)
         server.serve(file, at: "/\(name)")
         let folder = try TestFiles.makeFolder()
 
@@ -190,8 +192,7 @@ struct RefusalTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: name)) == TestFiles.sha256(file.data))
-        let last = try #require(server.requests.last)
-        #expect(last.headers["range"] == nil)
+        #expect(server.requests.contains { $0.headers["range"] == nil })
         return server
     }
 
@@ -209,7 +210,17 @@ struct RefusalTests {
             .init(data: data, rangeReplyHeaders: ["Content-Encoding": "gzip"], rangeReplyHeadersOnProbe: onProbe),
             name: "packed.bin"
         )
-        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-0", nil]) }
+        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-", nil]) }
+    }
+
+    /// A host that caps every range reply sends only part of the file to `bytes=0-`, so the first
+    /// reply can't be the first segment. The download asks for the whole file instead.
+    @Test func aFirstReplyThatStopsShortOfTheEndFallsBackToOneConnection() async throws {
+        let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 62)
+        let server = try await downloadFallsBackToOneConnection(
+            .init(data: data, maxRangeReplyBytes: 1024 * 1024), name: "capped.bin"
+        )
+        #expect(Self.ranges(asked: server) == ["bytes=0-", nil])
     }
 
     /// The `Range` header of every request, in order, `nil` for a request without one.
@@ -287,6 +298,6 @@ struct RefusalTests {
             ),
             name: "parts.bin"
         )
-        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-0", nil]) }
+        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-", nil]) }
     }
 }

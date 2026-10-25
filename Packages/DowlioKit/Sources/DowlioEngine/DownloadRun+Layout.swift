@@ -13,7 +13,7 @@ extension DownloadRun {
                 layout: .whole, segments: segments, partial: partial, board: ProgressBoard(segments: segments)
             )
             planStore.store(plan, probeConnection: connection)
-        case .ranges(let total, let validator):
+        case .ranges(let total, let validator, let probeConnection):
             applyHostLimit(of: probed.finalURL)
             let segments = SegmentPlanner.firstSegment(size: total)
             plan = DownloadPlan(
@@ -21,7 +21,7 @@ extension DownloadRun {
                 layout: .ranges(validator: validator), segments: segments, partial: partial,
                 board: ProgressBoard(segments: segments)
             )
-            planStore.store(plan, probeConnection: nil)
+            planStore.store(plan, probeConnection: probeConnection)
         }
         return plan
     }

@@ -160,34 +160,20 @@ extension DownloadRun {
     }
 
     private func receive(segment index: Int, of file: RangedFile, onData: @Sendable () -> Void) async throws {
-        let (plan, total, validator) = (file.plan, file.total, file.validator)
+        let plan = file.plan
         let board = plan.board
         let segment = board.range(segment: index)
         let missing = ByteRange(start: segment.start + board.received(segment: index), end: segment.end)
         guard missing.start <= missing.end else { return }
         try Task.checkCancellation()
 
-        let connection = connections.open(plan.finalURL, range: missing, ifRange: validator)
         board.setActive(true, segment: index)
         defer { board.setActive(false, segment: index) }
-
-        let response: HTTPURLResponse
-        do {
-            response = try await connection.firstResponse()
-        } catch let error as URLError where error.code == .cannotDecodeRawData || error.code == .cannotDecodeContentData {
-            // URLSession fails to decode an encoded reply before it hands over the response.
-            throw RangesUnusable()
-        }
-        guard response.statusCode == 206 else {
-            connection.cancel()
-            guard response.statusCode == 200 else { throw connections.failure(for: response) }
-            // A 200 to If-Range means the validator no longer matches (RFC 9110). Without a
-            // validator, the server ignored the range.
-            throw validator == nil ? RangesUnusable() : FileChangedOnServer()
-        }
-        guard response.isUsableRangeReply, ContentRange(response) == ContentRange(range: missing, total: total) else {
-            connection.cancel()
-            throw RangesUnusable()
+        // The probe's reply already covers the file from byte 0, and the probe checked it.
+        let connection = if missing.start == 0, let probeConnection = planStore.takeProbeConnection() {
+            probeConnection
+        } else {
+            try await openSegment(missing, of: file)
         }
         var offset = missing.start
         for try await event in connection.events {
@@ -205,6 +191,29 @@ extension DownloadRun {
             }
         }
         try RetryableFailure.throwIfEndedEarly(received: offset, expected: board.range(segment: index).end + 1)
+    }
+
+    private func openSegment(_ missing: ByteRange, of file: RangedFile) async throws -> Connection {
+        let validator = file.validator
+        let connection = connections.open(file.plan.finalURL, range: missing, ifRange: validator)
+        let response: HTTPURLResponse
+        do {
+            response = try await connection.firstResponse()
+        } catch let error as URLError where error.isUndecodableBody {
+            throw RangesUnusable()
+        }
+        guard response.statusCode == 206 else {
+            connection.cancel()
+            guard response.statusCode == 200 else { throw connections.failure(for: response) }
+            // A 200 to If-Range means the validator no longer matches (RFC 9110). Without a
+            // validator, the server ignored the range.
+            throw validator == nil ? RangesUnusable() : FileChangedOnServer()
+        }
+        guard response.isUsableRangeReply, ContentRange(response) == ContentRange(range: missing, total: file.total) else {
+            connection.cancel()
+            throw RangesUnusable()
+        }
+        return connection
     }
 }
 

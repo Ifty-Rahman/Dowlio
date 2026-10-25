@@ -72,7 +72,7 @@ struct CancelAndDiskSpaceTests {
 
         #expect(finished.state == .failed(.notEnoughSpace))
         #expect(server.requests.count == 1)
-        #expect(server.requests.first?.headers["range"] == "bytes=0-0")
+        #expect(server.requests.first?.headers["range"] == "bytes=0-")
     }
 
     @Test func aReadOnlyFolderFailsAsNotWritable() async throws {

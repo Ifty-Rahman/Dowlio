@@ -86,7 +86,7 @@ extension RetryTests {
         // starts at or after the previous one and runs to the end of the file. An engine that
         // restarted the segment would ask for byte 0 again.
         #expect(received == received.sorted())
-        let starts = server.requests.compactMap { $0.headers["range"] }.dropFirst(2).map { range -> Int in
+        let starts = server.requests.compactMap { $0.headers["range"] }.dropFirst().map { range -> Int in
             #expect(range.hasSuffix("-\(data.count - 1)"))
             return Int(range.dropFirst("bytes=".count).prefix { $0 != "-" }) ?? -1
         }
@@ -168,7 +168,11 @@ extension RetryTests {
 
     @Test func retryAfterTheFileChangedStartsOver() async throws {
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: Self.size, seed: 28), newETagEveryRequest: true), at: "/live.log")
+        // The first reply is slow, so a second connection asks with the validator it gave.
+        server.serve(
+            .init(data: TestServer.makeData(size: Self.size, seed: 28), newETagEveryRequest: true, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)),
+            at: "/live.log"
+        )
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 2

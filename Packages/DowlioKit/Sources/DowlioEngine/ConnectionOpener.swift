@@ -23,8 +23,16 @@ struct ConnectionOpener: Sendable {
     }
 
     func open(_ url: URL, range: ByteRange?, ifRange validator: String? = nil) -> Connection {
-        var request = request(for: url, range: range)
+        var request = request(for: url, range: range?.headerValue)
         if let validator { request.setValue(validator, forHTTPHeaderField: "If-Range") }
+        return start(request)
+    }
+
+    func openFromStart(_ url: URL) -> Connection {
+        start(request(for: url, range: "bytes=0-"))
+    }
+
+    private func start(_ request: URLRequest) -> Connection {
         if let shared { return Connection(request: request, shared: shared) }
         return Connection(request: request, idleTimeout: idleTimeout)
     }
@@ -43,7 +51,7 @@ struct ConnectionOpener: Sendable {
         response.failure(now: now())
     }
 
-    private func request(for url: URL, range: ByteRange?) -> URLRequest {
+    private func request(for url: URL, range: String?) -> URLRequest {
         var request = URLRequest(url: url)
         let fromLinkSite = url.hasSameOrigin(as: originalURL)
         if let browserRequest = options.browserRequest, fromLinkSite {
@@ -53,7 +61,7 @@ struct ConnectionOpener: Sendable {
                 request.httpBody = browserRequest.body
             }
         }
-        if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
+        if let range { request.setValue(range, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }

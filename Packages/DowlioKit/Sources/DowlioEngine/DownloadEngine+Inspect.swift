@@ -11,7 +11,7 @@ extension DownloadEngine {
         )
         let probed: Probed
         do {
-            probed = try await ServerProbe(connections: connections).probe(url)
+            probed = try await ServerProbe(connections: connections).probe(url, readsFirstSegment: false)
         } catch let error as DownloadError {
             throw error
         } catch is RetryableFailure {
@@ -32,7 +32,7 @@ extension DownloadEngine {
         case .whole:
             splits = false
             cannotResume = probed.totalBytes == nil ? .sizeUnknown : .noRangeSupport
-        case .ranges(_, let validator):
+        case .ranges(_, let validator, _):
             splits = true
             cannotResume = validator == nil ? .noValidator : nil
         }

@@ -4,7 +4,7 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// A file of zero bytes. A server with ranges can't satisfy the probe's `bytes=0-0`, so it
+/// A file of zero bytes. A server with ranges can't satisfy the probe's `bytes=0-`, so it
 /// answers 416 with `Content-Range: bytes */0`. A server without ranges answers 200 with no body.
 @Suite(.timeLimit(.minutes(1)))
 struct EmptyFileTests {

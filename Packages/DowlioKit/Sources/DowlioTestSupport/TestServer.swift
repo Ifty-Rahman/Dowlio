@@ -9,7 +9,8 @@ public final class TestServer: @unchecked Sendable {
         public var supportsRanges: Bool
         /// When set, every response for this file stops after this many body bytes until
         /// `releaseHeldResponses()` is called. Zero holds the whole body. One-byte bodies, such as
-        /// the probe reply, are never held.
+        /// a resume's probe reply, are never held. The reply to `bytes=0-` always sends its first
+        /// 512 bytes, since URLSession hands over a response only once that many arrive.
         public var holdAfterBytes: Int?
         /// A broken server: range replies keep their `Content-Range` but carry this many fewer
         /// bytes, with a matching `Content-Length`.
@@ -45,14 +46,16 @@ public final class TestServer: @unchecked Sendable {
         /// Extra headers sent with every 206 reply only, such as a `Content-Encoding` that a range
         /// reply must not have.
         public var rangeReplyHeaders: [String: String]
-        /// Whether `rangeReplyHeaders` also go on the one-byte probe reply, or only on the replies
-        /// to segment requests.
+        /// Whether `rangeReplyHeaders` also go on the probe's reply, `bytes=0-` or `bytes=0-0`, or
+        /// only on the replies to segment requests.
         public var rangeReplyHeadersOnProbe: Bool
-        /// A broken server: it answers the one-byte probe range, but ignores every longer range
-        /// and sends the whole file with 200.
+        /// A broken server: it answers the probe's range, `bytes=0-` or `bytes=0-0`, but ignores
+        /// every other range and sends the whole file with 200.
         public var ignoresSegmentRanges: Bool
         /// Limits `misreportRangeStartBy` to replies for ranges that start at this offset or later.
         public var misreportOnlyRangesFrom: Int?
+        /// A host that sends at most this many bytes for any range, and says so in `Content-Range`.
+        public var maxRangeReplyBytes: Int?
         /// A streamed or generated file: every reply is a 200 with the whole file, no
         /// `Content-Length`, and a body that ends when the server closes the connection. Ranges
         /// are ignored.
@@ -81,6 +84,7 @@ public final class TestServer: @unchecked Sendable {
             rangeReplyHeadersOnProbe: Bool = true,
             ignoresSegmentRanges: Bool = false,
             misreportOnlyRangesFrom: Int? = nil,
+            maxRangeReplyBytes: Int? = nil,
             omitsLength: Bool = false,
             requiredCookie: String? = nil,
             requiredForm: Data? = nil
@@ -89,6 +93,7 @@ public final class TestServer: @unchecked Sendable {
             self.requiredForm = requiredForm
             self.omitsLength = omitsLength
             self.misreportOnlyRangesFrom = misreportOnlyRangesFrom
+            self.maxRangeReplyBytes = maxRangeReplyBytes
             self.ignoresSegmentRanges = ignoresSegmentRanges
             self.maxParallel = maxParallel
             self.rangeReplyHeaders = rangeReplyHeaders
@@ -389,8 +394,8 @@ public final class TestServer: @unchecked Sendable {
         // A reply stays in flight until the server closes its connection. The count goes down
         // before the close, so a client never sees the close before the server allows a new reply.
         var leave: @Sendable () -> Void = {}
-        // The one-byte probe doesn't count: its reply ends at once, but the client may already
-        // open its segment connections before this server sees the probe's connection close.
+        // The one-byte probe of a resume doesn't count: its reply ends at once, but the client may
+        // already open its segment connections before this server sees the probe's connection close.
         if let cap = file.maxParallel, headers["range"] != "bytes=0-0" {
             let path = request.path
             let admitted: Bool = lock.withLock {
@@ -432,8 +437,11 @@ public final class TestServer: @unchecked Sendable {
         }()
 
         let total = file.data.count
+        let isProbe = rangeHeader == "bytes=0-" || rangeHeader == "bytes=0-0"
         let honoured = rangeHeader.flatMap { Self.parseRange($0, total: total) }.flatMap { range in
-            file.ignoresSegmentRanges && range.count > 1 ? nil : range
+            file.ignoresSegmentRanges && !isProbe ? nil : range
+        }.map { range in
+            file.maxRangeReplyBytes.map { range.prefix($0) } ?? range
         }
         if file.supportsRanges, !file.omitsLength, let range = honoured {
             guard range.lowerBound < total else {
@@ -451,9 +459,9 @@ public final class TestServer: @unchecked Sendable {
                     "Content-Range": "bytes \(range.lowerBound + shift)-\(range.upperBound - 1)/\(total)",
                     "Accept-Ranges": "bytes",
                 ].merging(file.headers) { current, _ in current }) { $1 }
-                    .merging(range.count > 1 || file.rangeReplyHeadersOnProbe ? file.rangeReplyHeaders : [:]) { $1 },
+                    .merging(!isProbe || file.rangeReplyHeadersOnProbe ? file.rangeReplyHeaders : [:]) { $1 },
                 body: body,
-                hold: file.holdAfterBytes,
+                hold: rangeHeader == "bytes=0-" ? file.holdAfterBytes.map { max($0, 512) } : file.holdAfterBytes,
                 cut: cut,
                 bytesPerSecond: slow,
                 onClose: leave,
@@ -565,7 +573,7 @@ public final class TestServer: @unchecked Sendable {
         case nil:
             break
         }
-        // One-byte bodies, such as the probe reply, are never held.
+        // One-byte bodies, such as a resume's probe reply, are never held.
         guard let hold, hold < body.count, body.count > 1 else {
             connection.send(content: Data(head.utf8) + body, completion: .contentProcessed(close))
             return

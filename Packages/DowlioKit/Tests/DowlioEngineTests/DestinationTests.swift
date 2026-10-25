@@ -21,7 +21,7 @@ struct DestinationTests {
         #expect(finished.state == .completed)
         #expect(finished.destinationFolder.standardizedFileURL == archives.standardizedFileURL)
         #expect(try TestFiles.sha256(of: archives.appending(path: "source.zip")) == TestFiles.sha256(data))
-        #expect(server.requests.filter { $0.headers["range"] == "bytes=0-0" }.count == 1)
+        #expect(server.requests.filter { $0.headers["range"] == "bytes=0-" }.count == 1)
     }
 
     @Test func theContentTypeDecidesWhenTheNameDoesnt() async throws {

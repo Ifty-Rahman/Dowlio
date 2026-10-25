@@ -9,7 +9,8 @@ struct SegmentedDownloadTests {
     @Test func aLargeFileDownloadsOverEightConnectionsByDefault() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 21)
-        server.serve(.init(data: data), at: "/big.iso")
+        // The first reply is slow, so the ramp-up opens every connection before it ends.
+        server.serve(.init(data: data, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)), at: "/big.iso")
         let folder = try TestFiles.makeFolder()
 
         var options = RequestOptions()
@@ -23,9 +24,9 @@ struct SegmentedDownloadTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
         // Stealing is off, so the eight connections of the ramp-up are the only ones. The first asks
         // for the whole file, and each later one for a split part up to its neighbour.
-        let segmentRanges = server.requests.dropFirst().compactMap { $0.headers["range"] }
+        let segmentRanges = server.requests.compactMap { $0.headers["range"] }
         #expect(segmentRanges.count == 8)
-        #expect(segmentRanges.first == "bytes=0-8388607")
+        #expect(segmentRanges.first == "bytes=0-")
         #expect(finished.segments.count == 8)
     }
 
@@ -49,7 +50,7 @@ struct SegmentedDownloadTests {
         #expect(last?.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "three.bin")) == TestFiles.sha256(data))
         // The first connection asks for the whole file. Splitting never opens a fourth connection.
-        #expect(server.requests.dropFirst().first?.headers["range"] == "bytes=0-12582911")
+        #expect(server.requests.first?.headers["range"] == "bytes=0-")
         #expect(mostConnections <= 3)
         #expect(server.peakParallel(at: "/three.bin") <= 3)
     }
@@ -64,16 +65,18 @@ struct SegmentedDownloadTests {
         let id = await engine.add(url: server.url(for: "/ramp.bin"), to: folder)
         let (log, following) = await SnapshotLog.follow(id, in: engine)
         try await waitUntil { server.requests.count >= 2 }
-        // The first connection has no data yet, so no other connection may open. Two manifest
-        // saves mean the download ran at least 4 progress ticks in this state.
+        // The first request is the first segment. Its first bytes opened the second connection, which
+        // has no data yet, so no other connection may open. Two manifest saves mean the download ran
+        // at least 4 progress ticks in this state.
         try await EngineEvents.waitForManifestSaves(2, in: folder.appending(path: "ramp.bin.dowlio"))
-        #expect(server.requests.count == 2)
-        #expect(log.snapshots.allSatisfy { $0.activeConnections <= 1 })
+        #expect(server.requests.map { $0.headers["range"] } == ["bytes=0-", "bytes=4194560-8388607"])
+        #expect(log.snapshots.allSatisfy { $0.activeConnections <= 2 })
 
         server.releaseHeldResponses()
         await following.value
         #expect(log.snapshots.last?.state == .completed)
-        #expect(server.requests.count >= 9)
+        #expect(server.requests.count >= 8)
+        #expect(server.requests.dropFirst().allSatisfy { $0.headers["range"]?.hasPrefix("bytes=0-") == false })
         // Every snapshot from before the first data shows at most the first connection.
         #expect(log.snapshots.filter { $0.receivedBytes == 0 }.allSatisfy { $0.activeConnections <= 1 })
     }
@@ -88,8 +91,9 @@ struct SegmentedDownloadTests {
 
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/burst.bin"), to: folder, options: options)
-        // Every body is held at its first byte, so all 8 requests must arrive without any data.
-        try await waitUntil { server.requests.count == 9 }
+        // Every body but the first is held before its first byte, so all 8 requests must arrive
+        // without the second connection having any data.
+        try await waitUntil { server.requests.count == 8 }
 
         server.releaseHeldResponses()
         let finished = try await engine.completedOrFailed(id)
@@ -143,7 +147,7 @@ struct SegmentedDownloadTests {
     func everySegmentRequestCarriesTheValidator(_ testCase: ValidatorCase) async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 4 * 1024 * 1024, seed: 23)
-        server.serve(.init(data: data, eTag: testCase.eTag, lastModified: testCase.lastModified), at: "/tagged.zip")
+        server.serve(.init(data: data, eTag: testCase.eTag, lastModified: testCase.lastModified, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)), at: "/tagged.zip")
         let folder = try TestFiles.makeFolder()
 
         let engine = DownloadEngine()

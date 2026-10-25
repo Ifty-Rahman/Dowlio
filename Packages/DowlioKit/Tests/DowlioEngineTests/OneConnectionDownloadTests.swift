@@ -32,7 +32,7 @@ struct OneConnectionDownloadTests {
 
         let probe = try #require(server.requests.first)
         #expect(probe.method == "GET")
-        #expect(probe.headers["range"] == "bytes=0-0")
+        #expect(probe.headers["range"] == "bytes=0-")
         #expect(probe.headers["accept-encoding"] == "identity")
     }
 
