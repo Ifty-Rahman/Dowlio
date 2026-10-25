@@ -19,7 +19,9 @@ final class AppModel {
     /// that arrives while it's closed can open it again.
     var openLibraryWindow: (() -> Void)?
 
-    var settings: DownloadSettings {
+    var settings: DownloadSettings { Self.currentSettings() }
+
+    nonisolated static func currentSettings() -> DownloadSettings {
         var settings = UserDefaults.standard.downloadSettings
         if let folder = DebugLaunch.downloadsFolder { settings.folder = folder }
         return settings
@@ -43,8 +45,9 @@ final class AppModel {
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            library = Library(engine: DownloadEngine(), store: store)
-            startConnectServer(store: store)
+            let library = Library(engine: DownloadEngine(), store: store)
+            self.library = library
+            startConnectServer(store: store, library: library)
         } catch {
             library = nil
             problem = "Dowlio can't open its history: \(error.localizedDescription)"
@@ -80,8 +83,10 @@ final class AppModel {
         }
     }
 
-    private func startConnectServer(store: DownloadStore) {
-        let server = ConnectServer(store: store, vault: KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")) { request in
+    private func startConnectServer(store: DownloadStore, library: Library) {
+        let catcher = Catcher(library: library, settings: { AppModel.currentSettings() })
+        let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
+        let server = ConnectServer(store: store, vault: vault, catcher: catcher) { request in
             await MainActor.run { PairingAlert.ask(request) }
         }
         connectServer = server

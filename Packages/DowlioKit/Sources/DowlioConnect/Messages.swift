@@ -4,6 +4,7 @@ enum Incoming: Equatable {
     case pairRequest(code: String, browser: String, version: String, extensionID: String)
     case hello(token: String, version: String)
     case ping
+    case catchOffer(CatchOffer)
     case unknown(type: String)
 }
 
@@ -36,6 +37,19 @@ struct Envelope {
             message = .hello(token: token, version: version)
         case "ping":
             message = .ping
+        case "catch.offer":
+            func link(_ key: String) -> URL? {
+                guard let value = text(key) ?? (object[key] as? String), let url = URL(string: value),
+                      let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+                else { return nil }
+                return url
+            }
+            guard let url = link("url") else { return nil }
+            let browserPath = text("browserPath").flatMap { $0.hasPrefix("/") ? URL(filePath: $0) : nil }
+            message = .catchOffer(CatchOffer(
+                url: url, finalURL: link("finalUrl"), referrer: link("referrer"),
+                mimeType: text("mime"), userAgent: text("userAgent"), browserPath: browserPath
+            ))
         default:
             message = .unknown(type: type)
         }
@@ -55,6 +69,8 @@ struct Outgoing: Encodable {
     static let helloRejected = Outgoing(type: "hello.rejected")
     static let pong = Outgoing(type: "pong")
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
+    static let catchAccepted = Outgoing(type: "catch.accepted")
+    static func catchDeclined(_ reason: CatchDeclineReason) -> Outgoing { Outgoing(type: "catch.declined", reason: reason.rawValue) }
 
     func replying(to requestID: String?) -> Outgoing {
         var copy = self

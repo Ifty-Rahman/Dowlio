@@ -44,7 +44,43 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
   const data = { ...stored };
   const listeners = [];
   const alarmListeners = [];
+  const createdListeners = [];
+  const changedListeners = [];
   const chrome = {
+    downloads: {
+      calls: [],
+      failing: new Set(),
+      whilePausing: null,
+      async record(name, id) {
+        chrome.downloads.calls.push([name, id]);
+        if (chrome.downloads.failing.has(name)) throw new Error(`${name} failed`);
+      },
+      async pause(id) {
+        const during = chrome.downloads.whilePausing;
+        chrome.downloads.whilePausing = null;
+        if (during) await during();
+        await chrome.downloads.record("pause", id);
+      },
+      async resume(id) {
+        await chrome.downloads.record("resume", id);
+      },
+      async cancel(id) {
+        await chrome.downloads.record("cancel", id);
+      },
+      async erase(query) {
+        await chrome.downloads.record("erase", query.id);
+      },
+      onCreated: { addListener: (listener) => createdListeners.push(listener) },
+      onChanged: { addListener: (listener) => changedListeners.push(listener) },
+      async create(item) {
+        createdListeners.forEach((listener) => listener(item));
+        await flush();
+      },
+      async change(delta) {
+        changedListeners.forEach((listener) => listener(delta));
+        await flush();
+      },
+    },
     alarms: {
       created: {},
       create(name, info) {

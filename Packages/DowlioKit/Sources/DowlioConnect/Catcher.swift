@@ -1,0 +1,91 @@
+import DowlioCore
+import DowlioLibrary
+import Foundation
+
+public struct CatchOffer: Equatable, Sendable {
+    public var url: URL
+    public var finalURL: URL?
+    public var referrer: URL?
+    public var mimeType: String?
+    public var userAgent: String?
+    public var browserPath: URL?
+
+    public init(url: URL, finalURL: URL? = nil, referrer: URL? = nil, mimeType: String? = nil, userAgent: String? = nil, browserPath: URL? = nil) {
+        self.url = url
+        self.finalURL = finalURL
+        self.referrer = referrer
+        self.mimeType = mimeType
+        self.userAgent = userAgent
+        self.browserPath = browserPath
+    }
+}
+
+public enum CatchDeclineReason: String, Sendable {
+    case needsSignIn
+    case unsupported
+    case error
+}
+
+public enum CatchDecision: Sendable {
+    case accept(start: @Sendable () async -> Void)
+    case decline(CatchDeclineReason)
+}
+
+public struct Catcher: Sendable {
+    private let library: Library
+    private let settings: @Sendable () -> DownloadSettings
+    private let browserDownloadsFolder: URL
+
+    public init(
+        library: Library,
+        settings: @escaping @Sendable () -> DownloadSettings,
+        browserDownloadsFolder: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Downloads", directoryHint: .isDirectory)
+    ) {
+        self.library = library
+        self.settings = settings
+        self.browserDownloadsFolder = browserDownloadsFolder
+    }
+
+    public func decide(_ offer: CatchOffer) async -> CatchDecision {
+        let settings = settings()
+        var options = settings.options(connections: nil)
+        options.referrer = offer.referrer
+        options.userAgent = offer.userAgent
+        let link = offer.finalURL ?? offer.url
+        let inspection: LinkInspection
+        do {
+            inspection = try await library.inspect(link, options: options)
+        } catch DownloadError.needsSignIn, DownloadError.forbidden {
+            return .decline(.needsSignIn)
+        } catch {
+            return .decline(.error)
+        }
+        if Self.isWebPage(inspection.contentType), !Self.isWebPage(offer.mimeType) {
+            return .decline(.unsupported)
+        }
+        let destination: Destination
+        if let chosen = chosenInSaveDialog(offer.browserPath) {
+            destination = .folder(chosen.deletingLastPathComponent())
+            options.fileName = chosen.lastPathComponent
+        } else {
+            destination = settings.destination(in: settings.folder)
+        }
+        let library = library
+        let chosenOptions = options
+        return .accept {
+            await library.add(link, destination: destination, options: chosenOptions, startImmediately: true)
+        }
+    }
+
+    private func chosenInSaveDialog(_ path: URL?) -> URL? {
+        guard let path, path.isFileURL, !path.lastPathComponent.isEmpty else { return nil }
+        let folder = path.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path
+        let downloads = browserDownloadsFolder.standardizedFileURL.resolvingSymlinksInPath().path
+        return folder == downloads ? nil : path
+    }
+
+    private static func isWebPage(_ mimeType: String?) -> Bool {
+        guard let type = mimeType?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }
+        return type == "text/html" || type == "application/xhtml+xml"
+    }
+}

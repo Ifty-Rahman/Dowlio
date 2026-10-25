@@ -1,4 +1,7 @@
 import DowlioConnect
+import DowlioCore
+import DowlioEngine
+import DowlioLibrary
 import DowlioStore
 import DowlioTestSupport
 import Foundation
@@ -33,15 +36,58 @@ struct ConnectFixture {
     let vault: MemoryTokenVault
     let approvals: Approvals
 
-    init(approvals: Approvals = Approvals(), ports: [UInt16]? = nil, now: @escaping @Sendable () -> Date = Date.init) async throws {
-        let base = try TestFiles.makeFolder()
+    let library: Library
+    let base: URL
+    let dowlioFolder: URL
+    let browserDownloads: URL
+
+    init(
+        approvals: Approvals = Approvals(),
+        ports: [UInt16]? = nil,
+        now: @escaping @Sendable () -> Date = Date.init,
+        settings: (@Sendable (URL) -> DownloadSettings)? = nil,
+        catchDeadline: Duration = .seconds(4)
+    ) async throws {
+        base = try TestFiles.makeFolder()
+        dowlioFolder = base.appending(path: "Dowlio Downloads", directoryHint: .isDirectory)
+        browserDownloads = base.appending(path: "Downloads", directoryHint: .isDirectory)
+        for folder in [dowlioFolder, browserDownloads] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
         store = try DownloadStore(databaseAt: base.appending(path: "Dowlio.sqlite"))
+        library = Library(engine: DownloadEngine(configuration: .fast), store: store)
+        await library.start()
         vault = MemoryTokenVault()
         self.approvals = approvals
-        server = ConnectServer(ports: ports ?? Self.freePorts(), store: store, vault: vault, now: now) { request in
+        let folder = dowlioFolder
+        let chosenSettings: @Sendable () -> DownloadSettings = { settings?(folder) ?? DownloadSettings(folder: folder) }
+        let catcher = Catcher(library: library, settings: chosenSettings, browserDownloadsFolder: browserDownloads)
+        server = ConnectServer(
+            ports: ports ?? Self.freePorts(), store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline
+        ) { request in
             await approvals.decide(request)
         }
         port = try await server.start()
+    }
+
+    func helloClient() async throws -> ConnectClient {
+        let token = try await pairedToken()
+        let client = try await client()
+        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        _ = try await client.receive()
+        return client
+    }
+
+    func rowsNow() async -> [DownloadRow] {
+        for await rows in await library.rows() { return rows }
+        return []
+    }
+
+    func firstRow(where condition: @escaping @Sendable (DownloadRow) -> Bool) async throws -> DownloadRow {
+        for await rows in await library.rows() {
+            if let row = rows.first(where: condition) { return row }
+        }
+        throw ConnectClientError.closed
     }
 
     func client(origin: String? = ConnectClient.extensionOrigin) async throws -> ConnectClient {

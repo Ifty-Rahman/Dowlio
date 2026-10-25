@@ -1,3 +1,5 @@
+import { startCatching } from "./catching.js";
+
 export const PORTS = [51517, 51518, 51519, 51520];
 export const RETRY_DELAY = 5000;
 export const PING_INTERVAL = 20000;
@@ -20,6 +22,8 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   let retryTimer = null;
   let reconnectAtOnce = false;
   let requests = 0;
+  let connected = false;
+  const pending = new Map();
 
   async function setStatus(status) {
     await storage.set({ status });
@@ -29,9 +33,33 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   }
 
   function send(type, fields = {}) {
-    if (socket?.readyState !== WebSocket.OPEN) return;
+    if (socket?.readyState !== WebSocket.OPEN) return null;
     requests += 1;
-    socket.send(JSON.stringify({ v: PROTOCOL, type, requestId: `${type}-${requests}`, ...fields }));
+    const requestId = `${type}-${requests}`;
+    socket.send(JSON.stringify({ v: PROTOCOL, type, requestId, ...fields }));
+    return requestId;
+  }
+
+  function request(type, fields, timeout) {
+    return new Promise((resolve) => {
+      const requestId = send(type, fields);
+      if (requestId === null) return resolve(null);
+      const timer = timers.setTimeout(() => settle(requestId, null), timeout);
+      pending.set(requestId, { resolve, timer });
+    });
+  }
+
+  function settle(requestId, reply) {
+    const waiting = pending.get(requestId);
+    if (!waiting) return false;
+    pending.delete(requestId);
+    timers.clearTimeout(waiting.timer);
+    waiting.resolve(reply);
+    return true;
+  }
+
+  function settleAll() {
+    for (const requestId of [...pending.keys()]) settle(requestId, null);
   }
 
   async function pairingCode() {
@@ -60,6 +88,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   }
 
   async function handle(message) {
+    if (message.requestId && settle(message.requestId, message)) return;
     switch (message.type) {
       case "pair.approved":
         await storage.set({ token: message.token });
@@ -74,6 +103,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         }
         break;
       case "hello.ok":
+        connected = true;
         await storage.remove("code");
         await setStatus("connected");
         break;
@@ -117,7 +147,9 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     current.onclose = () => {
       if (socket !== current) return;
       socket = null;
+      connected = false;
       stopPing();
+      settleAll();
       if (!opened && portIndex < ports.length - 1) {
         portIndex += 1;
         connect();
@@ -151,6 +183,12 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     storage.remove("code").then(() => storage.set({ status: "pairing" })).then(() => {
       if (socket?.readyState === WebSocket.OPEN) askToPair();
     });
+  });
+
+  startCatching({
+    chrome,
+    navigator,
+    link: { isConnected: () => connected && socket?.readyState === WebSocket.OPEN, request },
   });
 
   connect();

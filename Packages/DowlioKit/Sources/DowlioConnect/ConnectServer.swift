@@ -27,6 +27,8 @@ public actor ConnectServer {
     private let vault: any TokenVault
     private let approve: @Sendable (PairingRequest) async -> Bool
     private let now: @Sendable () -> Date
+    private let catcher: Catcher?
+    private let catchDeadline: Duration
     private let queue = DispatchQueue(label: "io.github.ifty-rahman.Dowlio.connect")
     private var listener: NWListener?
     private var isPairingPending = false
@@ -37,8 +39,12 @@ public actor ConnectServer {
         store: DownloadStore,
         vault: any TokenVault,
         now: @escaping @Sendable () -> Date = Date.init,
+        catcher: Catcher? = nil,
+        catchDeadline: Duration = .seconds(4),
         approve: @escaping @Sendable (PairingRequest) async -> Bool
     ) {
+        self.catcher = catcher
+        self.catchDeadline = catchDeadline
         self.ports = ports
         self.store = store
         self.vault = vault
@@ -146,6 +152,12 @@ public actor ConnectServer {
         case .ping:
             if let pairing = session.pairing { markSeen(pairing) }
             send(.pong.replying(to: requestID), to: session)
+        case let .catchOffer(offer):
+            guard session.pairing != nil else { return close(session) }
+            Task {
+                let reply = await answer(offer)
+                send(reply.replying(to: requestID), to: session)
+            }
         case .unknown:
             guard session.pairing != nil else { return close(session) }
             send(Outgoing.error("unknownType").replying(to: requestID), to: session)
@@ -173,6 +185,30 @@ public actor ConnectServer {
             return .pairRefused("error")
         }
         return .pairApproved(token: token)
+    }
+
+    private func answer(_ offer: CatchOffer) async -> Outgoing {
+        guard let catcher else { return .catchDeclined(.error) }
+        let deadline = catchDeadline
+        let decision = await withTaskGroup(of: CatchDecision?.self) { group in
+            group.addTask { await catcher.decide(offer) }
+            group.addTask {
+                try? await Task.sleep(for: deadline)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        switch decision {
+        case let .accept(start)?:
+            await start()
+            return .catchAccepted
+        case let .decline(reason)?:
+            return .catchDeclined(reason)
+        case nil:
+            return .catchDeclined(.error)
+        }
     }
 
     private func recognise(_ token: String, version: String) -> UUID? {

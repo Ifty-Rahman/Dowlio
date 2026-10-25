@@ -19,7 +19,7 @@ let package = Package(
         .target(name: "DowlioEngine", dependencies: ["DowlioCore"]),
         .target(name: "DowlioStore", dependencies: ["DowlioCore", .product(name: "GRDB", package: "GRDB.swift")]),
         .target(name: "DowlioLibrary", dependencies: ["DowlioCore", "DowlioEngine", "DowlioStore"]),
-        .target(name: "DowlioConnect", dependencies: ["DowlioCore", "DowlioStore"]),
+        .target(name: "DowlioConnect", dependencies: ["DowlioCore", "DowlioEngine", "DowlioStore", "DowlioLibrary"]),
         .executableTarget(name: "dowlio-cli", dependencies: ["DowlioEngine"]),
         // Test infrastructure shared by test targets. Never shipped.
         .target(name: "DowlioTestSupport", dependencies: ["DowlioCore", "DowlioEngine"]),
@@ -28,7 +28,7 @@ let package = Package(
             name: "DowlioEngineTests",
             dependencies: ["DowlioEngine", "DowlioTestSupport", "dowlio-cli"]
         ),
-        .testTarget(name: "DowlioConnectTests", dependencies: ["DowlioConnect", "DowlioStore", "DowlioTestSupport"]),
+        .testTarget(name: "DowlioConnectTests", dependencies: ["DowlioConnect", "DowlioCore", "DowlioEngine", "DowlioLibrary", "DowlioStore", "DowlioTestSupport"]),
         .testTarget(name: "DowlioLibraryTests", dependencies: ["DowlioLibrary", "DowlioStore", "DowlioTestSupport"]),
     ]
 )
