@@ -96,8 +96,8 @@ final class Connection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         completionHandler(.allow)
     }
 
-    /// Follows redirects, but never carries the `Cookie` header to another scheme, host or port
-    /// than the hop before.
+    /// Follows redirects, but never carries the cookies or the browser's own headers to another
+    /// scheme, host or port than the hop before.
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -107,10 +107,14 @@ final class Connection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     ) {
         var request = request
         if !Self.sameOrigin(response.url ?? task.currentRequest?.url, request.url) {
-            request.setValue(nil, forHTTPHeaderField: "Cookie")
+            for name in (request.allHTTPHeaderFields ?? [:]).keys where !Self.keptAcrossSites.contains(name.lowercased()) {
+                request.setValue(nil, forHTTPHeaderField: name)
+            }
         }
         completionHandler(request)
     }
+
+    private static let keptAcrossSites: Set<String> = ["range", "if-range", "accept-encoding", "user-agent", "referer"]
 
     private static func sameOrigin(_ url: URL?, _ other: URL?) -> Bool {
         guard let url, let other else { return false }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { catchControls } from "../lib/popup-text.js";
+import { catchControls, lastDeclineText } from "../lib/popup-text.js";
 
 test("the catch controls show only while Dowlio is connected", () => {
   assert.equal(catchControls({ status: "disconnected", tabUrl: "https://example.com/" }).shown, false);
@@ -28,4 +28,29 @@ test("a site already on the list says its downloads stay in the browser", () => 
 test("a page that isn't a website offers no site", () => {
   assert.equal(catchControls({ status: "connected", tabUrl: "chrome://extensions/" }).site, null);
   assert.equal(catchControls({ status: "connected" }).site, null);
+});
+
+test("the popup says in plain words why the last download stayed in the browser", () => {
+  const now = 1_800_000_000_000;
+  const at = now - 60_000;
+  assert.equal(
+    lastDeclineText({ host: "send.now", reason: "needsSignIn", hadCookies: true, at }, now),
+    "send.now stayed in the browser: the site refused Dowlio, even with your sign-in.",
+  );
+  assert.equal(
+    lastDeclineText({ host: "send.now", reason: "needsSignIn", hadCookies: false, at }, now),
+    "send.now stayed in the browser: the site refused Dowlio, and the browser had no sign-in for it.",
+  );
+  assert.equal(
+    lastDeclineText({ host: "files.net", reason: "unsupported", at }, now),
+    "files.net stayed in the browser: the link gave a web page where your browser got a file.",
+  );
+  assert.equal(lastDeclineText({ host: "files.net", reason: "error", at }, now), "files.net stayed in the browser: Dowlio couldn't reach the file.");
+  assert.equal(lastDeclineText({ host: "files.net", reason: "noAnswer", at }, now), "files.net stayed in the browser: Dowlio didn't answer in time.");
+});
+
+test("an old or missing note shows nothing", () => {
+  const now = 1_800_000_000_000;
+  assert.equal(lastDeclineText(undefined, now), null);
+  assert.equal(lastDeclineText({ host: "a.com", reason: "error", at: now - 2 * 60 * 60 * 1000 }, now), null);
 });

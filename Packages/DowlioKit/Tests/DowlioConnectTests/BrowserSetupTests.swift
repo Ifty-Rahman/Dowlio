@@ -38,6 +38,14 @@ struct BrowserScanTests {
 struct BrowserListTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test func aBrowserThatIsConnectingBeatsOneThatIsAway() {
+        let helium = InstalledBrowser(name: "Helium", appURL: URL(filePath: "/Applications/Helium.app"))
+        let away = BrowserLink(id: UUID(), name: "Helium", state: .notConnected)
+        let connecting = BrowserLink(id: UUID(), name: "Helium", state: .connecting)
+
+        #expect(BrowserList.rows(installed: [helium], links: [away, connecting]).first?.state == .connecting)
+    }
+
     @Test func aBrowserPairedTwiceShowsItsConnectedPairingFirstThenOneNeedingReload() {
         let helium = InstalledBrowser(name: "Helium", appURL: URL(filePath: "/Applications/Helium.app"))
         let stale = BrowserLink(id: UUID(), name: "Helium", state: .notConnected)
@@ -100,6 +108,45 @@ struct BrowserLinkTests {
         #expect(fresh.map(\.state) == [.connected])
         #expect(fresh.map(\.name) == ["Arc"])
         #expect(stale.map(\.state) == [.notConnected])
+    }
+
+    @Test func aBrowserJustAllowedShowsConnectingUntilItSaysHello() async throws {
+        let fixture = try await ConnectFixture()
+        let token = try await fixture.pairedToken()
+
+        let allowed = await fixture.server.browserLinks().map(\.state)
+        let client = try await fixture.client()
+        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        _ = try await client.receive()
+
+        #expect(allowed == [.connecting])
+        #expect(await fixture.server.browserLinks().map(\.state) == [.connected])
+    }
+
+    @Test func aBrowserThatNeverSaysHelloStopsConnectingAfterTwentySeconds() async throws {
+        let clock = TestClock()
+        let fixture = try await ConnectFixture(now: clock.now)
+        _ = try await fixture.pairedToken()
+
+        clock.advance(by: 19)
+        let waiting = await fixture.server.browserLinks().map(\.state)
+        clock.advance(by: 2)
+
+        #expect(waiting == [.connecting])
+        #expect(await fixture.server.browserLinks().map(\.state) == [.notConnected])
+    }
+
+    @Test func theBrowserListIsToldWhenAPairingOrAConnectionChanges() async throws {
+        let fixture = try await ConnectFixture()
+        var changes = fixture.server.browserChanges.makeAsyncIterator()
+
+        let token = try await fixture.pairedToken()
+        _ = await changes.next()
+        let client = try await fixture.client()
+        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        _ = await changes.next()
+        client.close()
+        _ = await changes.next()
     }
 
     @Test func aBrowserThatClosesItsConnectionIsNotConnectedAtOnce() async throws {

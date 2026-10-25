@@ -18,14 +18,6 @@ final class NewDownloadModel: Identifiable {
 
     private let inspect: (URL, RequestOptions) async throws -> LinkInspection
     private var pending: Task<Void, Never>?
-    var needsSignIn: ((URL) -> Void)?
-
-    var waitsForSignIn: Bool {
-        draft.links.contains { url in
-            draft.check(for: url) == .failed(.needsSignIn) || draft.check(for: url) == .failed(.forbidden)
-        }
-    }
-
     init(text: String, folder: URL, inspect: @escaping (URL, RequestOptions) async throws -> LinkInspection) {
         draft = NewDownloadDraft(text: text, folder: folder)
         self.inspect = inspect
@@ -50,7 +42,6 @@ final class NewDownloadModel: Identifiable {
                     check = .failed(.network(NetworkFailure(error)))
                 }
                 self?.draft.record(check, for: url, checkedWith: headers)
-                if check == .failed(.needsSignIn) || check == .failed(.forbidden) { self?.needsSignIn?(url) }
             }
         }
     }

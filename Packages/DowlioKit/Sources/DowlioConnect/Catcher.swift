@@ -10,13 +10,15 @@ public struct CatchOffer: Equatable, Sendable {
     public var userAgent: String?
     public var browserPath: URL?
     public var cookies: [Cookie] = []
+    public var browserRequest: BrowserRequest?
     public var browser: String?
 
     public init(
         url: URL, finalURL: URL? = nil, referrer: URL? = nil, mimeType: String? = nil, userAgent: String? = nil,
-        browserPath: URL? = nil, cookies: [Cookie] = []
+        browserPath: URL? = nil, cookies: [Cookie] = [], browserRequest: BrowserRequest? = nil
     ) {
         self.cookies = cookies
+        self.browserRequest = browserRequest
         self.url = url
         self.finalURL = finalURL
         self.referrer = referrer
@@ -33,8 +35,14 @@ public enum CatchDeclineReason: String, Sendable {
 }
 
 public enum CatchDecision: Sendable {
-    case accept(fileName: String, totalBytes: Int64?, start: @Sendable () async -> DownloadID)
+    case accept(start: @Sendable () async -> DownloadID)
     case decline(CatchDeclineReason)
+}
+
+public enum CatchStart: Equatable, Sendable {
+    case fetching(DownloadRow)
+    case refused(CatchDeclineReason)
+    case removed
 }
 
 public struct CaughtDownload: Equatable, Sendable {
@@ -78,18 +86,9 @@ public struct Catcher: Sendable {
         options.referrer = offer.referrer
         options.userAgent = offer.userAgent
         options.cookies = offer.cookies
+        options.browserRequest = offer.browserRequest
         let link = offer.finalURL ?? offer.url
-        let inspection: LinkInspection
-        do {
-            inspection = try await library.inspect(link, options: options)
-        } catch DownloadError.needsSignIn, DownloadError.forbidden {
-            return .decline(.needsSignIn)
-        } catch {
-            return .decline(.error)
-        }
-        if inspection.isWebPage, !LinkInspection.isWebPage(mimeType: offer.mimeType) {
-            return .decline(.unsupported)
-        }
+        guard let scheme = link.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return .decline(.unsupported) }
         let destination: Destination
         if let chosen = chosenInSaveDialog(offer.browserPath) {
             destination = .folder(chosen.deletingLastPathComponent())
@@ -99,12 +98,45 @@ public struct Catcher: Sendable {
         }
         let library = library
         let chosenOptions = options
-        let offer = offer
-        return .accept(fileName: options.fileName ?? inspection.fileName, totalBytes: inspection.totalBytes) {
-            await library.add(
-                link, destination: destination, options: chosenOptions, startImmediately: true,
-                origin: DownloadOrigin(kind: .caught, browser: offer.browser)
-            )
+        let origin = DownloadOrigin(kind: .caught, browser: offer.browser)
+        return .accept {
+            await library.add(link, destination: destination, options: chosenOptions, startImmediately: true, origin: origin)
+        }
+    }
+
+    public func start(of id: DownloadID, waitingAtMost limit: Duration) async -> CatchStart {
+        let library = library
+        return await withTaskGroup(of: CatchStart?.self) { group in
+            group.addTask {
+                for await rows in await library.rows() {
+                    guard let row = rows.first(where: { $0.id == id }) else { return .removed }
+                    if let start = Self.start(shownBy: row) { return start }
+                }
+                return .removed
+            }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            if let first { return first }
+            for await rows in await library.rows() {
+                guard let row = rows.first(where: { $0.id == id }) else { break }
+                return .fetching(row)
+            }
+            return .removed
+        }
+    }
+
+    private static func start(shownBy row: DownloadRow) -> CatchStart? {
+        switch row.state {
+        case .failed(let error) where row.receivedBytes == 0:
+            return .refused(error == .needsSignIn || error == .forbidden ? .needsSignIn : .error)
+        case .completed, .queued, .paused, .failed:
+            return .fetching(row)
+        case .downloading, .retrying:
+            return row.receivedBytes > 0 || row.totalBytes != nil ? .fetching(row) : nil
         }
     }
 

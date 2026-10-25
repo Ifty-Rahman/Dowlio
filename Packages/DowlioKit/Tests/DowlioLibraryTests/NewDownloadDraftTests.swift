@@ -41,28 +41,6 @@ struct NewDownloadDraftTests {
         #expect(draft.options(for: iso).cookies.isEmpty)
     }
 
-    @Test func allowingASiteChecksItsLinksAgainWithTheNewCookies() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip\nhttps://b.com/two.iso", folder: folder)
-        let before = draft.linksToCheck()
-        for url in before { draft.record(.failed(.needsSignIn), for: url, checkedWith: draft.inspectionOptions(for: url)) }
-
-        draft.grantSignIn(origin: URL(string: "https://a.com")!, cookies: [Cookie(name: "session", value: "abc")])
-
-        #expect(draft.linksToCheck() == [zip])
-        #expect(draft.check(for: zip) == .checking)
-        #expect(draft.check(for: iso) == .failed(.needsSignIn))
-        #expect(draft.inspectionOptions(for: zip).cookies == [Cookie(name: "session", value: "abc")])
-    }
-
-    @Test func allowingASiteCoversItsLinksOnAnyPort() {
-        let local = URL(string: "http://127.0.0.1:8765/private.zip")!
-        var draft = NewDownloadDraft(text: local.absoluteString, folder: folder)
-
-        draft.grantSignIn(origin: URL(string: "http://127.0.0.1")!, cookies: [Cookie(name: "session", value: "ok")])
-
-        #expect(draft.inspectionOptions(for: local).cookies == [Cookie(name: "session", value: "ok")])
-    }
-
     @Test func aSentLinkRemembersWhichBrowserSentItAndATypedOneDoesnt() {
         var draft = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
 
@@ -70,6 +48,17 @@ struct NewDownloadDraftTests {
 
         #expect(draft.origin(for: zip) == DownloadOrigin(kind: .sent, browser: "Brave"))
         #expect(draft.origin(for: iso) == nil)
+    }
+
+    @Test func aSentLinkBringsTheBrowsersUserAgentUnlessOneWasTyped() {
+        var draft = NewDownloadDraft(text: "", folder: folder)
+        draft.addSent(zip, referrer: nil, userAgent: "Mozilla/5.0 Dia")
+        var typed = NewDownloadDraft(text: "", folder: folder)
+        typed.userAgent = "Mine/1.0"
+        typed.addSent(zip, referrer: nil, userAgent: "Mozilla/5.0 Dia")
+
+        #expect(draft.options(for: zip).userAgent == "Mozilla/5.0 Dia")
+        #expect(typed.options(for: zip).userAgent == "Mine/1.0")
     }
 
     @Test func aQuickAddDraftMergedIntoAnOpenSheetKeepsWhatEachSentLinkCarried() {

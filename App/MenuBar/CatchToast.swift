@@ -6,7 +6,8 @@ import SwiftUI
 
 @MainActor
 final class CatchToast {
-    static let shownFor: Duration = .seconds(8)
+    static let shownFor: Duration = .seconds(4)
+    static let afterPointerLeaves: Duration = .milliseconds(1500)
 
     private let model: AppModel
     private let shown = ShownNotice()
@@ -26,7 +27,7 @@ final class CatchToast {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.contentView = FirstClickHostingView(rootView: CatchToastView(model: model, shown: shown) { [weak self] hovering in
             self?.keepOpen(hovering)
         } close: { [weak self] in
@@ -80,7 +81,7 @@ final class CatchToast {
             hiding?.cancel()
             hiding = nil
         } else {
-            scheduleHide(after: .seconds(3))
+            scheduleHide(after: Self.afterPointerLeaves)
         }
     }
 

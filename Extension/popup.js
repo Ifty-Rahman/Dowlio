@@ -1,11 +1,10 @@
-import { catchControls, popupText, signInControls } from "./lib/popup-text.js";
-import { allowedOriginsIn } from "./lib/signin.js";
+import { catchControls, lastDeclineText, popupText } from "./lib/popup-text.js";
 
 const storage = chrome.storage.local;
 let tabUrl;
 
 async function render() {
-  const { status, code, catching } = await storage.get(["status", "code", "catching"]);
+  const { status, code, catching, lastDecline } = await storage.get(["status", "code", "catching", "lastDecline"]);
   const text = popupText(status);
   document.getElementById("headline").textContent = text.headline;
   document.getElementById("detail").textContent = text.detail;
@@ -13,6 +12,10 @@ async function render() {
   codeView.hidden = !(text.showsCode && code);
   codeView.textContent = code ?? "";
   document.getElementById("retry").hidden = !text.showsRetry;
+  const note = lastDeclineText(lastDecline);
+  const noteView = document.getElementById("last-decline");
+  noteView.hidden = !note;
+  noteView.textContent = note ?? "";
 
   const controls = catchControls({ status, catching, tabUrl });
   document.getElementById("catching").hidden = !controls.shown;
@@ -26,39 +29,6 @@ async function render() {
   neverCaught.textContent = controls.siteText ?? "";
   neverCatch.dataset.site = controls.site ?? "";
 }
-
-async function renderSignIn() {
-  const allowedOrigins = allowedOriginsIn(await chrome.permissions.getAll());
-  const controls = signInControls({ tabUrl, allowedOrigins });
-  document.getElementById("signin").hidden = !controls.origin && allowedOrigins.length === 0;
-  const button = document.getElementById("use-signin");
-  button.hidden = !controls.origin || controls.allowed;
-  button.textContent = controls.buttonText ?? "";
-  button.dataset.origin = controls.origin ?? "";
-  document.getElementById("signin-heading").hidden = allowedOrigins.length === 0;
-  const list = document.getElementById("signin-sites");
-  list.replaceChildren(
-    ...allowedOrigins.map((origin) => {
-      const item = document.createElement("li");
-      const name = document.createElement("span");
-      name.textContent = new URL(origin).hostname;
-      const remove = document.createElement("button");
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", `Remove ${new URL(origin).hostname}`);
-      remove.addEventListener("click", () => {
-        chrome.runtime.sendMessage({ type: "signin.remove", origin });
-      });
-      item.append(name, remove);
-      return item;
-    }),
-  );
-}
-
-document.getElementById("use-signin").addEventListener("click", (event) => {
-  const origin = event.target.dataset.origin;
-  if (!origin) return;
-  chrome.permissions.request({ permissions: ["cookies"], origins: [`${origin}/*`] }).then(renderSignIn, renderSignIn);
-});
 
 document.getElementById("retry").addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "pair.retry" });
@@ -74,15 +44,10 @@ document.getElementById("never-catch").addEventListener("click", (event) => {
 });
 
 chrome.storage.onChanged.addListener(render);
-chrome.permissions.onRemoved.addListener(renderSignIn);
-chrome.permissions.onAdded.addListener(renderSignIn);
 chrome.tabs
   .query({ active: true, currentWindow: true })
   .then(([tab]) => {
     tabUrl = tab?.url;
   })
   .catch(() => {})
-  .finally(() => {
-    render();
-    renderSignIn();
-  });
+  .finally(render);

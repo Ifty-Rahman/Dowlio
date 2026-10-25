@@ -45,12 +45,20 @@ struct ConnectionOpener: Sendable {
 
     private func request(for url: URL, range: ByteRange?) -> URLRequest {
         var request = URLRequest(url: url)
+        let fromLinkSite = url.hasSameOrigin(as: originalURL)
+        if let browserRequest = options.browserRequest, fromLinkSite {
+            for header in browserRequest.headers { request.setValue(header.value, forHTTPHeaderField: header.name) }
+            if url == originalURL {
+                request.httpMethod = browserRequest.method
+                request.httpBody = browserRequest.body
+            }
+        }
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
         // Cookies came from the link's own site, and a redirect may lead to another one.
-        if !options.cookies.isEmpty, url.hasSameOrigin(as: originalURL) {
+        if !options.cookies.isEmpty, fromLinkSite {
             let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
         }

@@ -83,7 +83,6 @@ final class BrowserSetup {
         addFailure = nil
         added.remember(row.name)
         guide = row
-        NSWorkspace.shared.activateFileViewerSelecting([folder])
         if let appURL = row.appURL, let extensions = URL(string: "chrome://extensions") {
             NSWorkspace.shared.open([extensions], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
         }
@@ -105,5 +104,11 @@ final class BrowserSetup {
         }
     }
 
-    var folderName: String { folder.lastPathComponent }
+    var folderPath: String { folder.path }
+
+    func watch() async {
+        for await _ in server.browserChanges {
+            await refresh()
+        }
+    }
 }

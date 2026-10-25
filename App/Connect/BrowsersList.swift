@@ -22,6 +22,7 @@ struct BrowsersList: View {
                     .foregroundStyle(.red)
             }
         }
+        .task { await setup.watch() }
         .task {
             await setup.refresh(rescanning: true)
             while !Task.isCancelled {
@@ -30,7 +31,7 @@ struct BrowsersList: View {
             }
         }
         .sheet(item: Bindable(setup).guide) { row in
-            AddGuide(row: row, folderName: setup.folderName) { setup.guide = nil }
+            AddGuide(row: row, path: setup.folderPath) { setup.guide = nil }
         }
     }
 }
@@ -54,6 +55,8 @@ private struct BrowserRowView: View {
                 switch row.state {
                 case .connected:
                     testButton
+                case .connecting:
+                    ProgressView().controlSize(.small)
                 case .needsReload:
                     Button("Reload") { setup.reload(row) }
                 case .notConnected:
@@ -102,23 +105,38 @@ private struct BrowserIcon: View {
 
 private struct AddGuide: View {
     let row: BrowserRow
-    let folderName: String
+    let path: String
     let done: () -> Void
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
-            Text("Finish adding Dowlio Connect to \(row.name)")
+            Text("Add Dowlio Connect to \(row.name)")
                 .font(DowlioDesign.TypeRole.title)
                 .accessibilityAddTraits(.isHeader)
-            Text("Dowlio opened \(row.name)'s extensions page and showed the \(folderName) folder in Finder.")
+            Text("Dowlio opened \(row.name)'s extensions page. Follow these steps in \(row.name).")
                 .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
-                Text("1. Turn on Developer mode, at the top right of the extensions page.")
-                Text("2. Click Load unpacked.")
-                Text("3. Choose the \(folderName) folder.")
+            HStack(alignment: .top, spacing: DowlioDesign.Spacing.sm) {
+                Text(path)
+                    .font(DowlioDesign.TypeRole.detail.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(copied ? "Copied" : "Copy path") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(path, forType: .string)
+                    copied = true
+                }
             }
-            Text("Dowlio then asks you to allow \(row.name). Once you do, the row turns Connected.")
-                .foregroundStyle(.secondary)
+            .padding(DowlioDesign.Spacing.md)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
+                step(1, "Click Copy path above.")
+                step(2, "In \(row.name), turn on Developer mode, at the top right of the extensions page.")
+                step(3, "Click Load unpacked.")
+                step(4, "In the file window, press ⌘⇧G, paste the path with ⌘V, and press Return.")
+                step(5, "Click Select.")
+                step(6, "Dowlio asks you to allow \(row.name). Click Allow, and the row turns Connected.")
+            }
             Text("If the extensions page didn't open, type chrome://extensions in \(row.name)'s address bar and press Return.")
                 .font(DowlioDesign.TypeRole.detail)
                 .foregroundStyle(.secondary)
@@ -130,7 +148,15 @@ private struct AddGuide: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(DowlioDesign.Spacing.xxl)
-        .frame(width: 440)
+        .frame(width: 480)
+    }
+
+    private func step(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DowlioDesign.Spacing.sm) {
+            Text("\(number).").monospacedDigit().foregroundStyle(.secondary)
+            Text(text)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -138,6 +164,7 @@ private extension BrowserState {
     var word: String {
         switch self {
         case .connected: "Connected"
+        case .connecting: "Connecting…"
         case .needsReload: "Needs reload"
         case .notConnected: "Not connected"
         case .notInstalled: "Not installed"
@@ -147,6 +174,7 @@ private extension BrowserState {
     var symbol: String {
         switch self {
         case .connected: "checkmark.circle.fill"
+        case .connecting: "arrow.triangle.2.circlepath"
         case .needsReload: "arrow.clockwise.circle"
         case .notConnected: "exclamationmark.circle"
         case .notInstalled: "plus.circle"
@@ -156,6 +184,7 @@ private extension BrowserState {
     var color: Color {
         switch self {
         case .connected: .green
+        case .connecting: .accentColor
         case .needsReload: .accentColor
         case .notConnected: .orange
         case .notInstalled: .secondary

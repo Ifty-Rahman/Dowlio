@@ -86,7 +86,7 @@ test("settings from Dowlio are kept for the popup", async () => {
 
   await socket.reply({ type: "settings.update", catches: false, neverCatch: ["mega.nz"] });
 
-  assert.deepEqual(await chrome.storage.local.get("catching"), { catching: { catches: false, neverCatch: ["mega.nz"] } });
+  assert.deepEqual(await chrome.storage.local.get("catching"), { catching: { catches: false, neverCatch: ["mega.nz"], signIn: true, noSignIn: [] } });
 });
 
 test("a change in the popup goes to Dowlio, which decides and sends it back", async () => {

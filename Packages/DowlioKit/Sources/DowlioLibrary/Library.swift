@@ -16,7 +16,7 @@ public actor Library {
     private var inEngine: Set<DownloadID> = []
     /// Cookies never reach the store, so a download that hasn't started keeps them here until it
     /// does.
-    private var waitingCookies: [DownloadID: [Cookie]] = [:]
+    private var waitingSignIns: [DownloadID: SignIn] = [:]
     private var missingFiles: Set<DownloadID> = []
     private var lostSignIns: Set<DownloadID> = []
     private var observers: [UUID: AsyncStream<[DownloadRow]>.Continuation] = [:]
@@ -104,7 +104,7 @@ public actor Library {
         record.origin = origin
         records[id] = record
         save(record)
-        if !options.cookies.isEmpty { waitingCookies[id] = options.cookies }
+        if let signIn = SignIn(options) { waitingSignIns[id] = signIn }
         publish()
         if state == .downloading { await startInEngine(id) }
         return id
@@ -199,7 +199,7 @@ public actor Library {
         snapshots[id] = nil
         inEngine.remove(id)
         starting.remove(id)
-        waitingCookies[id] = nil
+        waitingSignIns[id] = nil
         try? store.delete(id.rawValue)
         publish()
         await engine.cancel(id)
@@ -261,7 +261,10 @@ public actor Library {
     private func startInEngine(_ id: DownloadID) async {
         guard var record = records[id] else { return }
         var options = record.options
-        options.cookies = waitingCookies.removeValue(forKey: id) ?? []
+        if let signIn = waitingSignIns.removeValue(forKey: id) {
+            options.cookies = signIn.cookies
+            options.browserRequest = signIn.browserRequest
+        }
         record.state = .downloading
         if record.startedAt == nil { record.startedAt = now() }
         records[id] = record
@@ -415,5 +418,16 @@ public actor Library {
         case .paused, .failed: .paused
         case .completed: .completed
         }
+    }
+}
+
+private struct SignIn {
+    let cookies: [Cookie]
+    let browserRequest: BrowserRequest?
+
+    init?(_ options: RequestOptions) {
+        guard !options.cookies.isEmpty || options.browserRequest != nil else { return nil }
+        cookies = options.cookies
+        browserRequest = options.browserRequest
     }
 }

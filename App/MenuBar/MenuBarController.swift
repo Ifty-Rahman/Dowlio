@@ -63,13 +63,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             panel.quickAdd = model.makeNewDownload()
             panel.showsQuickAdd = true
         }
-        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser)
-    }
-
-    func grantSignIn(_ grant: SignInGrant) {
-        guard let quickAdd = panel.quickAdd else { return }
-        if quickAdd.waitsForSignIn, !popover.isShown, item.isVisible { open() }
-        quickAdd.draft.grantSignIn(origin: grant.origin, cookies: grant.cookies)
+        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
     }
 
     @objc private func toggle() {
@@ -83,20 +77,21 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private func open() {
         if let button = item.button {
             catchToast.hide()
-            let keepsWaitingCard = panel.quickAdd?.waitsForSignIn == true
-            panel.showsQuickAdd = keepsWaitingCard
-            if !keepsWaitingCard { panel.quickAdd = nil }
-            NSApp.activate()
+            panel.showsQuickAdd = false
+            panel.quickAdd = nil
             popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            let window = popover.contentViewController?.view.window
+            window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
+            NSApp.activate()
+            window?.makeKey()
             watchOutsideClicks()
         }
     }
 
     func popoverDidClose(_ notification: Notification) {
         panel.showsQuickAdd = false
-        if panel.quickAdd?.waitsForSignIn != true { panel.quickAdd = nil }
+        panel.quickAdd = nil
         if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
         outsideClicks = nil
     }

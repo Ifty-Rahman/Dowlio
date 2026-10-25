@@ -41,6 +41,7 @@ public enum ChromiumBrowsers {
 
 public enum BrowserState: Equatable, Sendable {
     case connected
+    case connecting
     case needsReload
     case notConnected
     case notInstalled
@@ -78,7 +79,10 @@ public enum BrowserList {
 
     private static func bestLink(named name: String, in links: [BrowserLink]) -> BrowserLink? {
         let matching = links.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-        return matching.first { $0.state == .connected } ?? matching.first { $0.state == .needsReload } ?? matching.first
+        for state in [BrowserState.connected, .needsReload, .connecting] {
+            if let link = matching.first(where: { $0.state == state }) { return link }
+        }
+        return matching.first
     }
 }
 

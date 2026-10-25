@@ -48,7 +48,16 @@ struct DownloadRowView: View {
         .accessibilityLabel(row.spokenSummary)
     }
 
-    @ViewBuilder private var action: some View {
+    private var action: some View {
+        HStack(spacing: DowlioDesign.Spacing.sm) {
+            primaryAction
+            if row.canCancel {
+                actionButton("Cancel and delete", symbol: "xmark") { actions?.cancel(row) }
+            }
+        }
+    }
+
+    @ViewBuilder private var primaryAction: some View {
         switch row.state {
         case .downloading, .retrying, .queued:
             actionButton("Pause", symbol: "pause.fill") { actions?.pause(row) }

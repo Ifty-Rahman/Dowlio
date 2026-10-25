@@ -92,6 +92,28 @@ struct MenuBarPopover: View {
 private struct PopoverRow: View {
     let row: DownloadRow
     let model: AppModel
+    @State private var confirmsCancel = false
+
+    @ViewBuilder private var cancelButton: some View {
+        if confirmsCancel {
+            Button("Delete", role: .destructive) { model.cancel(row) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+                .font(DowlioDesign.TypeRole.caption)
+                .help("Cancel and delete what's downloaded so far")
+                .task {
+                    try? await Task.sleep(for: .seconds(3))
+                    confirmsCancel = false
+                }
+        } else {
+            Button("Cancel and delete", systemImage: "xmark") {
+                if row.hasBytesAtStake { confirmsCancel = true } else { model.cancel(row) }
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Cancel and delete")
+        }
+    }
 
     var body: some View {
         HStack(spacing: DowlioDesign.Spacing.sm) {
@@ -118,6 +140,7 @@ private struct PopoverRow: View {
                     .buttonStyle(.borderless)
                     .help("Resume")
             }
+            cancelButton
         }
         .accessibilityElement(children: .contain)
     }

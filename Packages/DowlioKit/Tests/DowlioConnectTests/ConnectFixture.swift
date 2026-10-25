@@ -5,6 +5,7 @@ import DowlioLibrary
 import DowlioStore
 import DowlioTestSupport
 import Foundation
+import Network
 
 final class Approvals: @unchecked Sendable {
     private let lock = NSLock()
@@ -47,10 +48,12 @@ struct ConnectFixture {
         now: @escaping @Sendable () -> Date = Date.init,
         settings: (@Sendable (URL) -> DownloadSettings)? = nil,
         catchDeadline: Duration = .seconds(4),
+        releaseWait: Duration = .milliseconds(100),
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
-        extensionVersion: String? = nil
+        extensionVersion: String? = nil,
+        peerApp: @escaping @Sendable (NWConnection) -> String? = { _ in nil }
     ) async throws {
         base = try TestFiles.makeFolder()
         dowlioFolder = base.appending(path: "Dowlio Downloads", directoryHint: .isDirectory)
@@ -67,8 +70,8 @@ struct ConnectFixture {
         let chosenSettings: @Sendable () -> DownloadSettings = { settings?(folder) ?? DownloadSettings(folder: folder) }
         let catcher = Catcher(library: library, settings: chosenSettings, browserDownloadsFolder: browserDownloads)
         server = ConnectServer(
-            ports: ports ?? [0], store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, preferences: preferences,
-            testTimeout: testTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion
+            ports: ports ?? [0], store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, releaseWait: releaseWait, preferences: preferences,
+            testTimeout: testTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion, peerApp: peerApp
         ) { request in
             await approvals.decide(request)
         }
@@ -94,13 +97,8 @@ struct ConnectFixture {
         throw ConnectClientError.closed
     }
 
-    func nextSignInGrant() async throws -> SignInGrant {
-        for await grant in server.signInGrants { return grant }
-        throw ConnectClientError.closed
-    }
-
-    func nextAllowedSites() async throws -> [URL] {
-        for await sites in server.allowedSites { return sites }
+    func nextSignInUse() async throws -> String {
+        for await host in server.signInUses { return host }
         throw ConnectClientError.closed
     }
 

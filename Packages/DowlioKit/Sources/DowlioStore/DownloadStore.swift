@@ -96,7 +96,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         referrer = options.referrer
         userAgent = options.userAgent
         maximumFailures = options.maximumFailures
-        usedSignIn = options.cookies.isEmpty ? nil : true
+        usedSignIn = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
     }
 
     public var destination: Destination {

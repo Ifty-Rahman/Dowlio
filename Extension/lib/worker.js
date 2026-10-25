@@ -13,10 +13,12 @@ const PROTOCOL = 1;
 const GREY = "#8E8E93";
 
 function catchingFrom(value) {
-  const sites = Array.isArray(value?.neverCatch) ? value.neverCatch : [];
+  const list = (sites) => (Array.isArray(sites) ? sites.filter((site) => typeof site === "string").map((site) => site.toLowerCase()) : []);
   return {
     catches: value?.catches !== false,
-    neverCatch: sites.filter((site) => typeof site === "string").map((site) => site.toLowerCase()),
+    neverCatch: list(value?.neverCatch),
+    signIn: value?.signIn !== false,
+    noSignIn: list(value?.noSignIn),
   };
 }
 
@@ -30,9 +32,11 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   let reconnectAtOnce = false;
   let requests = 0;
   let connected = false;
-  let preferences = { catches: true, neverCatch: [] };
+  let preferences = { catches: true, neverCatch: [], signIn: true, noSignIn: [] };
+  let preferencesLoaded = false;
   const loaded = storage.get("catching").then(({ catching }) => {
     if (catching) preferences = catchingFrom(catching);
+    preferencesLoaded = true;
   });
   const pending = new Map();
 
@@ -115,9 +119,13 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         break;
       case "hello.ok":
         connected = true;
+        settleWaiters(true);
         await storage.remove("code");
         await setStatus("connected");
-        await signIn.reportSites();
+        break;
+      case "hello.rejected":
+        await storage.remove("token");
+        reconnectAtOnce = true;
         break;
       case "ping":
         if (typeof message.requestId === "string" && socket?.readyState === WebSocket.OPEN) {
@@ -127,23 +135,13 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
       case "extension.reload":
         chrome.runtime.reload();
         break;
-      case "signin.needed":
-        if (typeof message.url === "string") signIn.askForSignIn(message.url);
-        break;
-      case "signin.revoke":
-        if (typeof message.origin === "string") await signIn.revoke(message.origin);
-        break;
-      case "hello.rejected":
-        await storage.remove("token");
-        reconnectAtOnce = true;
-        break;
       case "settings.update":
         await loaded;
         preferences = catchingFrom(message);
         await storage.set({ catching: preferences });
         break;
       case "browser.download":
-        await catching.downloadInBrowser(message.url);
+        await catching.downloadInBrowser(message.url, typeof message.reason === "string" ? message.reason : undefined);
         break;
     }
   }
@@ -197,6 +195,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
       }
       setStatus("disconnected");
       retryTimer = timers.setTimeout(connect, RETRY_DELAY);
+      settleWaiters(false);
     };
   }
 
@@ -225,13 +224,34 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   });
 
   const isConnected = () => connected && socket?.readyState === WebSocket.OPEN;
-  const signIn = startSignIn({ chrome, connection: { isConnected, send } });
+  const connectionWaiters = new Set();
+
+  function settleWaiters(result) {
+    for (const waiter of [...connectionWaiters]) waiter(result);
+  }
+
+  function whenConnected(timeout) {
+    if (isConnected()) return Promise.resolve(true);
+    if (socket === null && retryTimer !== null) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const timer = timers.setTimeout(() => finish(false), timeout);
+      function finish(result) {
+        timers.clearTimeout(timer);
+        connectionWaiters.delete(finish);
+        resolve(result);
+      }
+      connectionWaiters.add(finish);
+    });
+  }
+  const signIn = startSignIn({ chrome, preferences: () => loaded.then(() => preferences) });
   const connection = {
     isConnected,
+    whenConnected,
     request,
+    release: (requestId) => send("catch.released", { requestId }),
     preferences: () => loaded.then(() => preferences),
+    preferencesNow: () => (preferencesLoaded ? preferences : null),
     cookiesFor: (url) => signIn.cookiesFor(url),
-    askForSignIn: (url) => signIn.askForSignIn(url),
   };
   const catching = startCatching({ chrome, navigator, now, link: connection });
 

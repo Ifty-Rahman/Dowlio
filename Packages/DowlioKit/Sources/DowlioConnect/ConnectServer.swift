@@ -20,12 +20,7 @@ public struct SentLink: Sendable {
     public let referrer: URL?
     public let browser: String?
     public let cookies: [Cookie]
-    let session: UUID
-}
-
-public struct SignInGrant: Sendable {
-    public let origin: URL
-    public let cookies: [Cookie]
+    public var userAgent: String?
 }
 
 public enum ConnectServerError: Error, Equatable {
@@ -43,6 +38,8 @@ public actor ConnectServer {
     private let now: @Sendable () -> Date
     private let catcher: Catcher?
     private let catchDeadline: Duration
+    private let releaseWait: Duration
+    private var releases: [String: Release] = [:]
     private let queue = DispatchQueue(label: "io.github.ifty-rahman.Dowlio.connect")
     private var listener: NWListener?
     private var isPairingPending = false
@@ -51,7 +48,12 @@ public actor ConnectServer {
     private let testTimeout: Duration
     private let nameBrowser: @Sendable (String) -> String
     private let extensionVersion: String?
+    private let peerApp: @Sendable (NWConnection) -> String?
     private var toldToReload: Set<UUID> = []
+    private var justAllowed: [UUID: Date] = [:]
+    private let browserChange: AsyncStream<Void>.Continuation
+    public nonisolated let browserChanges: AsyncStream<Void>
+    static let connectingWindow: TimeInterval = 20
     private var waitingPongs: [String: (session: UUID, answer: CheckedContinuation<LinkTestResult, Never>)] = [:]
     private var sessions: [UUID: Session] = [:]
     private let caught: AsyncStream<CaughtDownload>.Continuation
@@ -62,11 +64,8 @@ public actor ConnectServer {
     private let sent: AsyncStream<SentLink>.Continuation
 
     public nonisolated let sentLinks: AsyncStream<SentLink>
-    private let granted: AsyncStream<SignInGrant>.Continuation
-    public nonisolated let signInGrants: AsyncStream<SignInGrant>
-    private let sitesChanged: AsyncStream<[URL]>.Continuation
-    public nonisolated let allowedSites: AsyncStream<[URL]>
-    private var sitesByBrowser: [UUID: [URL]] = [:]
+    private let signedIn: AsyncStream<String>.Continuation
+    public nonisolated let signInUses: AsyncStream<String>
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -76,15 +75,18 @@ public actor ConnectServer {
         vault: any TokenVault,
         now: @escaping @Sendable () -> Date = Date.init,
         catcher: Catcher? = nil,
-        catchDeadline: Duration = .seconds(4),
+        catchDeadline: Duration = .seconds(12),
+        releaseWait: Duration = .seconds(2),
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
         extensionVersion: String? = nil,
+        peerApp: @escaping @Sendable (NWConnection) -> String? = { PeerProcess.appName(of: $0) },
         approve: @escaping @Sendable (PairingRequest) async -> Bool
     ) {
         self.catcher = catcher
         self.catchDeadline = catchDeadline
+        self.releaseWait = releaseWait
         self.ports = ports
         self.store = store
         self.vault = vault
@@ -93,12 +95,13 @@ public actor ConnectServer {
         self.testTimeout = testTimeout
         self.nameBrowser = nameBrowser
         self.extensionVersion = extensionVersion
+        self.peerApp = peerApp
         self.preferences = preferences
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
         (sentLinks, sent) = AsyncStream.makeStream()
-        (signInGrants, granted) = AsyncStream.makeStream()
-        (allowedSites, sitesChanged) = AsyncStream.makeStream()
+        (browserChanges, browserChange) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+        (signInUses, signedIn) = AsyncStream.makeStream()
     }
 
     public func publish(_ preferences: CatchPreferences) {
@@ -198,6 +201,7 @@ public actor ConnectServer {
             return true
         }
         let requestID = envelope.requestID
+        await resolveApp(of: session, for: envelope.message)
         switch envelope.message {
         case let .pairRequest(code, browser, version, extensionID):
             Task {
@@ -210,6 +214,9 @@ public actor ConnectServer {
                 return false
             }
             session.pairing = pairing
+            rename(pairing, to: session.appName)
+            justAllowed[pairing] = nil
+            browserChange.yield()
             send(.helloAccepted.replying(to: requestID), to: session)
             send(.settingsUpdate(preferences), to: session)
             if isOutdated(version), toldToReload.insert(pairing).inserted { send(.extensionReload, to: session) }
@@ -223,22 +230,16 @@ public actor ConnectServer {
         case var .catchOffer(offer):
             guard let pairing = session.pairing else { return close(session) }
             offer.browser = (try? store.browserPairing(pairing))?.browserName
-            Task {
-                let reply = await answer(offer, from: session)
-                send(reply.replying(to: requestID), to: session)
-            }
-        case let .linkSend(url, referrer, browser, cookies):
-            guard let pairing = session.pairing else { return close(session) }
-            let name = browser ?? (try? store.browserPairing(pairing))?.browserName
-            sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, session: session.id))
-            send(.linkReceived.replying(to: requestID), to: session)
-        case let .signInGranted(origin, cookies):
+            offer.cookies = usable(offer.cookies, for: offer.finalURL ?? offer.url)
+            Task { await take(offer, from: session, replyingTo: requestID) }
+        case .catchReleased:
             guard session.pairing != nil else { return close(session) }
-            granted.yield(SignInGrant(origin: origin, cookies: cookies))
-        case let .signInSites(origins):
+            release("\(session.id)/\(requestID ?? "")")
+        case let .linkSend(url, referrer, browser, cookies, userAgent):
             guard let pairing = session.pairing else { return close(session) }
-            sitesByBrowser[pairing] = origins
-            sitesChanged.yield(currentSites())
+            let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
+            sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: usable(cookies, for: url), userAgent: userAgent))
+            send(.linkReceived.replying(to: requestID), to: session)
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)
@@ -249,6 +250,24 @@ public actor ConnectServer {
         return true
     }
 
+    private func rename(_ id: UUID, to name: String?) {
+        guard let name, var pairing = try? store.browserPairing(id), pairing.browserName != name else { return }
+        pairing.browserName = name
+        try? store.save(pairing)
+    }
+
+    private func resolveApp(of session: Session, for message: Incoming) async {
+        guard !session.resolvedApp else { return }
+        switch message {
+        case .pairRequest, .hello: break
+        default: return
+        }
+        session.resolvedApp = true
+        let connection = session.connection
+        let lookup = peerApp
+        session.appName = await Task.detached { lookup(connection) }.value
+    }
+
     private func pair(code: String, browser: String, version: String, extensionID: String, for session: Session) async -> Outgoing {
         let time = now()
         recentPairingRequests.removeAll { time.timeIntervalSince($0) >= 60 }
@@ -256,7 +275,7 @@ public actor ConnectServer {
         recentPairingRequests.append(time)
         guard !isPairingPending else { return .pairRefused("busy") }
         isPairingPending = true
-        let browser = nameBrowser(browser)
+        let browser = session.appName ?? nameBrowser(browser)
         let allowed = await approve(PairingRequest(code: code, browser: browser, extensionVersion: version))
         isPairingPending = false
         guard allowed else { return .pairRefused("denied") }
@@ -265,6 +284,8 @@ public actor ConnectServer {
         let pairing = BrowserPairing(id: UUID(), browserName: browser, extensionID: extensionID, extensionVersion: version, pairedAt: now())
         do {
             try store.save(pairing)
+            justAllowed[pairing.id] = now()
+            browserChange.yield()
             try vault.save(hash: PairingToken.hash(token), for: pairing.id)
         } catch {
             return .pairRefused("error")
@@ -277,7 +298,8 @@ public actor ConnectServer {
         let open = Set(sessions.values.filter(\.isOpen).compactMap(\.pairing))
         return ((try? store.browserPairings()) ?? []).map { pairing in
             let live = open.contains(pairing.id) && time.timeIntervalSince(pairing.lastSeenAt) <= 60
-            let state: BrowserState = !live ? .notConnected : isOutdated(pairing.extensionVersion) ? .needsReload : .connected
+            let waiting = justAllowed[pairing.id].map { time.timeIntervalSince($0) < Self.connectingWindow } ?? false
+            let state: BrowserState = live ? (isOutdated(pairing.extensionVersion) ? .needsReload : .connected) : waiting ? .connecting : .notConnected
             return BrowserLink(id: pairing.id, name: pairing.browserName, state: state)
         }
     }
@@ -313,31 +335,21 @@ public actor ConnectServer {
     }
 
     private func closed(_ session: Session) {
+        browserChange.yield()
         for (requestID, waiting) in waitingPongs where waiting.session == session.id {
             waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .notConnected)
         }
     }
 
-    public func askForSignIn(_ link: SentLink) async -> Bool {
-        guard let session = connectedSession(preferring: link.session) else { return false }
-        return await deliver(.signInNeeded(link.url), to: session)
-    }
-
-    public func revokeSignIn(_ origin: URL) {
-        for (id, sites) in sitesByBrowser { sitesByBrowser[id] = sites.filter { $0 != origin } }
-        for session in sessions.values where session.isOpen && session.pairing != nil {
-            send(.signInRevoke(origin), to: session)
-        }
-        sitesChanged.yield(currentSites())
-    }
-
-    private func currentSites() -> [URL] {
-        Array(Set(sitesByBrowser.values.flatMap { $0 })).sorted { $0.absoluteString < $1.absoluteString }
-    }
-
     private func connectedSession(preferring id: UUID) -> Session? {
         let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
         return connected.first { $0.id == id } ?? connected.first
+    }
+
+    private func usable(_ cookies: [Cookie], for url: URL) -> [Cookie] {
+        guard !cookies.isEmpty, let host = url.host(), preferences.allowsSignIn(for: host) else { return [] }
+        signedIn.yield(host.lowercased())
+        return cookies
     }
 
     public func downloadInBrowser(_ download: CaughtDownload) async -> Bool {
@@ -358,28 +370,56 @@ public actor ConnectServer {
         }
     }
 
-    private func answer(_ offer: CatchOffer, from session: Session) async -> Outgoing {
-        guard let catcher else { return .catchDeclined(.error) }
-        let deadline = catchDeadline
-        let decision = await withTaskGroup(of: CatchDecision?.self) { group in
-            group.addTask { await catcher.decide(offer) }
-            group.addTask {
-                try? await Task.sleep(for: deadline)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+    private func take(_ offer: CatchOffer, from session: Session, replyingTo requestID: String?) async {
+        guard let catcher else { return send(Outgoing.catchDeclined(.error).replying(to: requestID), to: session) }
+        guard case let .accept(start) = await catcher.decide(offer) else {
+            return send(Outgoing.catchDeclined(.unsupported).replying(to: requestID), to: session)
         }
-        switch decision {
-        case let .accept(fileName, totalBytes, start)?:
-            let id = await start()
-            caught.yield(CaughtDownload(id: id, link: offer.url, fileName: fileName, totalBytes: totalBytes, session: session.id))
-            return .catchAccepted
-        case let .decline(reason)?:
-            return .catchDeclined(reason)
-        case nil:
-            return .catchDeclined(.error)
+        let key = "\(session.id)/\(requestID ?? "")"
+        releases[key] = .expected
+        guard await deliver(Outgoing.catchAccepted.replying(to: requestID), to: session) else {
+            releases[key] = nil
+            return
+        }
+        await waitForRelease(key)
+        let id = await start()
+        switch await catcher.start(of: id, waitingAtMost: catchDeadline) {
+        case let .fetching(row):
+            caught.yield(CaughtDownload(id: id, link: offer.url, fileName: row.fileName, totalBytes: row.totalBytes, session: session.id))
+        case let .refused(reason):
+            guard let browser = connectedSession(preferring: session.id),
+                  await deliver(.browserDownload(offer.url, reason: reason), to: browser)
+            else { return }
+            await catcher.discard(id)
+        case .removed:
+            break
+        }
+    }
+
+    private func waitForRelease(_ key: String) async {
+        guard case .expected = releases[key] else {
+            releases[key] = nil
+            return
+        }
+        let wait = releaseWait
+        await withCheckedContinuation { continuation in
+            releases[key] = .waiting(continuation)
+            Task {
+                try? await Task.sleep(for: wait)
+                self.release(key)
+            }
+        }
+    }
+
+    private func release(_ key: String) {
+        switch releases[key] {
+        case .expected:
+            releases[key] = .released
+        case let .waiting(continuation):
+            releases[key] = nil
+            continuation.resume()
+        case .released, nil:
+            break
         }
     }
 
@@ -399,6 +439,7 @@ public actor ConnectServer {
     private func close(_ session: Session) -> Bool {
         session.isOpen = false
         session.connection.cancel()
+        browserChange.yield()
         return false
     }
 
@@ -412,9 +453,17 @@ public actor ConnectServer {
     }
 }
 
+enum Release {
+    case expected
+    case released
+    case waiting(CheckedContinuation<Void, Never>)
+}
+
 final class Session: @unchecked Sendable {
     let id = UUID()
     let connection: NWConnection
+    var appName: String?
+    var resolvedApp = false
     private let lock = NSLock()
     private var open = true
     var pairing: UUID?

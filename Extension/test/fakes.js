@@ -71,7 +71,9 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
         await chrome.downloads.record("erase", query.id);
       },
       nextId: 100,
+      started: [],
       async download(options) {
+        chrome.downloads.started.push(options);
         await chrome.downloads.record("download", options.url);
         const id = chrome.downloads.nextId++;
         createdListeners.forEach((listener) =>
@@ -81,6 +83,9 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       },
       onCreated: { addListener: (listener) => createdListeners.push(listener) },
       onChanged: { addListener: (listener) => changedListeners.push(listener) },
+      createNow(item) {
+        createdListeners.forEach((listener) => listener(item));
+      },
       async create(item) {
         createdListeners.forEach((listener) => listener(item));
         for (let turn = 0; turn < 3; turn += 1) await flush();
@@ -88,6 +93,24 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       async change(delta) {
         changedListeners.forEach((listener) => listener(delta));
         await flush();
+      },
+    },
+    webRequest: {
+      listeners: {},
+      ...Object.fromEntries(
+        ["onBeforeRequest", "onSendHeaders"].map((event) => [
+          event,
+          {
+            addListener: (listener, filter, extra) => {
+              (chrome.webRequest.listeners[event] ??= []).push({ listener, filter, extra });
+            },
+          },
+        ]),
+      ),
+      fire(event, details) {
+        for (const { listener, filter } of chrome.webRequest.listeners[event] ?? []) {
+          if (!filter.types || filter.types.includes(details.type)) listener(details);
+        }
       },
     },
     alarms: {
@@ -144,7 +167,6 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
     cookies: {
       jar: {},
       async getAll({ url }) {
-        if (!chrome.permissions.granted.permissions.has("cookies")) throw new Error("no cookies permission");
         return chrome.cookies.jar[new URL(url).origin] ?? [];
       },
     },

@@ -55,62 +55,157 @@ struct SignInTests {
 
         #expect(sent.cookies == [Cookie(name: "prefs", value: "dark mode, large")])
     }
+}
 
-    @Test func dowlioAsksTheBrowserThatSentALinkForItsSignIn() async throws {
-        let fixture = try await ConnectFixture()
-        let arc = try await fixture.helloClient()
-        let brave = try await fixture.helloClient()
-        try await arc.send(["v": 1, "type": "link.send", "requestId": "l1", "url": "https://example.com/private/a.pdf", "browser": "Arc"])
-        _ = try await arc.receive()
-        let sent = try await fixture.nextSentLink()
-
-        #expect(await fixture.server.askForSignIn(sent))
-        let asked = try await arc.receive()
-
-        #expect(asked["type"] as? String == "signin.needed")
-        #expect(asked["url"] as? String == "https://example.com/private/a.pdf")
-        try await brave.send(["v": 1, "type": "ping", "requestId": "p1"])
-        #expect(try await brave.receive()["type"] as? String == "pong")
+@Suite(.timeLimit(.minutes(1)))
+struct SignInSharingTests {
+    private func catchOffer(_ server: TestServer, cookies: [[String: Any]]) -> [String: Any] {
+        var offer = CatchTests.offer(server.url(for: "/private/Statement.pdf"))
+        offer["cookies"] = cookies
+        return offer
     }
 
-    @Test func aBrowsersAllowedSitesStayListedWhileItIsAway() async throws {
-        let fixture = try await ConnectFixture()
-        let arc = try await fixture.helloClient()
-        try await arc.send(["v": 1, "type": "signin.sites", "requestId": "s1", "origins": ["https://example.com"]])
-        _ = try await fixture.nextAllowedSites()
-        arc.close()
-        let brave = try await fixture.helloClient()
+    @Test func cookiesForASiteTheUserBlockedNeverReachTheDownload() async throws {
+        let fixture = try await ConnectFixture(preferences: CatchPreferences(noSignIn: ["127.0.0.1"]))
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 64 * 1024, seed: 702), eTag: "\"p2\"", requiredCookie: "session=s3cr3t-4f9a"), at: "/private/Statement.pdf")
+        let client = try await fixture.helloClient()
 
-        try await brave.send(["v": 1, "type": "signin.sites", "requestId": "s2", "origins": ["https://other.org"]])
+        try await client.send(catchOffer(server, cookies: SignInTests.cookies))
+        _ = try await client.receive()
+        let handBack = try await client.receive()
 
-        #expect(try await fixture.nextAllowedSites() == [URL(string: "https://example.com")!, URL(string: "https://other.org")!])
+        #expect(handBack["type"] as? String == "browser.download")
+        #expect(handBack["reason"] as? String == "needsSignIn")
+        #expect(server.requests.allSatisfy { $0.headers["cookie"] == nil })
     }
 
-    @Test func allowingASiteSendsItsCookiesToDowlio() async throws {
+    @Test func turningSignInSharingOffDropsEveryonesCookies() async throws {
+        let fixture = try await ConnectFixture(preferences: CatchPreferences(sharesSignIn: false))
+        let client = try await fixture.helloClient()
+
+        try await client.send([
+            "v": 1, "type": "link.send", "requestId": "l1", "url": "https://example.com/a.pdf", "browser": "Arc", "cookies": SignInTests.cookies,
+        ])
+        _ = try await client.receive()
+
+        #expect(try await fixture.nextSentLink().cookies.isEmpty)
+    }
+
+    @Test func eachUseOfASitesCookiesIsReportedSoTheAppCanListIt() async throws {
         let fixture = try await ConnectFixture()
         let client = try await fixture.helloClient()
 
-        try await client.send(["v": 1, "type": "signin.granted", "requestId": "g1", "origin": "https://example.com", "cookies": Self.cookies])
-        let grant = try await fixture.nextSignInGrant()
+        try await client.send([
+            "v": 1, "type": "link.send", "requestId": "l1", "url": "https://files.example.com/a.pdf", "browser": "Arc", "cookies": SignInTests.cookies,
+        ])
+        _ = try await client.receive()
 
-        #expect(grant.origin == URL(string: "https://example.com"))
-        #expect(grant.cookies.count == 2)
+        #expect(try await fixture.nextSignInUse() == "files.example.com")
     }
 
-    @Test func eachBrowsersAllowedSitesReachDowlioAndRemoveRevokesThemEverywhere() async throws {
+    @Test func aLinkSentWithNoCookiesIsNotReportedAsUsingSignIn() async throws {
         let fixture = try await ConnectFixture()
-        let arc = try await fixture.helloClient()
-        let brave = try await fixture.helloClient()
+        let client = try await fixture.helloClient()
+        try await client.send(["v": 1, "type": "link.send", "requestId": "l1", "url": "https://files.example.com/a.pdf", "browser": "Arc"])
+        _ = try await client.receive()
+        try await client.send([
+            "v": 1, "type": "link.send", "requestId": "l2", "url": "https://other.example.org/a.pdf", "browser": "Arc", "cookies": SignInTests.cookies,
+        ])
+        _ = try await client.receive()
 
-        try await arc.send(["v": 1, "type": "signin.sites", "requestId": "s1", "origins": ["https://example.com", "https://mail.example.org:8443", "ftp://files.example.net", 42]])
-        let sites = try await fixture.nextAllowedSites()
-        await fixture.server.revokeSignIn(URL(string: "https://example.com")!)
+        #expect(try await fixture.nextSignInUse() == "other.example.org")
+    }
 
-        #expect(sites == [URL(string: "https://example.com")!, URL(string: "https://mail.example.org")!])
-        for client in [arc, brave] {
-            let revoke = try await client.receive()
-            #expect(revoke["type"] as? String == "signin.revoke")
-            #expect(revoke["origin"] as? String == "https://example.com")
-        }
+    @Test func theBrowserLearnsTheSignInSwitchAndBlockedSitesWithItsOtherSettings() async throws {
+        let fixture = try await ConnectFixture(preferences: CatchPreferences(sharesSignIn: false, noSignIn: ["bank.example.com"]))
+        let token = try await fixture.pairedToken()
+        let client = try await fixture.client()
+
+        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        _ = try await client.receive()
+        let update = try await client.receive()
+
+        #expect(update["signIn"] as? Bool == false)
+        #expect(update["noSignIn"] as? [String] == ["bank.example.com"])
+    }
+}
+
+struct SignInPreferenceTests {
+    @Test func signInIsSharedByDefaultWithEverySite() {
+        let preferences = CatchPreferences()
+        #expect(preferences.sharesSignIn)
+        #expect(preferences.allowsSignIn(for: "files.example.com"))
+    }
+
+    @Test func aBlockedSiteAndItsSubdomainsGetNoSignInButSimilarNamesDo() {
+        var preferences = CatchPreferences()
+        preferences.noSignInOn("WWW.Example.com")
+
+        #expect(!preferences.allowsSignIn(for: "example.com"))
+        #expect(!preferences.allowsSignIn(for: "files.example.com"))
+        #expect(preferences.allowsSignIn(for: "badexample.com"))
+        #expect(preferences.noSignIn == ["example.com"])
+    }
+
+    @Test func switchingSharingOffBlocksEverySite() {
+        var preferences = CatchPreferences()
+        preferences.sharesSignIn = false
+        #expect(!preferences.allowsSignIn(for: "example.com"))
+    }
+
+    @Test func unblockingASiteSharesItsSignInAgain() {
+        var preferences = CatchPreferences(noSignIn: ["a.com", "b.com"])
+        preferences.signInAgain("a.com")
+        #expect(preferences.noSignIn == ["b.com"])
+    }
+
+    @Test func theBlockedListHasALimitAndRefusesNonsense() {
+        var preferences = CatchPreferences()
+        preferences.noSignInOn("not a site")
+        for index in 0...CatchPreferences.maximumSites { preferences.noSignInOn("site\(index).com") }
+        #expect(preferences.noSignIn.count == CatchPreferences.maximumSites)
+    }
+}
+
+struct SignInLogTests {
+    private let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test func eachUseCountsAndTheMostRecentSiteComesFirst() {
+        var log = SignInLog()
+        log.record("a.com", at: start)
+        log.record("b.com", at: start.addingTimeInterval(10))
+        log.record("a.com", at: start.addingTimeInterval(20))
+
+        #expect(log.sites.map(\.host) == ["a.com", "b.com"])
+        #expect(log.sites.first?.uses == 2)
+        #expect(log.sites.first?.lastUsed == start.addingTimeInterval(20))
+    }
+
+    @Test func removingASiteForgetsItUntilItIsUsedAgain() {
+        var log = SignInLog()
+        log.record("a.com", at: start)
+        log.remove("a.com")
+        #expect(log.sites.isEmpty)
+        log.record("a.com", at: start)
+        #expect(log.sites.first?.uses == 1)
+    }
+
+    @Test func theLogKeepsOnlyTheMostRecentSitesAndSurvivesSaving() throws {
+        var log = SignInLog()
+        for index in 0...SignInLog.maximumSites { log.record("site\(index).com", at: start.addingTimeInterval(Double(index))) }
+
+        let restored = try JSONDecoder().decode(SignInLog.self, from: JSONEncoder().encode(log))
+
+        #expect(restored.sites.count == SignInLog.maximumSites)
+        #expect(restored == log)
+        #expect(!restored.sites.contains { $0.host == "site0.com" })
+    }
+
+    @Test func theLogHoldsNoCookieValues() throws {
+        var log = SignInLog()
+        log.record("a.com", at: start)
+        let text = String(decoding: try JSONEncoder().encode(log), as: UTF8.self)
+        #expect(!text.contains("cookie"))
     }
 }

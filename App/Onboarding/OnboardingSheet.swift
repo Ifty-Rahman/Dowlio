@@ -7,7 +7,8 @@ import SwiftUI
 struct OnboardingSheet: View {
     let model: AppModel
     let finish: () -> Void
-    @State private var page = DebugLaunch.opensOnboardingSetup ? Page.setup : Page.welcome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var page = DebugLaunch.opensOnboardingBrowsers ? Page.browsers : DebugLaunch.opensOnboardingSetup ? Page.setup : Page.welcome
 
     enum Page: Int, CaseIterable {
         case welcome
@@ -16,43 +17,49 @@ struct OnboardingSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xl) {
-            Group {
-                switch page {
-                case .welcome: WelcomePage()
-                case .setup: SetupPage(model: model)
-                case .browsers: BrowsersPage(model: model)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
-            if page == .welcome {
-                FillingBar()
-            }
-            HStack {
-                PageDots(current: page.rawValue, count: Page.allCases.count)
-                Spacer()
-                Button("Skip", action: finish)
-                if let previous = Page(rawValue: page.rawValue - 1) {
-                    Button("Back") { page = previous }
-                }
-                Button(page == .browsers ? "Get Started" : "Continue") {
-                    if let next = Page(rawValue: page.rawValue + 1) { page = next } else { finish() }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-            }
+        VStack(spacing: 0) {
+            content
+                .id(page)
+                .transition(.opacity)
+            footer
+                .padding([.horizontal, .bottom], DowlioDesign.Spacing.xl)
         }
-        .padding(DowlioDesign.Spacing.xxl)
         .frame(width: 480)
+        .fixedSize(horizontal: false, vertical: true)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: page)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch page {
+        case .welcome: WelcomePage()
+        case .setup: SetupPage(model: model)
+        case .browsers: BrowsersPage(model: model)
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            PageDots(current: page.rawValue, count: Page.allCases.count)
+            Spacer()
+            Button("Skip", action: finish)
+            if let previous = Page(rawValue: page.rawValue - 1) {
+                Button("Back") { page = previous }
+            }
+            Button(page == .browsers ? "Get Started" : "Continue") {
+                if let next = Page(rawValue: page.rawValue + 1) { page = next } else { finish() }
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+        }
     }
 }
 
 private struct WelcomePage: View {
     var body: some View {
-        VStack(spacing: DowlioDesign.Spacing.lg) {
+        VStack(spacing: DowlioDesign.Spacing.md) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 96, height: 96)
+                .frame(width: 80, height: 80)
                 .accessibilityHidden(true)
             Text("Welcome to Dowlio")
                 .font(.largeTitle.weight(.bold))
@@ -62,9 +69,42 @@ private struct WelcomePage: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            FillingBar()
+                .padding(.top, DowlioDesign.Spacing.sm)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, DowlioDesign.Spacing.lg)
+        .padding(.horizontal, DowlioDesign.Spacing.xl)
+        .padding(.top, DowlioDesign.Spacing.sm)
+        .padding(.bottom, DowlioDesign.Spacing.xxl)
+    }
+}
+
+private struct PageHeader: View {
+    let symbol: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.md) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(DowlioDesign.brandAccent.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(DowlioDesign.TypeRole.title)
+                    .foregroundStyle(.primary)
+                    .accessibilityAddTraits(.isHeader)
+                Text(subtitle)
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .textCase(nil)
+        .padding(.bottom, DowlioDesign.Spacing.sm)
     }
 }
 
@@ -75,24 +115,26 @@ private struct SetupPage: View {
     @State private var choosingFolder = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
-            Text("Where should downloads go?")
-                .font(DowlioDesign.TypeRole.title)
-                .accessibilityAddTraits(.isHeader)
-            Form {
+        Form {
+            Section {
                 LabeledContent("Download folder") {
                     HStack {
                         Text((folderPath as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
                         Button("Choose…") { choosingFolder = true }
                     }
                 }
-                Toggle("Sort into category folders (Video, Audio, Documents…)", isOn: $sortsIntoCategoryFolders)
+                Toggle(isOn: $sortsIntoCategoryFolders) {
+                    Text("Sort into category folders")
+                    Text("Video, Audio, Documents and more")
+                }
+            } header: {
+                PageHeader(symbol: "folder.fill", title: "Where should downloads go?", subtitle: "You can change these later in Settings.")
+            }
+            Section {
                 PresenceToggles(model: model)
             }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            .scrollContentBackground(.hidden)
         }
+        .onboardingForm()
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { folderPath = folder.path }
         }
@@ -103,21 +145,25 @@ private struct BrowsersPage: View {
     let model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
-            Text("Catch downloads from your browser")
-                .font(DowlioDesign.TypeRole.title)
-                .accessibilityAddTraits(.isHeader)
-            Text("Add Dowlio Connect to a browser, and files you download there finish in Dowlio.")
-                .foregroundStyle(.secondary)
-            if let setup = model.browserSetup {
-                Form {
+        Form {
+            Section {
+                if let setup = model.browserSetup {
                     BrowsersList(setup: setup)
                 }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 160)
+            } header: {
+                PageHeader(symbol: "puzzlepiece.extension.fill", title: "Catch downloads from your browser", subtitle: "Add Dowlio Connect to a browser, and files you download there finish in Dowlio.")
             }
         }
+        .onboardingForm()
+    }
+}
+
+private extension View {
+    func onboardingForm() -> some View {
+        formStyle(.grouped)
+            .scrollDisabled(true)
+            .scrollContentBackground(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

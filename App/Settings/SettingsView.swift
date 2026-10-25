@@ -21,6 +21,9 @@ struct SettingsView: View {
             BrowsersSettings(model: model)
                 .tabItem { Label("Browsers", systemImage: "globe") }
                 .tag("browsers")
+            SignInSettings(model: model)
+                .tabItem { Label("Sign-in", systemImage: "person.badge.key") }
+                .tag("signin")
         }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
@@ -99,11 +102,14 @@ struct PresenceToggles: View {
         if let loginProblem {
             Text(loginProblem).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }
-        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
-            Toggle("Start in the menu bar", isOn: Binding(get: { startsInMenuBar }, set: { set(.startsInMenuBar, $0) }))
-            Text("Dowlio opens with no window. Open Dowlio in the menu bar brings it up.")
-                .font(DowlioDesign.TypeRole.detail)
-                .foregroundStyle(.secondary)
+        Toggle(isOn: Binding(get: { startsInMenuBar }, set: { set(.startsInMenuBar, $0) })) {
+            HStack(spacing: DowlioDesign.Spacing.xs) {
+                Text("Start in the menu bar")
+                InfoButton(
+                    topic: "Start in the menu bar",
+                    text: "Dowlio opens with no window. Open Dowlio in the menu bar brings it up."
+                )
+            }
         }
         Toggle("Show in menu bar", isOn: Binding(get: { menuBar }, set: { set(.menuBar, $0) }))
             .disabled(!presence.canChangeMenuBar)
@@ -289,28 +295,6 @@ private struct BrowsersSettings: View {
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
             }
-            Section {
-                if model.allowedSignInSites.isEmpty {
-                    Text("Sites you allow with Use my sign-in, in Dowlio Connect, appear here.")
-                        .font(DowlioDesign.TypeRole.detail)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.allowedSignInSites, id: \.self) { site in
-                        HStack {
-                            Text(site.host() ?? site.absoluteString)
-                            Spacer()
-                            Button("Remove") { model.revokeSignIn(site) }
-                                .accessibilityLabel("Remove \(site.host() ?? site.absoluteString)")
-                        }
-                    }
-                }
-            } header: {
-                Text("Sites that can use your sign-in")
-            } footer: {
-                Text("Dowlio uses your browser's cookies for these sites, in memory, for that download only.")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
-            }
             Section("Never catch on these sites") {
                 if model.catchPreferences.neverCatch.isEmpty {
                     Text("Sites you add with Never catch on this site, in Dowlio Connect, appear here.")
@@ -358,5 +342,28 @@ private struct TakingOverExplanation: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: 300, alignment: .leading)
         .padding(DowlioDesign.Spacing.lg)
+    }
+}
+
+struct InfoButton: View {
+    let topic: String
+    let text: String
+    @State private var isShown = false
+
+    var body: some View {
+        Button {
+            isShown.toggle()
+        } label: {
+            Image(systemName: "info.circle").foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("About \(topic)")
+        .popover(isPresented: $isShown, arrowEdge: .bottom) {
+            Text(text)
+                .font(DowlioDesign.TypeRole.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 260, alignment: .leading)
+                .padding(DowlioDesign.Spacing.lg)
+        }
     }
 }

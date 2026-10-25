@@ -88,7 +88,7 @@ test("pings every 20 seconds once connected", async () => {
 
   await timers.advance(60000);
 
-  assert.deepEqual(net.last().sent.map((message) => message.type), ["hello", "signin.sites", "ping", "ping", "ping"]);
+  assert.deepEqual(net.last().sent.map((message) => message.type), ["hello", "ping", "ping", "ping"]);
 });
 
 test("keeps pinging while a pairing request waits for the user, so the browser doesn't stop the worker", async () => {

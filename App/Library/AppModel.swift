@@ -37,6 +37,15 @@ final class AppModel {
     private let catchNotifier = CatchNotifier()
     private var catchGrouper = CatchGrouper()
     var revealing: [DownloadID]?
+    var signInLog = UserDefaults.standard.signInLog {
+        didSet { UserDefaults.standard.signInLog = signInLog }
+    }
+
+    func forgetSignIn(on host: String) {
+        signInLog.remove(host)
+        catchPreferences.signInAgain(host)
+    }
+
     var catchPreferences = UserDefaults.standard.catchPreferences {
         didSet {
             guard catchPreferences != oldValue else { return }
@@ -126,13 +135,8 @@ final class AppModel {
             }
         }
         Task { [weak self] in
-            for await grant in server.signInGrants {
-                self?.grant(grant)
-            }
-        }
-        Task { [weak self] in
-            for await sites in server.allowedSites {
-                self?.allowedSignInSites = sites
+            for await host in server.signInUses {
+                self?.signInLog.record(host, at: Date())
             }
         }
         let updates = preferenceUpdates.stream
@@ -153,29 +157,7 @@ final class AppModel {
         }
     }
 
-    private(set) var allowedSignInSites: [URL] = []
-    private var recentlySent: [URL: SentLink] = [:]
-    private var askedForSignIn: Set<URL> = []
-
-    private func askForSignIn(_ url: URL) {
-        guard let sent = recentlySent[url], let connectServer, askedForSignIn.insert(url).inserted else { return }
-        Task { _ = await connectServer.askForSignIn(sent) }
-    }
-
-    private func grant(_ grant: SignInGrant) {
-        menuBar?.grantSignIn(grant)
-        newDownload?.draft.grantSignIn(origin: grant.origin, cookies: grant.cookies)
-        askedForSignIn = askedForSignIn.filter { $0.host() != grant.origin.host() }
-    }
-
-    func revokeSignIn(_ site: URL) {
-        guard let connectServer else { return }
-        Task { await connectServer.revokeSignIn(site) }
-    }
-
     private func receive(_ link: SentLink) {
-        recentlySent[link.url] = link
-        if recentlySent.count > 50 { recentlySent.removeValue(forKey: recentlySent.keys.first!) }
         let menuBarShown = menuBar?.isVisible ?? false
         switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
         case .quickAdd:
@@ -183,7 +165,7 @@ final class AppModel {
         case .sheet, .openWindowThenSheet:
             showLibraryWindow()
             if newDownload == nil { newDownload = makeNewDownload() }
-            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser)
+            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
         }
     }
 
@@ -239,7 +221,6 @@ final class AppModel {
         let model = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
             try await library.inspect(url, options: options)
         }
-        model.needsSignIn = { [weak self] url in self?.askForSignIn(url) }
         model.draft.connections = settings.connections
         return model
     }

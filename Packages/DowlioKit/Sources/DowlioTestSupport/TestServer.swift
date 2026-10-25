@@ -58,6 +58,8 @@ public final class TestServer: @unchecked Sendable {
         /// are ignored.
         public var omitsLength: Bool
         public var requiredCookie: String?
+        /// Only a POST with exactly this body gets the file. Anything else gets a 405.
+        public var requiredForm: Data?
 
         public init(
             data: Data,
@@ -80,9 +82,11 @@ public final class TestServer: @unchecked Sendable {
             ignoresSegmentRanges: Bool = false,
             misreportOnlyRangeStartingAt: Int? = nil,
             omitsLength: Bool = false,
-            requiredCookie: String? = nil
+            requiredCookie: String? = nil,
+            requiredForm: Data? = nil
         ) {
             self.requiredCookie = requiredCookie
+            self.requiredForm = requiredForm
             self.omitsLength = omitsLength
             self.misreportOnlyRangeStartingAt = misreportOnlyRangeStartingAt
             self.ignoresSegmentRanges = ignoresSegmentRanges
@@ -181,6 +185,7 @@ public final class TestServer: @unchecked Sendable {
         public let path: String
         /// Header names are lowercased.
         public let headers: [String: String]
+        public let body: Data
     }
 
     private let listener: NWListener
@@ -309,7 +314,15 @@ public final class TestServer: @unchecked Sendable {
             if let data { buffer.append(data) }
             if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
                 let head = String(decoding: buffer[..<end.lowerBound], as: UTF8.self)
-                self.respond(to: head, on: connection)
+                let length = Self.contentLength(in: head)
+                let body = buffer[end.upperBound...]
+                if body.count >= length {
+                    self.respond(to: head, body: Data(body.prefix(length)), on: connection)
+                } else if isComplete || error != nil {
+                    connection.cancel()
+                } else {
+                    self.readHeaders(on: connection, buffer: buffer)
+                }
             } else if isComplete || error != nil {
                 connection.cancel()
             } else {
@@ -318,7 +331,17 @@ public final class TestServer: @unchecked Sendable {
         }
     }
 
-    private func respond(to head: String, on connection: NWConnection) {
+    private static func contentLength(in head: String) -> Int {
+        for line in head.components(separatedBy: "\r\n").dropFirst() {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            if parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
+            }
+        }
+        return 0
+    }
+
+    private func respond(to head: String, body: Data, on connection: NWConnection) {
         let lines = head.components(separatedBy: "\r\n")
         let parts = lines.first?.split(separator: " ") ?? []
         guard parts.count >= 2 else { return connection.cancel() }
@@ -328,7 +351,7 @@ public final class TestServer: @unchecked Sendable {
             let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
             headers[name] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
-        let request = Request(method: String(parts[0]), path: String(parts[1]), headers: headers)
+        let request = Request(method: String(parts[0]), path: String(parts[1]), headers: headers, body: body)
         let (file, redirect): (File?, String?) = lock.withLock {
             recorded.append(request)
             return (files[request.path], redirects[request.path])
@@ -345,6 +368,10 @@ public final class TestServer: @unchecked Sendable {
 
         if let cookie = file.requiredCookie, !(headers["cookie"] ?? "").split(separator: ";").contains(where: { $0.trimmingCharacters(in: .whitespaces) == cookie }) {
             return send(status: "401 Unauthorized", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
+        if let form = file.requiredForm, request.method != "POST" || request.body != form {
+            return send(status: "405 Method Not Allowed", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
         if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {

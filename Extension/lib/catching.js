@@ -1,4 +1,7 @@
-export const CATCH_TIMEOUT = 5000;
+import { startWatchingRequests } from "./requests.js";
+
+export const CATCH_TIMEOUT = 15000;
+export const LINK_WAIT = 3000;
 export const HAND_BACK_MARK_LIFETIME = 60000;
 
 function isWebLink(link) {
@@ -29,14 +32,31 @@ function isNeverCaught(item, sites) {
   return [item.url, item.finalUrl, item.referrer].map(hostOf).some((host) => host && matchesSite(host, sites));
 }
 
-function baseName(path) {
-  return path.split(/[\\/]/).pop();
-}
 
 export function startCatching({ chrome, link, navigator, now = Date.now }) {
   const downloads = chrome.downloads;
-  const waitingForName = new Map();
+  const requests = startWatchingRequests({ chrome, now });
   const handedBack = new Map();
+  const taken = new Map();
+
+  function rememberTaken(url, details) {
+    for (const [link, entry] of taken) if (now() - entry.at > HAND_BACK_MARK_LIFETIME) taken.delete(link);
+    taken.set(sameLink(url), { ...details, at: now() });
+  }
+
+  function takenFor(url) {
+    const key = sameLink(url);
+    const entry = taken.get(key);
+    taken.delete(key);
+    return entry && now() - entry.at < HAND_BACK_MARK_LIFETIME ? entry : undefined;
+  }
+
+  function sentAgain(url, request) {
+    if (request?.method !== "POST" || !request.body) return { url };
+    const body = new TextDecoder().decode(Uint8Array.from(atob(request.body), (char) => char.charCodeAt(0)));
+    const headers = request.headers.filter(({ name }) => name.toLowerCase() === "content-type");
+    return { url, method: "POST", body, headers };
+  }
 
   function wasHandedBack(url) {
     const key = sameLink(url);
@@ -45,78 +65,81 @@ export function startCatching({ chrome, link, navigator, now = Date.now }) {
     return markedAt !== undefined && now() - markedAt < HAND_BACK_MARK_LIFETIME;
   }
 
-  function chosenPath(id) {
-    return new Promise((resolve) => waitingForName.set(id, resolve));
+  function startInBrowser(url, request) {
+    handedBack.set(sameLink(url), now());
+    return downloads.download(sentAgain(url, request)).catch(() => handedBack.delete(sameLink(url)));
   }
 
-  function failedOnItsOwn(delta) {
-    const error = delta.error?.current;
-    return Boolean(error) && !error.startsWith("USER_");
-  }
-
-  downloads.onChanged.addListener((delta) => {
-    const resolve = waitingForName.get(delta.id);
-    if (!resolve) return;
-    if (delta.filename?.current) {
-      waitingForName.delete(delta.id);
-      resolve({ path: delta.filename.current });
-    } else if (delta.state?.current === "interrupted" || delta.state?.current === "complete" || delta.error) {
-      waitingForName.delete(delta.id);
-      resolve({ resume: failedOnItsOwn(delta) });
-    }
-  });
-
-  async function offer(item) {
+  function skipped(item) {
     const source = item.finalUrl || item.url;
-    if (item.byExtensionId === chrome.runtime.id || wasHandedBack(item.url)) return;
-    if (!isWebLink(item.url) || !isWebLink(source)) return;
-    if (item.incognito || !link.isConnected()) return;
-    const { catches, neverCatch } = await link.preferences();
-    if (!catches || isNeverCaught(item, neverCatch)) return;
-    const named = item.filename ? Promise.resolve({ path: item.filename }) : chosenPath(item.id);
-    let paused = true;
-    await downloads.pause(item.id).catch(() => {
-      paused = false;
-    });
-    const { path, resume } = await named;
-    if (!path) {
-      if (resume) await downloads.resume(item.id).catch(() => {});
-      return;
-    }
-    if (!paused) await downloads.pause(item.id).catch(() => {});
+    if (item.byExtensionId === chrome.runtime.id || wasHandedBack(item.url)) return true;
+    if (!isWebLink(item.url) || !isWebLink(source)) return true;
+    return Boolean(item.incognito);
+  }
+
+  function letGo(item) {
+    const cancelled = downloads.cancel(item.id).catch(() => {});
+    return cancelled.then(() => downloads.erase({ id: item.id }).catch(() => {}));
+  }
+
+  async function offer(item, seen) {
+    const source = item.finalUrl || item.url;
+    const cookies = await link.cookiesFor?.(source);
     const reply = await link.request(
       "catch.offer",
       {
         url: item.url,
-        finalUrl: item.finalUrl || item.url,
-        referrer: item.referrer || undefined,
+        finalUrl: source,
+        referrer: item.referrer || seen.referrer || undefined,
         mime: item.mime || undefined,
-        fileName: baseName(path),
         totalBytes: item.totalBytes > 0 ? item.totalBytes : undefined,
-        browserPath: path,
-        userAgent: navigator?.userAgent,
-        cookies: await link.cookiesFor?.(source),
+        userAgent: seen.userAgent || navigator?.userAgent,
+        cookies,
+        request: seen.request,
       },
       CATCH_TIMEOUT,
     );
     if (reply?.type === "catch.accepted") {
-      await downloads.cancel(item.id).catch(() => {});
-      await downloads.erase({ id: item.id }).catch(() => {});
-    } else {
-      await downloads.resume(item.id).catch(() => {});
-      if (reply?.type === "catch.declined" && reply.reason === "needsSignIn") link.askForSignIn?.(source);
+      link.release?.(reply.requestId);
+      rememberTaken(item.url, { host: hostOf(source), hadCookies: Boolean(cookies), request: seen.request });
+      await chrome.storage.local.remove("lastDecline");
+      return;
     }
+    const reason = reply?.type === "catch.declined" ? reply.reason : "noAnswer";
+    await chrome.storage.local.set({ lastDecline: { host: hostOf(source), reason, hadCookies: Boolean(cookies), at: Date.now() } });
+    await startInBrowser(item.url, seen.request);
+  }
+
+  async function takeOnceConnected(item, seen) {
+    if (!(await link.whenConnected(LINK_WAIT))) return;
+    const { catches, neverCatch } = await link.preferences();
+    if (!catches || isNeverCaught(item, neverCatch)) return;
+    await letGo(item);
+    await offer(item, seen);
+  }
+
+  function take(item) {
+    if (skipped(item)) return;
+    const seen = requests.requestFor(item.finalUrl, item.url);
+    const preferences = link.isConnected() ? link.preferencesNow?.() : null;
+    if (!preferences) return takeOnceConnected(item, seen);
+    if (!preferences.catches || isNeverCaught(item, preferences.neverCatch)) return;
+    const gone = letGo(item);
+    return gone.then(() => offer(item, seen));
   }
 
   downloads.onCreated.addListener((item) => {
-    offer(item);
+    take(item);
   });
 
   return {
-    async downloadInBrowser(url) {
+    async downloadInBrowser(url, reason) {
       if (!isWebLink(url)) return;
-      handedBack.set(sameLink(url), now());
-      await downloads.download({ url }).catch(() => handedBack.delete(sameLink(url)));
+      const catchOf = takenFor(url);
+      if (reason && catchOf) {
+        await chrome.storage.local.set({ lastDecline: { host: catchOf.host, reason, hadCookies: catchOf.hadCookies, at: Date.now() } });
+      }
+      await startInBrowser(url, catchOf?.request);
     },
   };
 }

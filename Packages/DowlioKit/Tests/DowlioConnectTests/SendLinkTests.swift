@@ -11,6 +11,7 @@ struct SendLinkTests {
         try await client.send([
             "v": 1, "type": "link.send", "requestId": "l1",
             "url": "https://cdn.example.com/files/Report.pdf", "referrer": "https://example.com/reports", "browser": "Arc",
+            "userAgent": "Mozilla/5.0 Arc",
         ])
         let receipt = try await client.receive()
         let sent = try await fixture.nextSentLink()
@@ -20,6 +21,7 @@ struct SendLinkTests {
         #expect(sent.url == URL(string: "https://cdn.example.com/files/Report.pdf"))
         #expect(sent.referrer == URL(string: "https://example.com/reports"))
         #expect(sent.browser == "Arc")
+        #expect(sent.userAgent == "Mozilla/5.0 Arc")
         #expect(sent.cookies.isEmpty)
     }
 

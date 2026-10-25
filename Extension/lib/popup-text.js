@@ -1,5 +1,4 @@
 import { hostOf, matchesSite } from "./catching.js";
-import { originOf } from "./signin.js";
 
 export function popupText(status) {
   switch (status) {
@@ -34,9 +33,17 @@ export function catchControls({ status, catching, tabUrl }) {
   };
 }
 
-export function signInControls({ tabUrl, allowedOrigins }) {
-  const origin = originOf(tabUrl ?? "");
-  if (!origin) return { origin: null };
-  const allowed = allowedOrigins.includes(origin);
-  return { origin, allowed, buttonText: `Use my sign-in on ${new URL(origin).hostname}` };
+const DECLINE_MEMORY = 60 * 60 * 1000;
+
+export function lastDeclineText(decline, now = Date.now()) {
+  if (!decline || now - decline.at > DECLINE_MEMORY) return null;
+  const why = {
+    needsSignIn: decline.hadCookies
+      ? "the site refused Dowlio, even with your sign-in."
+      : "the site refused Dowlio, and the browser had no sign-in for it.",
+    unsupported: "the link gave a web page where your browser got a file.",
+    error: "Dowlio couldn't reach the file.",
+    noAnswer: "Dowlio didn't answer in time.",
+  }[decline.reason];
+  return why ? `${decline.host} stayed in the browser: ${why}` : null;
 }

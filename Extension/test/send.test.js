@@ -7,7 +7,7 @@ async function worker({ connect = true } = {}) {
   const chrome = fakeChrome({ stored: { token: "tok" } });
   const net = fakeSockets();
   const timers = new FakeTimers();
-  startWorker({ chrome, WebSocket: net.FakeWebSocket, timers, navigator: navigatorLike() });
+  startWorker({ chrome, WebSocket: net.FakeWebSocket, timers, navigator: { ...navigatorLike(), userAgent: "Mozilla/5.0 Arc" } });
   await flush();
   if (connect) {
     await net.last().accept();
@@ -34,6 +34,7 @@ test("choosing Send to Dowlio hands the link and its page to Dowlio", async () =
   assert.equal(sent.url, "https://cdn.example.com/files/Report.pdf");
   assert.equal(sent.referrer, "https://example.com/reports");
   assert.equal(sent.browser, "Arc");
+  assert.equal(sent.userAgent, "Mozilla/5.0 Arc");
   assert.deepEqual(chrome.downloads.calls, []);
   assert.deepEqual(chrome.notifications.shown, []);
 });

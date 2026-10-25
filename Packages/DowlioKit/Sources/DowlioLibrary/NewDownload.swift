@@ -102,7 +102,7 @@ public struct LinkStatus: Equatable, Sendable {
         case .needsSignIn, .forbidden:
             self.init(
                 line: "Needs your sign-in",
-                reason: "This site only gives the file to signed-in visitors. Use the Dowlio button in your browser and allow sign-in sharing for this site.",
+                reason: "This site only gives the file to signed-in visitors. Sign in to it in your browser, then use Send to Dowlio on the link, so Dowlio can use your sign-in.",
                 tone: .problem
             )
         case .network, .tooManyRetries:
@@ -159,8 +159,9 @@ public struct NewDownloadDraft: Equatable, Sendable {
         text = current.isEmpty ? more : "\(current)\n\(more)"
     }
 
-    public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = [], browser: String? = nil) {
+    public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = [], browser: String? = nil, userAgent agent: String? = nil) {
         if referrer.trimmingCharacters(in: .whitespaces).isEmpty, let page { referrer = page.absoluteString }
+        if userAgent.trimmingCharacters(in: .whitespaces).isEmpty, let agent { userAgent = agent }
         if !cookies.isEmpty { cookiesByLink[link] = cookies }
         originByLink[link] = DownloadOrigin(kind: .sent, browser: browser)
         guard !links.contains(link) else { return }
@@ -172,16 +173,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         cookiesByLink.merge(other.cookiesByLink) { _, new in new }
         originByLink.merge(other.originByLink) { _, new in new }
         append(other.text)
-    }
-
-    public mutating func grantSignIn(origin: URL, cookies: [Cookie]) {
-        for link in links where Self.origin(of: link) == Self.origin(of: origin) {
-            cookiesByLink[link] = cookies
-        }
-    }
-
-    private static func origin(of url: URL) -> String {
-        "\(url.scheme?.lowercased() ?? "")://\(url.host()?.lowercased() ?? "")"
     }
 
     public func origin(for url: URL) -> DownloadOrigin? {

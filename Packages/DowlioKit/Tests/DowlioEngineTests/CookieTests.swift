@@ -41,6 +41,30 @@ struct CookieTests {
         #expect(toOtherHost.allSatisfy { $0.headers["cookie"] == nil })
     }
 
+    @Test func theBrowsersFormAndHeadersGoOnlyToTheLinkNeverToARedirectsOtherHost() async throws {
+        let linkServer = try await TestServer()
+        let fileServer = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 76)
+        fileServer.serve(.init(data: data, eTag: "\"x3\""), at: "/real.bin")
+        linkServer.redirect("/start.bin", to: fileServer.url(for: "/real.bin").absoluteString)
+        let folder = try TestFiles.makeFolder()
+        var options = RequestOptions()
+        options.browserRequest = BrowserRequest(
+            method: "POST", body: Data("id=42".utf8),
+            headers: [Header(name: "X-Token", value: Self.secret), Header(name: "Content-Type", value: "application/x-www-form-urlencoded")]
+        )
+
+        let engine = DownloadEngine(configuration: .fast)
+        let id = await engine.add(url: linkServer.url(for: "/start.bin"), to: folder, options: options)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(!linkServer.requests.isEmpty)
+        #expect(linkServer.requests.allSatisfy { $0.method == "POST" && $0.body == Data("id=42".utf8) && $0.headers["x-token"] == Self.secret })
+        #expect(!fileServer.requests.isEmpty)
+        #expect(fileServer.requests.allSatisfy { $0.method == "GET" && $0.body.isEmpty && $0.headers["x-token"] == nil })
+    }
+
     @Test func cookiesNeverFollowARedirectToAnotherPortOnTheSameHost() async throws {
         let linkServer = try await TestServer()
         let fileServer = try await TestServer()
