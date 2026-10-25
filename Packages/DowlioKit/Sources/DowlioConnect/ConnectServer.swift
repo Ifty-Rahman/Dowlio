@@ -114,7 +114,7 @@ public actor ConnectServer {
             if let listener = try? await listen(on: port) {
                 self.listener = listener
                 listenFailed = false
-                return port
+                return listener.port?.rawValue ?? port
             }
         }
         listenFailed = true

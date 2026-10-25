@@ -67,7 +67,7 @@ struct ConnectFixture {
         let chosenSettings: @Sendable () -> DownloadSettings = { settings?(folder) ?? DownloadSettings(folder: folder) }
         let catcher = Catcher(library: library, settings: chosenSettings, browserDownloadsFolder: browserDownloads)
         server = ConnectServer(
-            ports: ports ?? Self.freePorts(), store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, preferences: preferences,
+            ports: ports ?? [0], store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, preferences: preferences,
             testTimeout: testTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion
         ) { request in
             await approvals.decide(request)
@@ -134,7 +134,7 @@ struct ConnectFixture {
     }
 
     static func freePorts(count: Int = 4) -> [UInt16] {
-        let start = UInt16.random(in: 40000...50000)
+        let start = UInt16.random(in: 20000...30000)
         return (0..<UInt16(count)).map { start + $0 }
     }
 }
