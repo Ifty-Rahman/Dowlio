@@ -10,10 +10,10 @@ import Testing
 struct WorkStealingTests {
     static let mebibyte = 1_048_576
 
-    /// A 32 MiB file over 4 connections: segments of 8 MiB. The last one trickles at 1 MiB a second,
-    /// so on its own it would take 8 seconds.
+    /// A 32 MiB file over 4 connections. The first connection, the one that asks from byte 0,
+    /// trickles at 1 MiB a second, so on its own its quarter would take 8 seconds.
     static let size = 32 * mebibyte
-    static let slowStart = 24 * mebibyte
+    static let slowStart = 0
     static let slowSpeed = mebibyte
 
     @Test func otherConnectionsTakeOverTheEndOfASlowSegment() async throws {
@@ -40,26 +40,30 @@ struct WorkStealingTests {
         // The slow segment's own connection was asked for its range once, and the segment ended up
         // shorter than that range: its end moved earlier, and it holds exactly its new length.
         // Requests are matched by start, because stealing can shorten a range before it's asked for.
-        let starts = server.requests.compactMap { $0.headers["range"] }.map { range in
+        let starts = server.requests.compactMap { $0.headers["range"] }.filter { $0 != "bytes=0-0" }.map { range in
             Int64(range.dropFirst("bytes=".count).prefix { $0 != "-" }) ?? -1
         }
         #expect(starts.count { $0 == Int64(Self.slowStart) } == 1)
+        let planned = completed.plannedSegments
+        let first = try #require(planned.first)
         let slow = try #require(completed.segments.first { $0.start == Int64(Self.slowStart) })
-        #expect(slow.end < Int64(Self.size - 1))
+        #expect(slow.end < first.end)
         #expect(slow.receivedBytes == slow.end - slow.start + 1)
-        // The rest of its original range went to new segments. Other connections asked for each
+        // The rest of its ramp-up segment went to new segments. Other connections asked for each
         // one from its own start, and each is complete.
-        let takenOver = completed.segments.filter { $0.start > slow.end }
+        let takenOver = completed.segments.filter { $0.start > slow.end && $0.start <= first.end }
         #expect(takenOver.first?.start == slow.end + 1)
-        #expect(takenOver.last?.end == Int64(Self.size - 1))
+        #expect(takenOver.last?.end == first.end)
         #expect(takenOver.allSatisfy { segment in
             starts.contains(segment.start) && segment.receivedBytes == segment.end - segment.start + 1
         })
         #expect(completed.segments.count > 4)
-        // The plan stays what the download started with, so the interface can keep showing it.
-        let planned = (0..<4).map { SegmentBounds(start: Int64($0 * 8 * Self.mebibyte), end: Int64(($0 + 1) * 8 * Self.mebibyte - 1)) }
-        #expect(snapshots.filter { !$0.plannedSegments.isEmpty }.allSatisfy { $0.plannedSegments == planned })
-        #expect(completed.plannedSegments == planned)
+        // The ramp-up made four segments, and stealing never changes them, so the interface can
+        // keep showing them.
+        #expect(planned.count == 4)
+        #expect(planned.first?.start == 0 && planned.last?.end == Int64(Self.size - 1))
+        let afterRampUp = snapshots.drop { $0.plannedSegments.count < 4 }
+        #expect(afterRampUp.allSatisfy { $0.plannedSegments == planned })
     }
 
     /// After a split, the manifest describes the new segments, every byte it counts is in the
@@ -67,10 +71,10 @@ struct WorkStealingTests {
     @Test func pauseAfterASplitKeepsTheManifestRightAndResumeFetchesOnlyTheMissingBytes() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 32)
-        server.serve(
-            .init(data: data, eTag: "\"v1\"", throttle: .init(rangeStart: Self.slowStart, bytesPerSecond: Self.slowSpeed)),
-            at: "/split.iso"
-        )
+        // The file's second half trickles for every connection, so the download is still running
+        // after connections from the first half finish and split the slow parts.
+        let throttle = TestServer.RangeThrottle(rangeStart: Self.size / 2, bytesPerSecond: Self.slowSpeed, andLater: true)
+        server.serve(.init(data: data, eTag: "\"v1\"", throttle: throttle), at: "/split.iso")
         let folder = try TestFiles.makeFolder()
         let package = folder.appending(path: "split.iso.dowlio")
 

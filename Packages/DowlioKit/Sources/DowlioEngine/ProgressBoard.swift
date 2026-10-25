@@ -19,10 +19,21 @@ final class ProgressBoard: @unchecked Sendable {
     /// Per segment, the bytes from its start a connection has taken on: written, or about to be.
     /// Never below `receivedBytes`. Stealing never takes these bytes.
     private var claimed: [Int64]
+    /// Segments whose part went back to the segment before them. Their indexes stay taken.
+    private var rolledBack: [Bool]
+    /// Where the pieces the interface draws start: the segments the ramp-up opened. Stealing
+    /// doesn't add any, so each piece holds a segment and whatever was stolen from it.
+    private var shownStarts: Set<Int64>
+    /// Only a download that started as one segment draws its ramp-up. A restored one keeps the
+    /// pieces the interface saved.
+    let drawsRampUp: Bool
 
     init(segments: [ByteRange]) {
         self.segments = segments.map { SegmentProgress(start: $0.start, end: $0.end) }
         claimed = Array(repeating: 0, count: segments.count)
+        rolledBack = Array(repeating: false, count: segments.count)
+        shownStarts = Set(segments.map(\.start))
+        drawsRampUp = segments.count <= 1
     }
 
     /// A board for segments that already hold `received` bytes each, from a restored manifest.
@@ -62,12 +73,67 @@ final class ProgressBoard: @unchecked Sendable {
 
     var reading: Reading {
         lock.withLock {
-            Reading(
+            let kept = keptSegments
+            return Reading(
                 // File order, also after stealing appended segments.
-                segments: segments.sorted { $0.start < $1.start },
-                receivedBytes: unsegmentedBytes + segments.reduce(0) { $0 + $1.receivedBytes },
-                activeConnections: segments.filter(\.isActive).count
+                segments: kept,
+                receivedBytes: unsegmentedBytes + kept.reduce(0) { $0 + $1.receivedBytes },
+                activeConnections: kept.filter(\.isActive).count
             )
+        }
+    }
+
+    /// The segments that weren't rolled back, in file order. Call under `lock`.
+    private var keptSegments: [SegmentProgress] {
+        segments.indices.filter { !rolledBack[$0] }.map { segments[$0] }.sorted { $0.start < $1.start }
+    }
+
+    /// The segments the interface draws, in file order.
+    var shownLayout: [ByteRange] {
+        lock.withLock {
+            guard let end = keptSegments.map(\.end).max() else { return [] }
+            let starts = shownStarts.sorted()
+            return starts.indices.map { index in
+                ByteRange(start: starts[index], end: index + 1 < starts.count ? starts[index + 1] - 1 : end)
+            }
+        }
+    }
+
+    /// Splits like `steal`, and has the interface draw the new segment too, for the ramp-up.
+    func splitShown() -> Int? {
+        lock.withLock {
+            guard let index = splitLocked() else { return nil }
+            shownStarts.insert(segments[index].start)
+            return index
+        }
+    }
+
+    /// The segments that still miss bytes and have no connection, in file order.
+    func waitingSegments() -> [Int] {
+        lock.withLock {
+            segments.indices
+                .filter { !rolledBack[$0] && !segments[$0].isActive && segments[$0].receivedBytes < segments[$0].end - segments[$0].start + 1 }
+                .sorted { segments[$0].start < segments[$1].start }
+        }
+    }
+
+    func isUnfinished(segment index: Int) -> Bool {
+        lock.withLock { !rolledBack[index] && segments[index].receivedBytes < segments[index].end - segments[index].start + 1 }
+    }
+
+    /// Gives a segment that never received a byte back to the segment that ends right before it,
+    /// whose connection then carries on into it. Returns `false` when nothing ends there.
+    func rollBack(segment index: Int) -> Bool {
+        lock.withLock {
+            guard !rolledBack[index], segments[index].receivedBytes == 0 else { return false }
+            let start = segments[index].start
+            guard let previous = segments.indices.first(where: { !rolledBack[$0] && $0 != index && segments[$0].end == start - 1 })
+            else { return false }
+            segments[previous].end = segments[index].end
+            segments[index].isActive = false
+            rolledBack[index] = true
+            shownStarts.remove(start)
+            return true
         }
     }
 
@@ -76,7 +142,7 @@ final class ProgressBoard: @unchecked Sendable {
     func coversFile(of total: Int64) -> Bool {
         lock.withLock {
             var next: Int64 = 0
-            for segment in segments.sorted(by: { $0.start < $1.start }) {
+            for segment in keptSegments {
                 guard segment.start == next, segment.receivedBytes == segment.end - segment.start + 1 else { return false }
                 next = segment.end + 1
             }
@@ -106,18 +172,24 @@ final class ProgressBoard: @unchecked Sendable {
     /// part no connection has taken on yet (`SegmentPlanner.steal`). Returns the new segment's
     /// index, or `nil` when nothing can be stolen.
     func steal() -> Int? {
-        lock.withLock {
-            let remaining: [ByteRange?] = segments.indices.map { index in
-                let start = segments[index].start + max(claimed[index], segments[index].receivedBytes)
-                return start <= segments[index].end ? ByteRange(start: start, end: segments[index].end) : nil
-            }
-            guard let steal = SegmentPlanner.steal(from: remaining) else { return nil }
-            segments[steal.victim].end = steal.kept.end
-            segments.append(SegmentProgress(start: steal.taken.start, end: steal.taken.end))
-            claimed.append(0)
-            return segments.count - 1
-        }
+        lock.withLock { splitLocked() }
     }
+
+    /// Call under `lock`.
+    private func splitLocked() -> Int? {
+        let remaining: [ByteRange?] = segments.indices.map { index in
+            guard !rolledBack[index] else { return nil }
+            let start = segments[index].start + max(claimed[index], segments[index].receivedBytes)
+            return start <= segments[index].end ? ByteRange(start: start, end: segments[index].end) : nil
+        }
+        guard let steal = SegmentPlanner.steal(from: remaining) else { return nil }
+        segments[steal.victim].end = steal.kept.end
+        segments.append(SegmentProgress(start: steal.taken.start, end: steal.taken.end))
+        claimed.append(0)
+        rolledBack.append(false)
+        return segments.count - 1
+    }
+
 }
 
 /// Speed over the last 5 seconds, from samples of the received byte count.

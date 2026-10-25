@@ -50,6 +50,8 @@ final class ConnectionGate: @unchecked Sendable {
         self.limit = max(1, limit)
     }
 
+    var currentLimit: Int { lock.withLock { limit } }
+
     /// Sets the limit and lets waiters in if it allows more.
     func setLimit(_ newLimit: Int) {
         let resumed: [CheckedContinuation<Void, Error>] = lock.withLock {

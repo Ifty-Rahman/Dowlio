@@ -14,8 +14,8 @@ extension DownloadRun {
             )
             planStore.store(plan, probeConnection: connection)
         case .ranges(let total, let validator):
-            let hostLimit = applyHostLimit(of: probed.finalURL)
-            let segments = SegmentPlanner.plan(size: total, connections: options.connections, hostLimit: hostLimit)
+            applyHostLimit(of: probed.finalURL)
+            let segments = SegmentPlanner.firstSegment(size: total)
             plan = DownloadPlan(
                 fileName: fileName, finalURL: probed.finalURL, totalBytes: total,
                 layout: .ranges(validator: validator), segments: segments, partial: partial,

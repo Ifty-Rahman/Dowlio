@@ -38,14 +38,13 @@ struct RestoreTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "backup.tar")) == TestFiles.sha256(data))
-        let half = Self.size / 2
         let segmentRanges = Set(server.requests[requestsBeforeResume...]
             .compactMap { $0.headers["range"] }
             .filter { $0 != "bytes=0-0" })
-        #expect(segmentRanges == [
-            "bytes=\(Self.held)-\(half - 1)",
-            "bytes=\(half + Self.held)-\(Self.size - 1)",
-        ])
+        let missing = Set(snapshot.segments.map { "bytes=\($0.start + $0.receivedBytes)-\($0.end)" })
+        #expect(snapshot.segments.count == 2)
+        #expect(missing.isSubset(of: segmentRanges))
+        #expect(!segmentRanges.contains { $0.hasPrefix("bytes=0-") })
     }
 
     @Test func aDownloadSurvivesACrashFromWhateverTheLastSaveWrote() async throws {
@@ -132,7 +131,7 @@ struct RestoreTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "gone.pkg")) == TestFiles.sha256(data))
         // It started over: the first segment is fetched from byte 0 again.
         let ranges = server.requests[requestsBeforeResume...].compactMap { $0.headers["range"] }
-        #expect(ranges.contains("bytes=0-\(Self.size / 2 - 1)"))
+        #expect(ranges.contains("bytes=0-\(Self.size - 1)"))
     }
 
     @Test func aPartialFileTheEngineAlreadyHasReturnsThatDownload() async throws {
@@ -253,7 +252,10 @@ extension RestoreTests {
     @Test func aRestoredConnectionSettingIsClampedTo16() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 46)
-        let (engine, id, folder) = try await startHeld(server, file: Self.heldFile(data), at: "/many.bin")
+        // Replies hold early enough that none of the 16 resumed connections can finish its part.
+        let early = 64 * 1024
+        let file = TestServer.File(data: data, holdAfterBytes: early, eTag: "\"v1\"")
+        let (engine, id, folder) = try await startHeld(server, file: file, at: "/many.bin")
         await engine.pause(id)
         let package = try TestFiles.partialFile(in: folder)
         let manifestURL = package.appending(path: "manifest.json")
@@ -264,8 +266,8 @@ extension RestoreTests {
         let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         await fresh.resume(restored)
-        // Both resumed connections got their held bytes, so the resume is past its probe.
-        _ = try await fresh.firstSnapshot(of: restored) { $0.receivedBytes == Int64(4 * Self.held) }
+        // A resumed connection got bytes, so the resume is past its probe.
+        _ = try await fresh.firstSnapshot(of: restored) { $0.receivedBytes > Int64(2 * early) }
         await fresh.pause(restored)
 
         let resaved = try JSONDecoder().decode(PartialFileManifest.self, from: Data(contentsOf: manifestURL))

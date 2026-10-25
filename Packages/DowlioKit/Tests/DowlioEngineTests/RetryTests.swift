@@ -189,7 +189,7 @@ extension RetryTests {
         let afterFailure = server.requests[requestsWhenFailed...]
         #expect(afterFailure.first?.headers["range"] == "bytes=0-0")
         let segmentRequests = afterFailure.dropFirst()
-        #expect(segmentRequests.contains { $0.headers["range"] == "bytes=0-\(Self.size / 2 - 1)" })
+        #expect(segmentRequests.contains { $0.headers["range"] == "bytes=0-\(Self.size - 1)" })
         #expect(segmentRequests.allSatisfy { $0.headers["if-range"] == "\"settled\"" })
     }
 }

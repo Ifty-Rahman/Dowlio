@@ -51,8 +51,8 @@ public final class TestServer: @unchecked Sendable {
         /// A broken server: it answers the one-byte probe range, but ignores every longer range
         /// and sends the whole file with 200.
         public var ignoresSegmentRanges: Bool
-        /// Limits `misreportRangeStartBy` to replies for the range that starts at this offset.
-        public var misreportOnlyRangeStartingAt: Int?
+        /// Limits `misreportRangeStartBy` to replies for ranges that start at this offset or later.
+        public var misreportOnlyRangesFrom: Int?
         /// A streamed or generated file: every reply is a 200 with the whole file, no
         /// `Content-Length`, and a body that ends when the server closes the connection. Ranges
         /// are ignored.
@@ -80,7 +80,7 @@ public final class TestServer: @unchecked Sendable {
             rangeReplyHeaders: [String: String] = [:],
             rangeReplyHeadersOnProbe: Bool = true,
             ignoresSegmentRanges: Bool = false,
-            misreportOnlyRangeStartingAt: Int? = nil,
+            misreportOnlyRangesFrom: Int? = nil,
             omitsLength: Bool = false,
             requiredCookie: String? = nil,
             requiredForm: Data? = nil
@@ -88,7 +88,7 @@ public final class TestServer: @unchecked Sendable {
             self.requiredCookie = requiredCookie
             self.requiredForm = requiredForm
             self.omitsLength = omitsLength
-            self.misreportOnlyRangeStartingAt = misreportOnlyRangeStartingAt
+            self.misreportOnlyRangesFrom = misreportOnlyRangesFrom
             self.ignoresSegmentRanges = ignoresSegmentRanges
             self.maxParallel = maxParallel
             self.rangeReplyHeaders = rangeReplyHeaders
@@ -157,13 +157,21 @@ public final class TestServer: @unchecked Sendable {
     }
 
     /// Slows the replies to ranges that start at `rangeStart` to `bytesPerSecond`.
+    /// Slows replies for the range that starts at `rangeStart`, or with `andLater`, for every range
+    /// that starts there or later.
     public struct RangeThrottle: Sendable {
         public var rangeStart: Int
         public var bytesPerSecond: Int
+        public var andLater: Bool
 
-        public init(rangeStart: Int, bytesPerSecond: Int) {
+        public init(rangeStart: Int, bytesPerSecond: Int, andLater: Bool = false) {
             self.rangeStart = rangeStart
             self.bytesPerSecond = bytesPerSecond
+            self.andLater = andLater
+        }
+
+        func slows(rangeStartingAt start: Int) -> Bool {
+            andLater ? start >= rangeStart : start == rangeStart
         }
     }
 
@@ -434,8 +442,8 @@ public final class TestServer: @unchecked Sendable {
             var body = file.data.subdata(in: range)
             if body.count > file.shortRangeBodiesBy { body.removeLast(file.shortRangeBodiesBy) }
             let cut = cut(for: file, at: request.path, bodyCount: body.count)
-            let slow = file.throttle.flatMap { $0.rangeStart == range.lowerBound ? $0.bytesPerSecond : nil }
-            let misreported = range.count > 1 && (file.misreportOnlyRangeStartingAt ?? range.lowerBound) == range.lowerBound
+            let slow = file.throttle.flatMap { $0.slows(rangeStartingAt: range.lowerBound) ? $0.bytesPerSecond : nil }
+            let misreported = range.count > 1 && range.lowerBound >= (file.misreportOnlyRangesFrom ?? range.lowerBound)
             let shift = misreported ? file.misreportRangeStartBy : 0
             send(
                 status: "206 Partial Content",

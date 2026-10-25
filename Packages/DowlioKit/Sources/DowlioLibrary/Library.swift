@@ -313,7 +313,9 @@ public actor Library {
             || record.wasSkipped != snapshot.wasSkipped || (record.partialFile == nil && state == .downloading)
             || (snapshot.category != nil && snapshot.category != record.category)
         let layoutStarted = !snapshot.segments.isEmpty
-            && !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
+            && (snapshot.plannedSegments.isEmpty
+                ? !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
+                : snapshot.plannedSegments != record.plannedSegments)
         if changed || layoutStarted {
             if layoutStarted {
                 record.plannedSegments = snapshot.plannedSegments.isEmpty ? SegmentLayout.bounds(of: snapshot.segments) : snapshot.plannedSegments
