@@ -1,4 +1,5 @@
 import DowlioCore
+import DowlioLibrary
 import DowlioStore
 import Foundation
 import Network
@@ -39,7 +40,7 @@ public actor ConnectServer {
     private let catcher: Catcher?
     private let catchDeadline: Duration
     private let releaseWait: Duration
-    private var releases: [String: Release] = [:]
+    private var releases: [ReleaseKey: Release] = [:]
     private let queue = DispatchQueue(label: "io.github.ifty-rahman.Dowlio.connect")
     private var listener: NWListener?
     private var isPairingPending = false
@@ -234,7 +235,7 @@ public actor ConnectServer {
             Task { await take(offer, from: session, replyingTo: requestID) }
         case .catchReleased:
             guard session.pairing != nil else { return close(session) }
-            release("\(session.id)/\(requestID ?? "")")
+            release(ReleaseKey(session: session.id, requestID: requestID))
         case let .linkSend(url, referrer, browser, cookies, userAgent):
             guard let pairing = session.pairing else { return close(session) }
             let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
@@ -375,29 +376,33 @@ public actor ConnectServer {
         guard case let .accept(start) = await catcher.decide(offer) else {
             return send(Outgoing.catchDeclined(.unsupported).replying(to: requestID), to: session)
         }
-        let key = "\(session.id)/\(requestID ?? "")"
-        releases[key] = .expected
+        let key = ReleaseKey(session: session.id, requestID: requestID)
+        releases[key] = .awaited
         guard await deliver(Outgoing.catchAccepted.replying(to: requestID), to: session) else {
             releases[key] = nil
             return
         }
         await waitForRelease(key)
         let id = await start()
+        func announce(_ row: DownloadRow) {
+            caught.yield(CaughtDownload(id: id, link: offer.url, fileName: row.fileName, totalBytes: row.totalBytes, session: session.id))
+        }
         switch await catcher.start(of: id, waitingAtMost: catchDeadline) {
         case let .fetching(row):
-            caught.yield(CaughtDownload(id: id, link: offer.url, fileName: row.fileName, totalBytes: row.totalBytes, session: session.id))
-        case let .refused(reason):
-            guard let browser = connectedSession(preferring: session.id),
-                  await deliver(.browserDownload(offer.url, reason: reason), to: browser)
-            else { return }
-            await catcher.discard(id)
+            announce(row)
+        case let .refused(reason, row):
+            if let browser = connectedSession(preferring: session.id), await deliver(.browserDownload(offer.url, reason: reason), to: browser) {
+                await catcher.discard(id)
+            } else {
+                announce(row)
+            }
         case .removed:
             break
         }
     }
 
-    private func waitForRelease(_ key: String) async {
-        guard case .expected = releases[key] else {
+    private func waitForRelease(_ key: ReleaseKey) async {
+        guard case .awaited = releases[key] else {
             releases[key] = nil
             return
         }
@@ -411,14 +416,14 @@ public actor ConnectServer {
         }
     }
 
-    private func release(_ key: String) {
+    private func release(_ key: ReleaseKey) {
         switch releases[key] {
-        case .expected:
-            releases[key] = .released
+        case .awaited:
+            releases[key] = .arrived
         case let .waiting(continuation):
             releases[key] = nil
             continuation.resume()
-        case .released, nil:
+        case .arrived, nil:
             break
         }
     }
@@ -453,9 +458,15 @@ public actor ConnectServer {
     }
 }
 
+/// One catch's wait for Dowlio Connect to say the browser let go of its download.
+struct ReleaseKey: Hashable {
+    let session: UUID
+    let requestID: String?
+}
+
 enum Release {
-    case expected
-    case released
+    case awaited
+    case arrived
     case waiting(CheckedContinuation<Void, Never>)
 }
 

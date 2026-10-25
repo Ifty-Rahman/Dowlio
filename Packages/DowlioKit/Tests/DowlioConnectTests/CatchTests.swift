@@ -8,13 +8,12 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct CatchTests {
-    static func offer(_ url: URL, mime: String = "application/pdf", browserPath: String? = nil, requestId: String = "c1") -> [String: Any] {
+    static func offer(_ url: URL, mime: String = "application/pdf", requestId: String = "c1") -> [String: Any] {
         var offer: [String: Any] = [
             "v": 1, "type": "catch.offer", "requestId": requestId,
             "url": url.absoluteString, "finalUrl": url.absoluteString,
             "referrer": "https://example.com/reports", "mime": mime, "userAgent": "Mozilla/5.0 Test",
         ]
-        if let browserPath { offer["browserPath"] = browserPath }
         return offer
     }
 
@@ -26,7 +25,7 @@ struct CatchTests {
         let client = try await fixture.helloClient()
         let url = server.url(for: "/files/Report.pdf")
 
-        try await client.send(Self.offer(url, browserPath: fixture.browserDownloads.appending(path: "Report.pdf").path))
+        try await client.send(Self.offer(url))
         let reply = try await client.receive()
         let row = try await fixture.firstRow { $0.state == .completed }
 
@@ -47,7 +46,7 @@ struct CatchTests {
         let data = TestServer.makeData(size: 512 * 1024, seed: 409)
         server.serve(.init(data: data, eTag: "\"c9\"", headers: ["Content-Disposition": "attachment; filename=\"Archive.tar.gz\""], requiredForm: form), at: "/bazoiwepu9vx")
         let client = try await fixture.helloClient()
-        var offer = Self.offer(server.url(for: "/bazoiwepu9vx"), mime: "application/gzip", browserPath: fixture.browserDownloads.appending(path: "Archive.tar.gz").path)
+        var offer = Self.offer(server.url(for: "/bazoiwepu9vx"), mime: "application/gzip")
         offer["request"] = [
             "method": "POST",
             "body": form.base64EncodedString(),
@@ -91,37 +90,6 @@ struct CatchTests {
         _ = try await fixture.firstRow { $0.state == .completed }
 
         #expect(FileManager.default.fileExists(atPath: fixture.dowlioFolder.appending(path: "Documents/Report.pdf").path))
-    }
-
-    @Test func aFolderAndNameChosenInTheBrowsersSaveDialogAreKept() async throws {
-        let fixture = try await ConnectFixture()
-        let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 64 * 1024, seed: 403), eTag: "\"c3\""), at: "/Report.pdf")
-        let client = try await fixture.helloClient()
-        let chosen = fixture.base.appending(path: "Taxes/2026", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: chosen, withIntermediateDirectories: true)
-
-        try await client.send(Self.offer(server.url(for: "/Report.pdf"), browserPath: chosen.appending(path: "Return.pdf").path))
-        _ = try await client.receive()
-        _ = try await fixture.firstRow { $0.state == .completed }
-
-        #expect(FileManager.default.fileExists(atPath: chosen.appending(path: "Return.pdf").path))
-        #expect(!FileManager.default.fileExists(atPath: fixture.dowlioFolder.appending(path: "Report.pdf").path))
-    }
-
-    @Test func aSubfolderOfTheBrowsersDownloadsFolderChosenInTheSaveDialogIsKept() async throws {
-        let fixture = try await ConnectFixture()
-        let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 64 * 1024, seed: 404), eTag: "\"c4\""), at: "/Report.pdf")
-        let client = try await fixture.helloClient()
-        let chosen = fixture.browserDownloads.appending(path: "Work", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: chosen, withIntermediateDirectories: true)
-
-        try await client.send(Self.offer(server.url(for: "/Report.pdf"), browserPath: chosen.appending(path: "Report.pdf").path))
-        _ = try await client.receive()
-        _ = try await fixture.firstRow { $0.state == .completed }
-
-        #expect(FileManager.default.fileExists(atPath: chosen.appending(path: "Report.pdf").path))
     }
 
     @Test func aCatchIsAcceptedBeforeDowlioAsksTheHostForAnything() async throws {
@@ -189,6 +157,25 @@ struct CatchTests {
         #expect(handBack["url"] as? String == url.absoluteString)
         #expect(handBack["reason"] as? String == reason)
         #expect(await fixture.rowsNow().isEmpty)
+    }
+
+    @Test func aCatchTheHostRefusesStaysInDowlioAndIsAnnouncedWhenNoBrowserCanTakeItBack() async throws {
+        let fixture = try await ConnectFixture(releaseWait: .milliseconds(300))
+        let server = try await TestServer()
+        var file = TestServer.File(data: Data(count: 1024))
+        file.failFirst = .init(status: 403)
+        server.serve(file, at: "/private.zip")
+        let client = try await fixture.helloClient()
+        let url = server.url(for: "/private.zip")
+
+        try await client.send(Self.offer(url, mime: "application/zip"))
+        _ = try await client.receive()
+        client.close()
+        let announced = try await fixture.nextCatch()
+        let row = try await fixture.firstRow { $0.id == announced.id }
+
+        #expect(announced.link == url)
+        #expect(row.state == .failed(.forbidden))
     }
 
     @Test func aCatchTheHostRefusesIsNeverAnnounced() async throws {

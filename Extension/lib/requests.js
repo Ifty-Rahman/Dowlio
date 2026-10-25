@@ -1,5 +1,6 @@
 export const REMEMBERED_FOR = 60000;
 export const REMEMBERED_AT_MOST = 200;
+export const MAXIMUM_BODY = 64 * 1024;
 const WATCHED = { urls: ["http://*/*", "https://*/*"], types: ["main_frame", "sub_frame", "other"] };
 const REPLAYED = /^(content-type|origin|x-.+)$/i;
 
@@ -24,24 +25,47 @@ function encodeMultipart(formData, boundary) {
 
 function base64(bytes) {
   let text = "";
-  for (const byte of bytes) text += String.fromCharCode(byte);
+  for (let start = 0; start < bytes.length; start += 0x8000) text += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
   return btoa(text);
 }
 
-function encodedBody(requestBody, contentType) {
-  if (!requestBody) return undefined;
-  if (requestBody.raw) {
-    const chunks = requestBody.raw.filter((part) => part.bytes).map((part) => new Uint8Array(part.bytes));
-    if (chunks.length === 0) return undefined;
-    return base64(chunks.flatMap((chunk) => [...chunk]));
+function isText(bytes) {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
   }
-  if (!requestBody.formData) return undefined;
-  const boundary = /boundary=("?)([^";]+)\1/i.exec(contentType ?? "")?.[2];
-  const text = /^multipart\/form-data/i.test(contentType ?? "") && boundary ? encodeMultipart(requestBody.formData, boundary) : encodeForm(requestBody.formData);
-  return base64(new TextEncoder().encode(text));
 }
 
-function key(url) {
+function rawBytes(parts) {
+  if (parts.some((part) => !part.bytes)) return null;
+  const chunks = parts.map((part) => new Uint8Array(part.bytes));
+  const bytes = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
+function postedBytes(requestBody, contentType) {
+  if (requestBody.raw) return rawBytes(requestBody.raw);
+  if (!requestBody.formData) return new Uint8Array();
+  const boundary = /boundary=("?)([^";]+)\1/i.exec(contentType ?? "")?.[2];
+  const multipart = /^multipart\/form-data/i.test(contentType ?? "") && boundary;
+  return new TextEncoder().encode(multipart ? encodeMultipart(requestBody.formData, boundary) : encodeForm(requestBody.formData));
+}
+
+function replayableBody(requestBody, contentType) {
+  if (!requestBody) return {};
+  const bytes = postedBytes(requestBody, contentType);
+  if (!bytes || bytes.length > MAXIMUM_BODY || !isText(bytes)) return { unsendable: true };
+  return bytes.length ? { body: base64(bytes) } : {};
+}
+
+function withoutFragment(url) {
   try {
     const link = new URL(url);
     link.hash = "";
@@ -79,11 +103,12 @@ export function startWatchingRequests({ chrome, now = Date.now }) {
       const headers = details.requestHeaders ?? [];
       const header = (name) => headers.find((entry) => entry.name.toLowerCase() === name)?.value;
       const method = details.method?.toUpperCase() ?? "GET";
-      const body = method === "POST" ? encodedBody(bodies.get(details.requestId)?.requestBody, header("content-type")) : undefined;
-      seen.set(key(details.url), {
+      const { body, unsendable } = method === "POST" ? replayableBody(bodies.get(details.requestId)?.requestBody, header("content-type")) : {};
+      seen.set(withoutFragment(details.url), {
         at: now(),
         method,
         body,
+        unsendable,
         referrer: header("referer"),
         userAgent: header("user-agent"),
         headers: headers
@@ -99,11 +124,11 @@ export function startWatchingRequests({ chrome, now = Date.now }) {
     requestFor(...urls) {
       forget();
       for (const url of urls) {
-        const entry = url && seen.get(key(url));
+        const entry = url && seen.get(withoutFragment(url));
         if (!entry) continue;
         const request = entry.method === "GET" && entry.headers.length === 0 ? undefined : { method: entry.method, headers: entry.headers };
         if (request && entry.body) request.body = entry.body;
-        return { request, referrer: entry.referrer, userAgent: entry.userAgent };
+        return { request, referrer: entry.referrer, userAgent: entry.userAgent, unsendable: Boolean(entry.unsendable) };
       }
       return {};
     },

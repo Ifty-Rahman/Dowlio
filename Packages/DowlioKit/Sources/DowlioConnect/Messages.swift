@@ -78,11 +78,10 @@ struct Envelope {
             message = .pong
         case "catch.offer":
             guard let url = link("url"), let cookies = cookies() else { return nil }
-            let browserPath = text("browserPath").flatMap { $0.hasPrefix("/") ? URL(filePath: $0) : nil }
             message = .catchOffer(CatchOffer(
                 url: url, finalURL: link("finalUrl"), referrer: link("referrer"),
                 mimeType: text("mime"), userAgent: text("userAgent", limit: Self.maximumHeaderValue),
-                browserPath: browserPath, cookies: cookies, browserRequest: browserRequest()
+                cookies: cookies, browserRequest: browserRequest()
             ))
         case "catch.released":
             guard requestID != nil else { return nil }

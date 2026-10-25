@@ -88,7 +88,6 @@ final class ProgressBoard: @unchecked Sendable {
         segments.indices.filter { !rolledBack[$0] }.map { segments[$0] }.sorted { $0.start < $1.start }
     }
 
-    /// The segments the interface draws, in file order.
     var shownLayout: [ByteRange] {
         lock.withLock {
             guard let end = keptSegments.map(\.end).max() else { return [] }
@@ -108,17 +107,16 @@ final class ProgressBoard: @unchecked Sendable {
         }
     }
 
-    /// The segments that still miss bytes and have no connection, in file order.
     func waitingSegments() -> [Int] {
         lock.withLock {
             segments.indices
-                .filter { !rolledBack[$0] && !segments[$0].isActive && segments[$0].receivedBytes < segments[$0].end - segments[$0].start + 1 }
+                .filter { !rolledBack[$0] && !segments[$0].isActive && segments[$0].missesBytes }
                 .sorted { segments[$0].start < segments[$1].start }
         }
     }
 
     func isUnfinished(segment index: Int) -> Bool {
-        lock.withLock { !rolledBack[index] && segments[index].receivedBytes < segments[index].end - segments[index].start + 1 }
+        lock.withLock { !rolledBack[index] && segments[index].missesBytes }
     }
 
     /// Gives a segment that never received a byte back to the segment that ends right before it,
@@ -190,6 +188,10 @@ final class ProgressBoard: @unchecked Sendable {
         return segments.count - 1
     }
 
+}
+
+private extension SegmentProgress {
+    var missesBytes: Bool { receivedBytes < end - start + 1 }
 }
 
 /// Speed over the last 5 seconds, from samples of the received byte count.

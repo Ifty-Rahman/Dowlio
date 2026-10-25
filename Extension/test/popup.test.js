@@ -43,7 +43,7 @@ test("the popup says in plain words why the last download stayed in the browser"
   );
   assert.equal(
     lastDeclineText({ host: "files.net", reason: "unsupported", at }, now),
-    "files.net stayed in the browser: the link gave a web page where your browser got a file.",
+    "files.net stayed in the browser: Dowlio can't download this kind of link.",
   );
   assert.equal(lastDeclineText({ host: "files.net", reason: "error", at }, now), "files.net stayed in the browser: Dowlio couldn't reach the file.");
   assert.equal(lastDeclineText({ host: "files.net", reason: "noAnswer", at }, now), "files.net stayed in the browser: Dowlio didn't answer in time.");

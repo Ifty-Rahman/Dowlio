@@ -9,19 +9,20 @@ extension DownloadRun {
     /// a connection gets fetched in another round.
     func receiveSegments(_ plan: DownloadPlan, validator: String?) async throws {
         guard let total = plan.totalBytes else { return }
+        let file = RangedFile(plan: plan, total: total, validator: validator)
         var receivedBefore: Int64 = -1
         while true {
             let waiting = plan.board.waitingSegments()
             guard !waiting.isEmpty else { return }
             let received = plan.board.reading.receivedBytes
-            guard received > receivedBefore else { throw RetryableFailure() }
+            guard received > receivedBefore else { throw DownloadError.tooManyRetries }
             receivedBefore = received
-            try await connect(waiting, of: plan, total: total, validator: validator)
+            try await connect(waiting, of: file)
         }
     }
 
-    private func connect(_ waiting: [Int], of plan: DownloadPlan, total: Int64, validator: String?) async throws {
-        let board = plan.board
+    private func connect(_ waiting: [Int], of file: RangedFile) async throws {
+        let board = file.plan.board
         let waitsForData = options.openExtraConnections == .afterFirstConnectionStarts
         let firstData = OneShot()
         let secondData = OneShot()
@@ -31,7 +32,7 @@ extension DownloadRun {
                 group.addTask {
                     defer { ready?.fire() }
                     try await work(
-                        from: segment, growing: growing, of: plan, total: total, validator: validator, onData: onData
+                        from: segment, growing: growing, of: file, onData: onData
                     )
                 }
             }
@@ -43,7 +44,7 @@ extension DownloadRun {
             }
             let limit = min(gate.currentLimit, connectionSetting)
             func worthOpening(_ wanted: Int) -> Int {
-                SegmentPlanner.connectionsWorthOpening(missing: total - board.reading.receivedBytes, wanted: wanted)
+                SegmentPlanner.connectionsWorthOpening(missing: file.total - board.reading.receivedBytes, wanted: wanted)
             }
             if worthOpening(limit - waiting.count) > 0, !Task.isCancelled {
                 start(nil, growing: true, onData: { secondData.fire() }, ready: secondData)
@@ -63,12 +64,10 @@ extension DownloadRun {
     private func work(
         from segment: Int?,
         growing: Bool,
-        of plan: DownloadPlan,
-        total: Int64,
-        validator: String?,
+        of file: RangedFile,
         onData: @escaping @Sendable () -> Void
     ) async throws {
-        let board = plan.board
+        let board = file.plan.board
         var current: Int
         if let segment {
             current = segment
@@ -76,15 +75,15 @@ extension DownloadRun {
             guard let split = try await splitWithPlace(board, shown: growing) else { return }
             current = split
             if growing { await publishLayout(of: board) }
-            guard try await firstTry(of: current, in: plan, total: total, validator: validator, onData: onData, growing: growing)
+            guard try await firstTry(of: current, in: file, onData: onData, growing: growing)
             else { return }
         }
         while true {
             if board.isUnfinished(segment: current) {
-                try await withRetries(.segment(current), host: plan.finalURL) {
+                try await withRetries(.segment(current), host: file.plan.finalURL) {
                     try await gate.acquire()
                     do {
-                        try await receive(segment: current, of: plan, total: total, validator: validator, onData: onData)
+                        try await receive(segment: current, of: file, onData: onData)
                     } catch {
                         // Lowered as the place is given back, so a waiting connection can't take it in between.
                         gate.release(lowering: RetryableFailure(classifying: error)?.isRefusal == true)
@@ -100,7 +99,7 @@ extension DownloadRun {
             guard options.allowsWorkStealing, !hostLimitsConnections, let split = try await splitWithPlace(board, shown: false)
             else { return }
             current = split
-            guard try await firstTry(of: current, in: plan, total: total, validator: validator, onData: onData, growing: false)
+            guard try await firstTry(of: current, in: file, onData: onData, growing: false)
             else { return }
         }
     }
@@ -121,14 +120,13 @@ extension DownloadRun {
     /// ends. Returns whether the connection goes on.
     private func firstTry(
         of segment: Int,
-        in plan: DownloadPlan,
-        total: Int64,
-        validator: String?,
+        in file: RangedFile,
         onData: @escaping @Sendable () -> Void,
         growing: Bool
     ) async throws -> Bool {
+        let plan = file.plan
         do {
-            try await receive(segment: segment, of: plan, total: total, validator: validator, onData: onData)
+            try await receive(segment: segment, of: file, onData: onData)
             gate.release()
             return true
         } catch is RangesUnusable {
@@ -161,13 +159,8 @@ extension DownloadRun {
         await changeSnapshot { $0.plannedSegments = board.shownLayout.map { SegmentBounds(start: $0.start, end: $0.end) } }
     }
 
-    private func receive(
-        segment index: Int,
-        of plan: DownloadPlan,
-        total: Int64,
-        validator: String?,
-        onData: @Sendable () -> Void
-    ) async throws {
+    private func receive(segment index: Int, of file: RangedFile, onData: @Sendable () -> Void) async throws {
+        let (plan, total, validator) = (file.plan, file.total, file.validator)
         let board = plan.board
         let segment = board.range(segment: index)
         let missing = ByteRange(start: segment.start + board.received(segment: index), end: segment.end)
@@ -213,4 +206,12 @@ extension DownloadRun {
         }
         try RetryableFailure.throwIfEndedEarly(received: offset, expected: board.range(segment: index).end + 1)
     }
+}
+
+/// What every connection of a download with ranges needs: its plan, the file's size, and the
+/// validator each request sends with `If-Range`.
+struct RangedFile: Sendable {
+    let plan: DownloadPlan
+    let total: Int64
+    let validator: String?
 }

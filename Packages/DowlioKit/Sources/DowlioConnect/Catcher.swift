@@ -8,14 +8,13 @@ public struct CatchOffer: Equatable, Sendable {
     public var referrer: URL?
     public var mimeType: String?
     public var userAgent: String?
-    public var browserPath: URL?
     public var cookies: [Cookie] = []
     public var browserRequest: BrowserRequest?
     public var browser: String?
 
     public init(
         url: URL, finalURL: URL? = nil, referrer: URL? = nil, mimeType: String? = nil, userAgent: String? = nil,
-        browserPath: URL? = nil, cookies: [Cookie] = [], browserRequest: BrowserRequest? = nil
+        cookies: [Cookie] = [], browserRequest: BrowserRequest? = nil
     ) {
         self.cookies = cookies
         self.browserRequest = browserRequest
@@ -24,7 +23,6 @@ public struct CatchOffer: Equatable, Sendable {
         self.referrer = referrer
         self.mimeType = mimeType
         self.userAgent = userAgent
-        self.browserPath = browserPath
     }
 }
 
@@ -41,7 +39,7 @@ public enum CatchDecision: Sendable {
 
 public enum CatchStart: Equatable, Sendable {
     case fetching(DownloadRow)
-    case refused(CatchDeclineReason)
+    case refused(CatchDeclineReason, DownloadRow)
     case removed
 }
 
@@ -68,16 +66,10 @@ public struct CaughtDownload: Equatable, Sendable {
 public struct Catcher: Sendable {
     private let library: Library
     private let settings: @Sendable () -> DownloadSettings
-    private let browserDownloadsFolder: URL
 
-    public init(
-        library: Library,
-        settings: @escaping @Sendable () -> DownloadSettings,
-        browserDownloadsFolder: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Downloads", directoryHint: .isDirectory)
-    ) {
+    public init(library: Library, settings: @escaping @Sendable () -> DownloadSettings) {
         self.library = library
         self.settings = settings
-        self.browserDownloadsFolder = browserDownloadsFolder
     }
 
     public func decide(_ offer: CatchOffer) async -> CatchDecision {
@@ -89,13 +81,7 @@ public struct Catcher: Sendable {
         options.browserRequest = offer.browserRequest
         let link = offer.finalURL ?? offer.url
         guard let scheme = link.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return .decline(.unsupported) }
-        let destination: Destination
-        if let chosen = chosenInSaveDialog(offer.browserPath) {
-            destination = .folder(chosen.deletingLastPathComponent())
-            options.fileName = chosen.lastPathComponent
-        } else {
-            destination = settings.destination(in: settings.folder)
-        }
+        let destination = settings.destination(in: settings.folder)
         let library = library
         let chosenOptions = options
         let origin = DownloadOrigin(kind: .caught, browser: offer.browser)
@@ -132,7 +118,7 @@ public struct Catcher: Sendable {
     private static func start(shownBy row: DownloadRow) -> CatchStart? {
         switch row.state {
         case .failed(let error) where row.receivedBytes == 0:
-            return .refused(error == .needsSignIn || error == .forbidden ? .needsSignIn : .error)
+            return .refused(error == .needsSignIn || error == .forbidden ? .needsSignIn : .error, row)
         case .completed, .queued, .paused, .failed:
             return .fetching(row)
         case .downloading, .retrying:
@@ -142,12 +128,5 @@ public struct Catcher: Sendable {
 
     func discard(_ id: DownloadID) async {
         await library.discard(id)
-    }
-
-    private func chosenInSaveDialog(_ path: URL?) -> URL? {
-        guard let path, path.isFileURL, !path.lastPathComponent.isEmpty else { return nil }
-        let folder = path.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path
-        let downloads = browserDownloadsFolder.standardizedFileURL.resolvingSymlinksInPath().path
-        return folder == downloads ? nil : path
     }
 }

@@ -301,6 +301,55 @@ test("a download the browser got by posting a form is offered with that form and
   assert.equal(offer.userAgent, "Mozilla/5.0 Dia");
 });
 
+for (const [name, body] of [
+  ["a posted body over 64 KB", { raw: [{ bytes: new Uint8Array(64 * 1024 + 1).fill(97).buffer }] }],
+  ["a posted file", { raw: [{ bytes: new TextEncoder().encode("--b\r\n").buffer }, { file: "/Users/me/photo.jpg" }] }],
+  ["a posted binary body", { raw: [{ bytes: new Uint8Array([0xff, 0xfe, 0x00, 0x81]).buffer }] }],
+]) {
+  test(`a download that came from ${name} stays in the browser, since neither Dowlio nor the browser could post it again`, async () => {
+    const { chrome, socket } = await connected();
+    const url = "https://files.example.com/export";
+    browserAsks(chrome, { url, method: "POST", body, headers: [{ name: "Content-Type", value: "application/octet-stream" }] });
+
+    await chrome.downloads.create(download({ url, finalUrl: url }));
+
+    assert.deepEqual(chrome.downloads.calls, []);
+    assert.equal(offers(socket).length, 0);
+  });
+}
+
+test("a posted body of exactly 64 KB is still caught", async () => {
+  const { chrome, socket } = await connected();
+  const url = "https://files.example.com/export";
+  browserAsks(chrome, { url, method: "POST", body: { raw: [{ bytes: new Uint8Array(64 * 1024).fill(97).buffer }] } });
+
+  await chrome.downloads.create(download({ url, finalUrl: url }));
+
+  assert.equal(Buffer.from(offers(socket)[0].request.body, "base64").length, 64 * 1024);
+});
+
+test("a failure after the browser let go still starts the download again in the browser", async () => {
+  const { chrome, socket } = await connected();
+  await chrome.downloads.create(download());
+  chrome.storage.local.set = async () => {
+    throw new Error("storage is full");
+  };
+
+  await socket.reply({ type: "catch.declined", reason: "unsupported", requestId: offers(socket)[0].requestId });
+
+  assert.deepEqual(chrome.downloads.calls.at(-1), ["download", "https://example.com/get/42"]);
+});
+
+test("why a download stayed in the browser is stamped with the extension's clock", async () => {
+  const clock = { time: 1_800_000_000_000 };
+  const { chrome, socket } = await connected({ clock });
+  await chrome.downloads.create(download());
+
+  await socket.reply({ type: "catch.declined", reason: "error", requestId: offers(socket)[0].requestId });
+
+  assert.equal((await chrome.storage.local.get("lastDecline")).lastDecline.at, clock.time);
+});
+
 test("a multipart form is sent again with the browser's own boundary", async () => {
   const { chrome, socket } = await connected();
   const url = "https://files.example.com/get";

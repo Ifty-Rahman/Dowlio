@@ -40,7 +40,6 @@ struct ConnectFixture {
     let library: Library
     let base: URL
     let dowlioFolder: URL
-    let browserDownloads: URL
 
     init(
         approvals: Approvals = Approvals(),
@@ -57,10 +56,7 @@ struct ConnectFixture {
     ) async throws {
         base = try TestFiles.makeFolder()
         dowlioFolder = base.appending(path: "Dowlio Downloads", directoryHint: .isDirectory)
-        browserDownloads = base.appending(path: "Downloads", directoryHint: .isDirectory)
-        for folder in [dowlioFolder, browserDownloads] {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        }
+        try FileManager.default.createDirectory(at: dowlioFolder, withIntermediateDirectories: true)
         store = try DownloadStore(databaseAt: base.appending(path: "Dowlio.sqlite"))
         library = Library(engine: DownloadEngine(configuration: .fast), store: store)
         await library.start()
@@ -68,7 +64,7 @@ struct ConnectFixture {
         self.approvals = approvals
         let folder = dowlioFolder
         let chosenSettings: @Sendable () -> DownloadSettings = { settings?(folder) ?? DownloadSettings(folder: folder) }
-        let catcher = Catcher(library: library, settings: chosenSettings, browserDownloadsFolder: browserDownloads)
+        let catcher = Catcher(library: library, settings: chosenSettings)
         server = ConnectServer(
             ports: ports ?? [0], store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, releaseWait: releaseWait, preferences: preferences,
             testTimeout: testTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion, peerApp: peerApp

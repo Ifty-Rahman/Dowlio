@@ -41,7 +41,7 @@ export function lastDeclineText(decline, now = Date.now()) {
     needsSignIn: decline.hadCookies
       ? "the site refused Dowlio, even with your sign-in."
       : "the site refused Dowlio, and the browser had no sign-in for it.",
-    unsupported: "the link gave a web page where your browser got a file.",
+    unsupported: "Dowlio can't download this kind of link.",
     error: "Dowlio couldn't reach the file.",
     noAnswer: "Dowlio didn't answer in time.",
   }[decline.reason];
