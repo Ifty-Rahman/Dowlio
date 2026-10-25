@@ -6,6 +6,8 @@ final class OneShot: @unchecked Sendable {
     private var fired = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
+    var hasFired: Bool { lock.withLock { fired } }
+
     func fire() {
         let resumed: [CheckedContinuation<Void, Never>] = lock.withLock {
             guard !fired else { return [] }

@@ -7,6 +7,13 @@ struct Probed {
         /// `probeConnection` is still open, for a probe that asked for the whole file. Its reply is
         /// the first segment.
         case ranges(total: Int64, validator: String?, probeConnection: Connection?)
+
+        var openConnection: Connection? {
+            switch self {
+            case .whole(let connection): connection
+            case .ranges(_, _, let probeConnection): probeConnection
+            }
+        }
     }
 
     let body: Body
@@ -25,24 +32,25 @@ extension Probed {
 
     /// Closes the probe's own connection, for a probe whose reply the download won't read.
     func cancelConnection() {
-        switch body {
-        case .whole(let connection): connection.cancel()
-        case .ranges(_, _, let probeConnection?): probeConnection.cancel()
-        case .ranges: break
-        }
+        body.openConnection?.cancel()
     }
 }
 
 struct ServerProbe: Sendable {
     let connections: ConnectionOpener
 
-    /// Like Neat Download Manager, a download's probe asks for the whole file with `bytes=0-`, and
-    /// a usable range reply goes on as the first segment. A probe that only checks the server,
-    /// `readsFirstSegment` false, asks for `bytes=0-0`.
-    func probe(_ target: URL, readsFirstSegment: Bool) async throws -> Probed {
-        let connection = readsFirstSegment
-            ? connections.openFromStart(target)
-            : connections.open(target, range: ByteRange(start: 0, end: 0))
+    /// Asks for the whole file. A usable range reply stays open as the first segment.
+    func probe(_ target: URL) async throws -> Probed {
+        try await probe(target, asking: .toEnd(from: 0))
+    }
+
+    /// Asks for the first byte only, for a probe that checks the server and reads nothing.
+    func check(_ target: URL) async throws -> Probed {
+        try await probe(target, asking: .closed(ByteRange(start: 0, end: 0)))
+    }
+
+    private func probe(_ target: URL, asking range: RangeRequest) async throws -> Probed {
+        let connection = connections.open(target, range: range)
         let response: HTTPURLResponse
         do {
             response = try await connection.firstResponse()
@@ -54,14 +62,14 @@ struct ServerProbe: Sendable {
             return Probed(wholeFile: response, over: connection, requested: target)
         case 206:
             let finalURL = response.url ?? target
-            guard response.isUsableRangeReply, let reply = ContentRange(response), reply.start == 0,
-                  reply.end == (readsFirstSegment ? reply.total - 1 : 0) else {
+            guard response.isUsableRangeReply, let reply = ContentRange(response), range.isAnswered(by: reply) else {
                 connection.cancel()
                 return try await openWholeFile(at: finalURL)
             }
-            if !readsFirstSegment { connection.cancel() }
+            let kept = range.readsToEnd ? connection : nil
+            if kept == nil { connection.cancel() }
             return Probed(
-                body: .ranges(total: reply.total, validator: response.validator, probeConnection: readsFirstSegment ? connection : nil),
+                body: .ranges(total: reply.total, validator: response.validator, probeConnection: kept),
                 finalURL: finalURL,
                 totalBytes: reply.total,
                 probeResponse: response
@@ -88,19 +96,21 @@ struct ServerProbe: Sendable {
 }
 
 extension DownloadRun {
-    func probeWithRetries(_ target: URL, readsFirstSegment: Bool) async throws -> Probed {
-        try await withRetries(.probe, host: target) {
-            try await probe.probe(target, readsFirstSegment: readsFirstSegment)
-        }
+    func probeWithRetries(_ target: URL) async throws -> Probed {
+        try await withRetries(.probe, host: target) { try await probe.probe(target) }
+    }
+
+    func checkWithRetries(_ target: URL) async throws -> Probed {
+        try await withRetries(.probe, host: target) { try await probe.check(target) }
     }
 
     /// Signed final links expire, so Resume probes the original link first, then the last final link.
     func probeForResume(_ plan: DownloadPlan) async throws -> Probed {
         do {
-            return try await probeWithRetries(url, readsFirstSegment: false)
+            return try await checkWithRetries(url)
         } catch let error as DownloadError where Self.meansLinkGone(error) {
             do {
-                return try await probeWithRetries(plan.finalURL, readsFirstSegment: false)
+                return try await checkWithRetries(plan.finalURL)
             } catch let error as DownloadError where Self.meansLinkGone(error) {
                 throw DownloadError.linkExpired
             }

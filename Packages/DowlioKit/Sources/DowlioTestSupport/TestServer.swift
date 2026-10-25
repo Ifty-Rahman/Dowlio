@@ -550,12 +550,6 @@ public final class TestServer: @unchecked Sendable {
         for (name, value) in headers { head += "\(name): \(value)\r\n" }
         head += "\r\n"
 
-        if let bytesPerSecond {
-            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
-            trickle(body, at: bytesPerSecond, on: connection, onClose: onClose)
-            return
-        }
-
         let close: @Sendable (NWError?) -> Void = { _ in
             onClose()
             connection.cancel()
@@ -572,6 +566,11 @@ public final class TestServer: @unchecked Sendable {
             return
         case nil:
             break
+        }
+        if let bytesPerSecond {
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
+            trickle(body, at: bytesPerSecond, on: connection, onClose: onClose)
+            return
         }
         // One-byte bodies, such as a resume's probe reply, are never held.
         guard let hold, hold < body.count, body.count > 1 else {

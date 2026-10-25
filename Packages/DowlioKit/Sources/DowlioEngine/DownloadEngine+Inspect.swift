@@ -11,7 +11,7 @@ extension DownloadEngine {
         )
         let probed: Probed
         do {
-            probed = try await ServerProbe(connections: connections).probe(url, readsFirstSegment: false)
+            probed = try await ServerProbe(connections: connections).check(url)
         } catch let error as DownloadError {
             throw error
         } catch is RetryableFailure {

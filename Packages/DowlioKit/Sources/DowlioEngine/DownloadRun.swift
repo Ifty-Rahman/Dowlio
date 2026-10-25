@@ -63,7 +63,7 @@ struct DownloadRun: Sendable {
                 } catch is FileChangedOnServer {
                     guard !startedOverForChange else { throw DownloadError.serverChangedFile }
                     startedOverForChange = true
-                    let probed = try await probeWithRetries(url, readsFirstSegment: true)
+                    let probed = try await probeWithRetries(url)
                     plan = try await startOver(attempt, with: probed)
                     current = plan
                     saveManifest(plan)
@@ -117,7 +117,7 @@ struct DownloadRun: Sendable {
             return plan
         }
 
-        let probed = try await probeWithRetries(url, readsFirstSegment: true)
+        let probed = try await probeWithRetries(url)
         let fileName = options.fileName.map(FileNaming.chosen)
             ?? FileNaming.name(for: probed.probeResponse, finalURL: probed.finalURL)
         let contentType = probed.probeResponse.contentTypeHeader

@@ -102,17 +102,22 @@ struct CookieTests {
     @Test func everyRequestSendsTheCookiesIncludingRetries() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 71)
-        server.serve(.init(data: data, eTag: "\"k1\"", dropFirst: .init(afterBytes: 64 * 1024, count: 1)), at: "/k.bin")
+        server.serve(
+            .init(data: data, eTag: "\"k1\"", stallFirst: .init(afterBytes: 64 * 1024, count: 1)),
+            at: "/k.bin"
+        )
         let folder = try TestFiles.makeFolder()
+        var configuration = EngineConfiguration.fast
+        configuration.idleTimeout = .seconds(1)
 
-        let engine = DownloadEngine(configuration: .fast)
+        let engine = DownloadEngine(configuration: configuration)
         let id = await engine.add(url: server.url(for: "/k.bin"), to: folder, options: Self.options)
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "k.bin")) == TestFiles.sha256(data))
-        // At least the first request, which drops, and its retry.
-        #expect(server.requests.count >= 2)
+        // The first request, which goes quiet, a second segment, and the retry once the first times out.
+        #expect(server.requests.count >= 3)
         #expect(server.requests.allSatisfy { $0.headers["cookie"] == Self.header })
     }
 

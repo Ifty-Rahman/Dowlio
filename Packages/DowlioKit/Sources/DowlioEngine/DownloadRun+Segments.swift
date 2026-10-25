@@ -26,30 +26,36 @@ extension DownloadRun {
         let waitsForData = options.openExtraConnections == .afterFirstConnectionStarts
         let firstData = OneShot()
         let secondData = OneShot()
+        // A connection that failed for good ends the round, so no new one opens meanwhile.
+        let failed = OneShot()
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             func start(_ segment: Int?, growing: Bool, onData: @escaping @Sendable () -> Void, ready: OneShot?) {
                 group.addTask {
                     defer { ready?.fire() }
-                    try await work(
-                        from: segment, growing: growing, of: file, onData: onData
-                    )
+                    do {
+                        try await work(from: segment, growing: growing, of: file, onData: onData)
+                    } catch {
+                        failed.fire()
+                        throw error
+                    }
                 }
             }
+            var goesOn: Bool { !Task.isCancelled && !failed.hasFired }
 
             start(waiting[0], growing: false, onData: { firstData.fire() }, ready: firstData)
             if waitsForData { await firstData.wait() }
-            for index in waiting.dropFirst() where !Task.isCancelled {
+            for index in waiting.dropFirst() where goesOn {
                 start(index, growing: false, onData: {}, ready: nil)
             }
             let limit = min(gate.currentLimit, connectionSetting)
             func worthOpening(_ wanted: Int) -> Int {
                 SegmentPlanner.connectionsWorthOpening(missing: file.total - board.reading.receivedBytes, wanted: wanted)
             }
-            if worthOpening(limit - waiting.count) > 0, !Task.isCancelled {
+            if worthOpening(limit - waiting.count) > 0, goesOn {
                 start(nil, growing: true, onData: { secondData.fire() }, ready: secondData)
                 if waitsForData { await secondData.wait() }
-                for _ in 0..<worthOpening(limit - waiting.count - 1) where !Task.isCancelled {
+                for _ in 0..<worthOpening(limit - waiting.count - 1) where goesOn {
                     start(nil, growing: true, onData: {}, ready: nil)
                 }
             }
@@ -169,7 +175,6 @@ extension DownloadRun {
 
         board.setActive(true, segment: index)
         defer { board.setActive(false, segment: index) }
-        // The probe's reply already covers the file from byte 0, and the probe checked it.
         let connection = if missing.start == 0, let probeConnection = planStore.takeProbeConnection() {
             probeConnection
         } else {
@@ -195,7 +200,7 @@ extension DownloadRun {
 
     private func openSegment(_ missing: ByteRange, of file: RangedFile) async throws -> Connection {
         let validator = file.validator
-        let connection = connections.open(file.plan.finalURL, range: missing, ifRange: validator)
+        let connection = connections.open(file.plan.finalURL, range: .closed(missing), ifRange: validator)
         let response: HTTPURLResponse
         do {
             response = try await connection.firstResponse()

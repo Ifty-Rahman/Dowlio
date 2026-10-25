@@ -38,14 +38,16 @@ struct PauseResumeTests {
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
         // Resume sends exactly one probe, then asks for each segment's missing part from its first
-        // missing byte. A new connection may split a segment before its own request goes out.
-        let resumed = server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused)
-            .map { $0.headers["range"] }
-        let missing = Set(paused.segments.map { "bytes=\($0.start + $0.receivedBytes)-" })
-        let asked = resumed.dropFirst().compactMap { $0 }
-        #expect(resumed.first == "bytes=0-0")
+        // missing byte, with the validator. A new connection may split a segment before its own
+        // request goes out, so a request may end early, but never asks for bytes the download has.
+        let resumed = Array(server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused))
+        #expect(resumed.first?.headers["range"] == "bytes=0-0")
         #expect(paused.segments.count == 2)
-        #expect(missing.allSatisfy { start in asked.contains { $0.hasPrefix(start) } })
+        let segmentRequests = resumed.dropFirst()
+        #expect(segmentRequests.allSatisfy { $0.headers["if-range"] == "\"v1\"" })
+        let asked = segmentRequests.compactMap { $0.headers["range"].flatMap(ClosedRangeHeader.init) }
+        #expect(ClosedRangeHeader.eachMissingPartIsAskedFromItsStart(paused.segments, asked: asked))
+        #expect(ClosedRangeHeader.noneAsksForReceivedBytes(paused.segments, asked: asked))
     }
 
     @Test func theManifestOnDiskDescribesTheDownloadAndNeverLeadsTheData() async throws {

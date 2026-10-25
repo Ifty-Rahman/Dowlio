@@ -110,6 +110,33 @@ struct RefusalTests {
         #expect(server.refusals(at: "/again.iso") == 0)
     }
 
+    /// The first reply is open before segment 0 takes its place, and opening all connections at
+    /// once still leaves that place for it, so the host never sees more than its learned limit.
+    @Test func openingAllConnectionsAtOnceCountsTheFirstReply() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 63)
+        server.serve(.init(data: data, holdAfterBytes: Self.held, maxParallel: 2), at: "/two.iso")
+        let folder = try TestFiles.makeFolder()
+        let limits = InMemoryHostLimitStore()
+        limits.updateLimit(for: Self.host(of: server)) { _ in 2 }
+        var configuration = EngineConfiguration.fast
+        configuration.hostLimits = limits
+        var options = RequestOptions()
+        options.connections = 8
+        options.openExtraConnections = .allAtOnce
+
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/two.iso"), to: folder, options: options)
+        try await waitUntil { server.requests.count >= 2 }
+        server.releaseHeldResponses()
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "two.iso")) == TestFiles.sha256(data))
+        #expect(server.refusals(at: "/two.iso") == 0)
+        #expect(server.peakParallel(at: "/two.iso") == 2)
+    }
+
     enum Failure: Sendable, CustomTestStringConvertible {
         case status(Int)
         case reset
@@ -177,7 +204,7 @@ struct RefusalTests {
     }
 
     /// Downloads a file whose server behaves as `file` describes, and checks that it completes
-    /// with the served bytes, after a request for the whole file without a range. The first reply
+    /// with the served bytes, the last request asking for the whole file without a range. The first reply
     /// is slow, so the download asks for a second segment before it has the whole file.
     private func downloadFallsBackToOneConnection(_ file: TestServer.File, name: String) async throws -> TestServer {
         let server = try await TestServer()
@@ -192,7 +219,7 @@ struct RefusalTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: name)) == TestFiles.sha256(file.data))
-        #expect(server.requests.contains { $0.headers["range"] == nil })
+        #expect(server.requests.last?.headers["range"] == nil)
         return server
     }
 

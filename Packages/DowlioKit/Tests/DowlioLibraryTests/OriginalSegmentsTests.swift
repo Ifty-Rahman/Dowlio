@@ -9,15 +9,17 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct OriginalSegmentsTests {
     static let mebibyte = 1_048_576
-    /// The file's second half trickles for every connection, so connections from the first half
-    /// finish early and split the slow parts.
+    /// Requests for the file's second half trickle, so connections from the first half finish early
+    /// and split the slow parts. Requests for the first half hold until all four connections have
+    /// asked, so the first one can't fetch the file alone.
+    static let held = 256 * 1024
     static let slowHalf = TestServer.RangeThrottle(rangeStart: 16 * mebibyte, bytesPerSecond: mebibyte, andLater: true)
 
     @Test func theListKeepsTheOriginalSegmentsWhileStealingSplitsThem() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
         let data = TestServer.makeData(size: 32 * Self.mebibyte, seed: 700)
-        server.serve(.init(data: data, eTag: "\"o1\"", throttle: Self.slowHalf), at: "/split.iso")
+        server.serve(.init(data: data, holdAfterBytes: Self.held, eTag: "\"o1\"", throttle: Self.slowHalf), at: "/split.iso")
         var options = RequestOptions()
         options.connections = 4
 
@@ -37,6 +39,8 @@ struct OriginalSegmentsTests {
             return (shownCounts, mostReal, last)
         }
         _ = await fixture.add(server.url(for: "/split.iso"), options: options)
+        try await waitUntil { server.requests.count >= 4 }
+        server.releaseHeldResponses()
         let (shownCounts, mostReal, last) = await recording.value
 
         // The bar grows as the ramp-up opens connections, then stays at four.
@@ -57,11 +61,13 @@ struct OriginalSegmentsTests {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
         let data = TestServer.makeData(size: 32 * Self.mebibyte, seed: 701)
-        server.serve(.init(data: data, eTag: "\"o2\"", throttle: Self.slowHalf), at: "/later.iso")
+        server.serve(.init(data: data, holdAfterBytes: Self.held, eTag: "\"o2\"", throttle: Self.slowHalf), at: "/later.iso")
         var options = RequestOptions()
         options.connections = 4
 
         let id = await fixture.add(server.url(for: "/later.iso"), options: options)
+        try await waitUntil { server.requests.count >= 4 }
+        server.releaseHeldResponses()
         _ = try await fixture.library.row(id) { $0.segments.count > 4 }
         await fixture.library.pause(id)
         let paused = try await fixture.library.row(id) { $0.state == .paused }

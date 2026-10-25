@@ -43,9 +43,10 @@ struct RestoreTests {
             .filter { $0 != "bytes=0-0" })
         // A new connection may split a segment before its own request goes out, so each missing
         // part is asked for from its first missing byte, up to its end or less.
-        let missing = Set(snapshot.segments.map { "bytes=\($0.start + $0.receivedBytes)-" })
+        let asked = segmentRanges.compactMap(ClosedRangeHeader.init)
         #expect(snapshot.segments.count == 2)
-        #expect(missing.allSatisfy { start in segmentRanges.contains { $0.hasPrefix(start) } })
+        #expect(ClosedRangeHeader.eachMissingPartIsAskedFromItsStart(snapshot.segments, asked: asked))
+        #expect(ClosedRangeHeader.noneAsksForReceivedBytes(snapshot.segments, asked: asked))
         #expect(!segmentRanges.contains { $0.hasPrefix("bytes=0-") })
     }
 

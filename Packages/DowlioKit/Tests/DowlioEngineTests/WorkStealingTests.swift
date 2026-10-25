@@ -71,10 +71,12 @@ struct WorkStealingTests {
     @Test func pauseAfterASplitKeepsTheManifestRightAndResumeFetchesOnlyTheMissingBytes() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 32)
-        // The file's second half trickles for every connection, so the download is still running
-        // after connections from the first half finish and split the slow parts.
+        // Requests for the file's second half trickle, so the download is still running after
+        // connections from the first half finish and split the slow parts. Requests for the first
+        // half hold until all four connections have asked, so the first one can't fetch the file
+        // alone.
         let throttle = TestServer.RangeThrottle(rangeStart: Self.size / 2, bytesPerSecond: Self.slowSpeed, andLater: true)
-        server.serve(.init(data: data, eTag: "\"v1\"", throttle: throttle), at: "/split.iso")
+        server.serve(.init(data: data, holdAfterBytes: 256 * 1024, eTag: "\"v1\"", throttle: throttle), at: "/split.iso")
         let folder = try TestFiles.makeFolder()
         let package = folder.appending(path: "split.iso.dowlio")
 
@@ -82,6 +84,8 @@ struct WorkStealingTests {
         options.connections = 4
         let engine = DownloadEngine()
         let id = await engine.add(url: server.url(for: "/split.iso"), to: folder, options: options)
+        try await waitUntil { server.requests.count >= 4 }
+        server.releaseHeldResponses()
         _ = try await engine.firstSnapshot(of: id) { $0.segments.count > 4 }
         await engine.pause(id)
         let paused = try await engine.firstSnapshot(of: id) { $0.state == .paused }
