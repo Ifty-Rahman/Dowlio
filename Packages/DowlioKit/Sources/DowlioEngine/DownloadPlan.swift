@@ -25,34 +25,47 @@ final class PlanStore: @unchecked Sendable {
     // @unchecked: both stored properties are only read or written under `lock`.
     private let lock = NSLock()
     private var stored: DownloadPlan?
-    private var probeConnection: Connection?
+    private var held: HeldConnection?
 
     var plan: DownloadPlan? { lock.withLock { stored } }
 
-    func store(_ plan: DownloadPlan, probeConnection: Connection?) {
+    func store(_ plan: DownloadPlan, holding connection: HeldConnection?) {
         let dropped: Connection? = lock.withLock {
             defer {
                 stored = plan
-                self.probeConnection = probeConnection
+                held = connection
             }
-            return self.probeConnection === probeConnection ? nil : self.probeConnection
+            return held?.connection === connection?.connection ? nil : held?.connection
         }
         dropped?.cancel()
     }
 
-    func takeProbeConnection() -> Connection? {
+    /// The held connection, if its reply starts at byte `start`.
+    func takeConnection(startingAt start: Int64) -> Connection? {
         lock.withLock {
-            defer { probeConnection = nil }
-            return probeConnection
+            guard let held, held.start == start else { return nil }
+            self.held = nil
+            return held.connection
         }
     }
 
-    func closeProbeConnection() {
-        takeProbeConnection()?.cancel()
+    func closeHeldConnection() {
+        let dropped: Connection? = lock.withLock {
+            defer { held = nil }
+            return held?.connection
+        }
+        dropped?.cancel()
     }
 
     func forget() {
         lock.withLock { stored = nil }
-        closeProbeConnection()
+        closeHeldConnection()
     }
+}
+
+/// A connection whose reply is open and not read yet: a new download's probe, or Resume's first
+/// request. Its reply starts at byte `start` of the file.
+struct HeldConnection {
+    let connection: Connection
+    let start: Int64
 }

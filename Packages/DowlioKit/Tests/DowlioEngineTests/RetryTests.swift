@@ -127,11 +127,12 @@ extension RetryTests {
 
         #expect(finished.receivedBytes == Int64(data.count))
         #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
-        // Retry probed the link again, then asked for only the bytes the download didn't have
-        // when it failed.
+        // Retry's first request asked for only the bytes the download didn't have when it failed,
+        // with the validator, and that request was the download.
         let afterFailure = server.requests.filter { $0.path == "/stubborn.iso" }.dropFirst(requestsWhenFailed)
         #expect(failed.receivedBytes > 0)
-        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=0-0", "bytes=\(failed.receivedBytes)-\(data.count - 1)"])
+        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=\(failed.receivedBytes)-\(data.count - 1)"])
+        #expect(afterFailure.first?.headers["if-range"] != nil)
     }
 }
 
@@ -163,7 +164,7 @@ extension RetryTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "signed.bin")) == TestFiles.sha256(data))
         let afterFailure = server.requests[requestsWhenFailed...]
         #expect(afterFailure.first?.path == "/once")
-        #expect(!afterFailure.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true && $0.headers["range"] != "bytes=0-0" })
+        #expect(!afterFailure.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
     }
 
     @Test func retryAfterTheFileChangedStartsOver() async throws {
@@ -188,13 +189,12 @@ extension RetryTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "live.log")) == TestFiles.sha256(settled))
-        // Retry probed first, then asked for the new version from byte 0 and never with the
-        // validator of the version that kept changing.
+        // Retry's first request carried the old validator, and the 200 it got was the new version's
+        // first segment. Every later request carried the new validator.
         let afterFailure = server.requests[requestsWhenFailed...]
-        #expect(afterFailure.first?.headers["range"] == "bytes=0-0")
-        let segmentRequests = afterFailure.dropFirst()
-        #expect(segmentRequests.contains { $0.headers["range"] == "bytes=0-\(Self.size - 1)" })
-        #expect(segmentRequests.allSatisfy { $0.headers["if-range"] == "\"settled\"" })
+        #expect(afterFailure.first?.headers["if-range"] != "\"settled\"")
+        #expect(!afterFailure.contains { $0.headers["range"] == "bytes=0-0" || $0.headers["range"] == "bytes=0-" })
+        #expect(afterFailure.dropFirst().allSatisfy { $0.headers["if-range"] == "\"settled\"" })
     }
 }
 

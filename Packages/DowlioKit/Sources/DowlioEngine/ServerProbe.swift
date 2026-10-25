@@ -4,14 +4,14 @@ import Foundation
 struct Probed {
     enum Body {
         case whole(Connection)
-        /// `probeConnection` is still open, for a probe that asked for the whole file. Its reply is
+        /// `firstReply` is still open when its reply is the whole file from byte 0, and goes on as
         /// the first segment.
-        case ranges(total: Int64, validator: String?, probeConnection: Connection?)
+        case ranges(total: Int64, validator: String?, firstReply: Connection?)
 
         var openConnection: Connection? {
             switch self {
             case .whole(let connection): connection
-            case .ranges(_, _, let probeConnection): probeConnection
+            case .ranges(_, _, let firstReply): firstReply
             }
         }
     }
@@ -27,6 +27,20 @@ extension Probed {
         self.init(
             body: .whole(connection), finalURL: response.url ?? target, totalBytes: response.knownLength,
             probeResponse: response
+        )
+    }
+
+    /// A `200` to `If-Range`: the file changed, and the reply is the new version from byte 0. With
+    /// ranges and a known size it goes on as the first segment, as a new download's probe does.
+    init(changedFile response: HTTPURLResponse, over connection: Connection, requested target: URL) {
+        let ranges = response.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") == true
+        guard ranges, response.isUsableRangeReply, let total = response.knownLength, total > 0 else {
+            self.init(wholeFile: response, over: connection, requested: target)
+            return
+        }
+        self.init(
+            body: .ranges(total: total, validator: response.validator, firstReply: connection),
+            finalURL: response.url ?? target, totalBytes: total, probeResponse: response
         )
     }
 
@@ -69,7 +83,7 @@ struct ServerProbe: Sendable {
             let kept = range.readsToEnd ? connection : nil
             if kept == nil { connection.cancel() }
             return Probed(
-                body: .ranges(total: reply.total, validator: response.validator, probeConnection: kept),
+                body: .ranges(total: reply.total, validator: response.validator, firstReply: kept),
                 finalURL: finalURL,
                 totalBytes: reply.total,
                 probeResponse: response
@@ -78,7 +92,7 @@ struct ServerProbe: Sendable {
             // An empty file has no byte 0 to send.
             connection.cancel()
             return Probed(
-                body: .ranges(total: 0, validator: response.validator, probeConnection: nil),
+                body: .ranges(total: 0, validator: response.validator, firstReply: nil),
                 finalURL: response.url ?? target,
                 totalBytes: 0,
                 probeResponse: response
@@ -98,26 +112,5 @@ struct ServerProbe: Sendable {
 extension DownloadRun {
     func probeWithRetries(_ target: URL) async throws -> Probed {
         try await withRetries(.probe, host: target) { try await probe.probe(target) }
-    }
-
-    func checkWithRetries(_ target: URL) async throws -> Probed {
-        try await withRetries(.probe, host: target) { try await probe.check(target) }
-    }
-
-    /// Signed final links expire, so Resume probes the original link first, then the last final link.
-    func probeForResume(_ plan: DownloadPlan) async throws -> Probed {
-        do {
-            return try await checkWithRetries(url)
-        } catch let error as DownloadError where Self.meansLinkGone(error) {
-            do {
-                return try await checkWithRetries(plan.finalURL)
-            } catch let error as DownloadError where Self.meansLinkGone(error) {
-                throw DownloadError.linkExpired
-            }
-        }
-    }
-
-    private static func meansLinkGone(_ error: DownloadError) -> Bool {
-        error == .forbidden || error == .notFound
     }
 }

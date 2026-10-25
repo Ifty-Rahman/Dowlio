@@ -21,7 +21,7 @@ extension DownloadRun {
                 board: ProgressBoard(segments: segments)
             )
         }
-        planStore.store(plan, probeConnection: probed.body.openConnection)
+        planStore.store(plan, holding: probed.body.openConnection.map { HeldConnection(connection: $0, start: 0) })
         return plan
     }
 

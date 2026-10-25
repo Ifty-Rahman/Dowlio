@@ -30,11 +30,14 @@ extension DownloadRun {
         let failed = OneShot()
 
         try await withThrowingTaskGroup(of: Void.self) { group in
-            func start(_ segment: Int?, growing: Bool, onData: @escaping @Sendable () -> Void, ready: OneShot?) {
+            func start(
+                _ segment: Int?, growing: Bool, held: Connection? = nil,
+                onData: @escaping @Sendable () -> Void, ready: OneShot?
+            ) {
                 group.addTask {
                     defer { ready?.fire() }
                     do {
-                        try await work(from: segment, growing: growing, of: file, onData: onData)
+                        try await work(from: segment, growing: growing, held: held, of: file, onData: onData)
                     } catch {
                         failed.fire()
                         throw error
@@ -43,7 +46,18 @@ extension DownloadRun {
             }
             var goesOn: Bool { !Task.isCancelled && !failed.hasFired }
 
-            start(waiting[0], growing: false, onData: { firstData.fire() }, ready: firstData)
+            // An open reply already waits for the first segment, so it takes its place before any
+            // other connection can.
+            let held = planStore.takeConnection(startingAt: board.missing(segment: waiting[0]).start)
+            if let held {
+                do {
+                    try await gate.acquire()
+                } catch {
+                    held.cancel()
+                    throw error
+                }
+            }
+            start(waiting[0], growing: false, held: held, onData: { firstData.fire() }, ready: firstData)
             if waitsForData { await firstData.wait() }
             for index in waiting.dropFirst() where goesOn {
                 start(index, growing: false, onData: {}, ready: nil)
@@ -66,13 +80,23 @@ extension DownloadRun {
     }
 
     /// One connection's life. With no `segment` it's a new connection: it waits for a free place,
-    /// then splits. When its segment is done, it splits again if stealing is on.
+    /// then splits. When its segment is done, it splits again if stealing is on. A `held` reply
+    /// already has its place, and the segment's first try reads it.
     private func work(
         from segment: Int?,
         growing: Bool,
+        held: Connection?,
         of file: RangedFile,
         onData: @escaping @Sendable () -> Void
     ) async throws {
+        var held = held
+        func dropHeld() {
+            guard let unread = held else { return }
+            held = nil
+            unread.cancel()
+            gate.release()
+        }
+        defer { dropHeld() }
         let board = file.plan.board
         var current: Int
         if let segment {
@@ -87,9 +111,10 @@ extension DownloadRun {
         while true {
             if board.isUnfinished(segment: current) {
                 try await withRetries(.segment(current), host: file.plan.finalURL) {
-                    try await gate.acquire()
+                    let reply = held
+                    if reply == nil { try await gate.acquire() } else { held = nil }
                     do {
-                        try await receive(segment: current, of: file, onData: onData)
+                        try await receive(segment: current, of: file, over: reply, onData: onData)
                     } catch {
                         // Lowered as the place is given back, so a waiting connection can't take it in between.
                         gate.release(lowering: RetryableFailure(classifying: error)?.isRefusal == true)
@@ -99,6 +124,7 @@ extension DownloadRun {
                 }
                 continue
             }
+            dropHeld()
             // A host that limits connections may not have seen a cut-short reply close yet, so a
             // steal could be refused. Finished connections close instead.
             let hostLimitsConnections = gate.currentLimit < connectionSetting
@@ -165,21 +191,17 @@ extension DownloadRun {
         await changeSnapshot { $0.plannedSegments = board.shownLayout.map { SegmentBounds(start: $0.start, end: $0.end) } }
     }
 
-    private func receive(segment index: Int, of file: RangedFile, onData: @Sendable () -> Void) async throws {
+    /// Reads segment `index`'s missing part from `reply`, or from a new request.
+    private func receive(segment index: Int, of file: RangedFile, over reply: Connection? = nil, onData: @Sendable () -> Void) async throws {
         let plan = file.plan
         let board = plan.board
-        let segment = board.range(segment: index)
-        let missing = ByteRange(start: segment.start + board.received(segment: index), end: segment.end)
+        let missing = board.missing(segment: index)
         guard missing.start <= missing.end else { return }
         try Task.checkCancellation()
 
         board.setActive(true, segment: index)
         defer { board.setActive(false, segment: index) }
-        let connection = if missing.start == 0, let probeConnection = planStore.takeProbeConnection() {
-            probeConnection
-        } else {
-            try await openSegment(missing, of: file)
-        }
+        let connection = if let reply { reply } else { try await openSegment(missing, of: file) }
         var offset = missing.start
         for try await event in connection.events {
             guard case .data(let data) = event else { continue }
@@ -199,26 +221,16 @@ extension DownloadRun {
     }
 
     private func openSegment(_ missing: ByteRange, of file: RangedFile) async throws -> Connection {
-        let validator = file.validator
-        let connection = connections.open(file.plan.finalURL, range: .closed(missing), ifRange: validator)
-        let response: HTTPURLResponse
-        do {
-            response = try await connection.firstResponse()
-        } catch let error as URLError where error.isUndecodableBody {
+        switch try await connections.askForRange(missing, of: file.total, ifRange: file.validator, at: file.plan.finalURL) {
+        case .range(let connection, _):
+            return connection
+        case .wholeFile(let connection, _):
+            connection.cancel()
+            // Without a validator, the server ignored the range.
+            throw file.validator == nil ? RangesUnusable() : FileChangedOnServer()
+        case .unusable:
             throw RangesUnusable()
         }
-        guard response.statusCode == 206 else {
-            connection.cancel()
-            guard response.statusCode == 200 else { throw connections.failure(for: response) }
-            // A 200 to If-Range means the validator no longer matches (RFC 9110). Without a
-            // validator, the server ignored the range.
-            throw validator == nil ? RangesUnusable() : FileChangedOnServer()
-        }
-        guard response.isUsableRangeReply, ContentRange(response) == ContentRange(range: missing, total: file.total) else {
-            connection.cancel()
-            throw RangesUnusable()
-        }
-        return connection
     }
 }
 

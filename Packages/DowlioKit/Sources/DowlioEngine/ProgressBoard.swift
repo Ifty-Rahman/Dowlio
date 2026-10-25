@@ -156,6 +156,15 @@ final class ProgressBoard: @unchecked Sendable {
         lock.withLock { ByteRange(start: segments[index].start, end: segments[index].end) }
     }
 
+    /// The part of segment `index` no connection has received yet. Empty, with its start past its
+    /// end, once the segment is complete.
+    func missing(segment index: Int) -> ByteRange {
+        lock.withLock {
+            let segment = segments[index]
+            return ByteRange(start: segment.start + segment.receivedBytes, end: segment.end)
+        }
+    }
+
     /// Takes on up to `length` bytes of segment `index` from `offset`, and returns how many fall
     /// inside the segment's current end. The connection writes only those, then adds them.
     func claim(_ length: Int64, at offset: Int64, segment index: Int) -> Int64 {

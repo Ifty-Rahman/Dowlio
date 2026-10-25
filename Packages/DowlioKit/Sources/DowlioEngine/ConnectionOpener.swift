@@ -29,6 +29,29 @@ struct ConnectionOpener: Sendable {
         return Connection(request: request, idleTimeout: idleTimeout)
     }
 
+    /// Asks for `range` of a file of `total` bytes. Throws for a refusal or another failure.
+    func askForRange(_ range: ByteRange, of total: Int64, ifRange validator: String?, at url: URL) async throws -> RangeAnswer {
+        let connection = open(url, range: .closed(range), ifRange: validator)
+        let response: HTTPURLResponse
+        do {
+            response = try await connection.firstResponse()
+        } catch let error as URLError where error.isUndecodableBody {
+            return .unusable(finalURL: nil)
+        }
+        switch response.statusCode {
+        case 200:
+            return .wholeFile(connection, response)
+        case 206 where response.isUsableRangeReply && ContentRange(response) == ContentRange(range: range, total: total):
+            return .range(connection, response)
+        case 206, 416:
+            connection.cancel()
+            return .unusable(finalURL: response.url)
+        default:
+            connection.cancel()
+            throw failure(for: response)
+        }
+    }
+
     func openWholeFile(at url: URL) async throws -> (connection: Connection, response: HTTPURLResponse) {
         let connection = open(url, range: nil)
         let response = try await connection.firstResponse()
@@ -64,6 +87,17 @@ struct ConnectionOpener: Sendable {
         }
         return request
     }
+}
+
+/// How a server answered a request for part of a file.
+enum RangeAnswer {
+    /// A `206` for exactly the asked bytes, with no encoding.
+    case range(Connection, HTTPURLResponse)
+    /// A `200`: the whole file from byte 0. To `If-Range`, it means the validator no longer matches.
+    case wholeFile(Connection, HTTPURLResponse)
+    /// A reply that can't be the asked part: a `416`, an encoded or multipart reply, or one for other
+    /// bytes. Its connection is closed.
+    case unusable(finalURL: URL?)
 }
 
 extension URL {

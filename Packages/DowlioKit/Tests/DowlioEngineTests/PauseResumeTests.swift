@@ -37,13 +37,15 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
-        // Resume sends exactly one probe, then asks for each segment's missing part from its first
-        // missing byte, with the validator. A new connection may split a segment before its own
-        // request goes out, so a request may end early, but never asks for bytes the download has.
+        // Resume's first request is the first segment's missing part. Each segment's missing part
+        // is asked for from its first missing byte, with the validator. A new connection may split
+        // a segment before its own request goes out, so a request may end early, but never asks
+        // for bytes the download has.
         let resumed = Array(server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused))
-        #expect(resumed.first?.headers["range"] == "bytes=0-0")
+        let first = try #require(paused.segments.first)
+        #expect(resumed.first?.headers["range"] == "bytes=\(first.start + first.receivedBytes)-\(first.end)")
         #expect(paused.segments.count == 2)
-        let segmentRequests = resumed.dropFirst()
+        let segmentRequests = resumed
         #expect(segmentRequests.allSatisfy { $0.headers["if-range"] == "\"v1\"" })
         let asked = segmentRequests.compactMap { $0.headers["range"].flatMap(ClosedRangeHeader.init) }
         #expect(ClosedRangeHeader.eachMissingPartIsAskedFromItsStart(paused.segments, asked: asked))
@@ -167,9 +169,36 @@ struct PauseResumeTests {
         let afterPause = server.requests[requestsWhenPaused...].map(\.path)
         #expect(afterPause.first == "/once")
         #expect(afterPause.dropFirst().allSatisfy { $0 == "/signed.bin" })
-        // The segments were kept: no request starts the file again from byte 0 except the probe.
-        #expect(!server.requests[requestsWhenPaused...].contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true && $0.headers["range"] != "bytes=0-0" })
+        // The segments were kept: no request starts the file again from byte 0.
+        #expect(!server.requests[requestsWhenPaused...].contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
         #expect(try TestFiles.sha256(of: folder.appending(path: "signed.bin")) == TestFiles.sha256(data))
+    }
+
+    /// Resume's first request stays open for its segment. Opening all connections at once still
+    /// sends the other segment's request only after it, on a host that allows one connection.
+    @Test func resumingAllAtOnceOnAHostThatAllowsOneConnectionIsNeverRefused() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: Self.size, seed: 43)
+        let file = TestServer.File(data: data, holdAfterBytes: Self.held, eTag: "\"o1\"")
+        var options = RequestOptions()
+        options.openExtraConnections = .allAtOnce
+        let (engine, id, folder) = try await startHeld(server, file: file, at: "/one.iso", options: options)
+        await engine.pause(id)
+
+        // From here on the server allows one reply at a time, and the first segment's rest trickles.
+        var limited = file
+        limited.maxParallel = 1
+        limited.throttle = .init(rangeStart: Self.held, bytesPerSecond: 4 * 1024 * 1024)
+        server.serve(limited, at: "/one.iso")
+        server.releaseHeldResponses()
+        await engine.configuration.hostLimits.updateLimit(for: "127.0.0.1:\(server.port)") { _ in 1 }
+        await engine.resume(id)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "one.iso")) == TestFiles.sha256(data))
+        #expect(server.refusals(at: "/one.iso") == 0)
+        #expect(server.peakParallel(at: "/one.iso") == 1)
     }
 
     @Test func resumeFailsAsLinkExpiredWhenNeitherLinkWorks() async throws {
@@ -201,11 +230,80 @@ struct PauseResumeTests {
         await engine.pause(id)
         server.serve(.init(data: new, eTag: "\"new\""), at: "/report.pdf")
         server.releaseHeldResponses()
+        let requestsWhenPaused = server.requests.count
         await engine.resume(id)
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "report.pdf")) == TestFiles.sha256(new))
+        // Resume's first request carried the old validator and got the new file with 200. That
+        // reply was the new version's first segment, so nothing asks for byte 0 again, and every
+        // later request carries the new validator.
+        let resumed = server.requests[requestsWhenPaused...]
+        #expect(resumed.first?.headers["if-range"] == "\"old\"")
+        #expect(!resumed.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
+        #expect(resumed.dropFirst().allSatisfy { $0.headers["if-range"] == "\"new\"" })
+    }
+
+    enum ChangeWhilePaused: CaseIterable, Sendable, CustomTestStringConvertible {
+        case rangesStopped
+        case shrankBelowTheMissingPart
+        case grewWithTheSameValidator
+        case rangeRepliesEncoded
+
+        var testDescription: String {
+            switch self {
+            case .rangesStopped: "the server stopped serving ranges"
+            case .shrankBelowTheMissingPart: "the file shrank below the missing part"
+            case .grewWithTheSameValidator: "the file grew and kept its validator"
+            case .rangeRepliesEncoded: "range replies became encoded"
+            }
+        }
+
+        func file(was old: Data) -> TestServer.File {
+            switch self {
+            case .rangesStopped:
+                .init(data: TestServer.makeData(size: 3 * 1024 * 1024, seed: 46), supportsRanges: false, eTag: "\"r2\"")
+            case .shrankBelowTheMissingPart:
+                .init(data: TestServer.makeData(size: 128 * 1024, seed: 47), eTag: "\"r1\"")
+            case .grewWithTheSameValidator:
+                .init(data: TestServer.makeData(size: 5 * 1024 * 1024, seed: 48), eTag: "\"r1\"")
+            case .rangeRepliesEncoded:
+                .init(data: old, eTag: "\"r1\"", rangeReplyHeaders: ["Content-Encoding": "gzip"])
+            }
+        }
+    }
+
+    /// Resume's first request can't continue the download, so it starts over with what the server
+    /// now serves. A 200 is read as the new file at once. Anything else asks for the whole file
+    /// with `bytes=0-`, which falls back to one connection when ranges don't work.
+    @Test(arguments: ChangeWhilePaused.allCases)
+    func aResumeThatCantContinueStartsOver(_ change: ChangeWhilePaused) async throws {
+        let server = try await TestServer()
+        let old = TestServer.makeData(size: Self.size, seed: 45)
+        let (engine, id, folder) = try await startHeld(
+            server, file: .init(data: old, holdAfterBytes: Self.held, eTag: "\"r1\""), at: "/changing.bin"
+        )
+        await engine.pause(id)
+        let now = change.file(was: old)
+        server.serve(now, at: "/changing.bin")
+        server.releaseHeldResponses()
+        let requestsWhenPaused = server.requests.count
+        await engine.resume(id)
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "changing.bin")) == TestFiles.sha256(now.data))
+        let resumed = server.requests[requestsWhenPaused...].map { $0.headers["range"] }
+        #expect(server.requests[requestsWhenPaused].headers["if-range"] == "\"r1\"")
+        switch change {
+        case .rangesStopped:
+            #expect(resumed.count == 1)
+        case .shrankBelowTheMissingPart, .grewWithTheSameValidator:
+            #expect(resumed.dropFirst().first == "bytes=0-")
+        case .rangeRepliesEncoded:
+            #expect(Array(resumed.dropFirst()) == ["bytes=0-", nil])
+        }
     }
 
     @Test(arguments: [nil, "W/\"weak\""] as [String?])
@@ -223,10 +321,11 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "notes.zip")) == TestFiles.sha256(data))
-        // A changed file can't be detected, so the download starts again from byte 0 and splits
-        // again.
+        // A changed file can't be detected, so the download starts again as a new one: its first
+        // request asks for the whole file, and it splits again.
+        #expect(server.requests[requestsWhenPaused].headers["range"] == "bytes=0-")
         let resumedStarts = Set(server.requests[requestsWhenPaused...].compactMap { request -> Int? in
-            guard let range = request.headers["range"], range != "bytes=0-0" else { return nil }
+            guard let range = request.headers["range"] else { return nil }
             return Int(range.dropFirst("bytes=".count).prefix { $0 != "-" })
         })
         #expect(resumedStarts.contains(0))
