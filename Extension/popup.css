@@ -40,3 +40,20 @@ h1 {
 button {
   margin-top: 12px;
 }
+
+#catching {
+  border-top: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#never-caught {
+  color: GrayText;
+  margin: 12px 0 0;
+}

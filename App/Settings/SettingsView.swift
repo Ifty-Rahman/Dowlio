@@ -1,3 +1,4 @@
+import DowlioConnect
 import DowlioCore
 import DowlioLibrary
 import ServiceManagement
@@ -17,7 +18,7 @@ struct SettingsView: View {
             ComingSoon(text: "Dowlio uses your Mac's network and proxy settings. More network options come in a later release.")
                 .tabItem { Label("Network", systemImage: "network") }
                 .tag("network")
-            ComingSoon(text: "The Dowlio browser extension, which catches downloads you click in Chrome, Arc, Brave and Edge, comes in a later release.")
+            BrowsersSettings(model: model)
                 .tabItem { Label("Browsers", systemImage: "globe") }
                 .tag("browsers")
         }
@@ -257,6 +258,40 @@ private struct ConnectionsSettings: View {
                 HStack {
                     Text(retries == 1 ? "1 time" : "\(retries) times").monospacedDigit()
                     Stepper("Retry a failed connection", value: $retries, in: 0...10).labelsHidden()
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollIndicators(.never)
+    }
+}
+
+private struct BrowsersSettings: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Catch downloads", isOn: $model.catchPreferences.catches)
+            } footer: {
+                Text("Downloads you start in a browser with Dowlio Connect finish in Dowlio. When Dowlio can't take one, the browser keeps it.")
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Never catch on these sites") {
+                if model.catchPreferences.neverCatch.isEmpty {
+                    Text("Sites you add with Never catch on this site, in Dowlio Connect, appear here.")
+                        .font(DowlioDesign.TypeRole.detail)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.catchPreferences.neverCatch, id: \.self) { site in
+                        HStack {
+                            Text(site)
+                            Spacer()
+                            Button("Remove") { model.catchPreferences.catchAgain(site) }
+                                .accessibilityLabel("Remove \(site)")
+                        }
+                    }
                 }
             }
         }

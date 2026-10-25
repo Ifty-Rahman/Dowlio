@@ -83,7 +83,7 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       onChanged: { addListener: (listener) => changedListeners.push(listener) },
       async create(item) {
         createdListeners.forEach((listener) => listener(item));
-        await flush();
+        for (let turn = 0; turn < 3; turn += 1) await flush();
       },
       async change(delta) {
         changedListeners.forEach((listener) => listener(delta));

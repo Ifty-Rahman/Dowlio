@@ -1,3 +1,5 @@
+import { hostOf, matchesSite } from "./catching.js";
+
 export function popupText(status) {
   switch (status) {
     case "connected":
@@ -13,4 +15,20 @@ export function popupText(status) {
     default:
       return { headline: "Dowlio isn't running", detail: "Open Dowlio, and Dowlio Connect connects on its own." };
   }
+}
+
+export function catchControls({ status, catching, tabUrl }) {
+  if (status !== "connected") return { shown: false };
+  const catches = catching?.catches !== false;
+  const neverCatch = catching?.neverCatch ?? [];
+  const site = /^https?:/i.test(tabUrl ?? "") ? hostOf(tabUrl) : "";
+  if (!site) return { shown: true, catches, site: null };
+  const neverCaught = matchesSite(site, neverCatch);
+  return {
+    shown: true,
+    catches,
+    site,
+    neverCaught,
+    siteText: neverCaught ? `Downloads from ${site} stay in this browser.` : `Never catch on ${site}`,
+  };
 }

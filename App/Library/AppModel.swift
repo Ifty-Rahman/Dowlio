@@ -37,6 +37,14 @@ final class AppModel {
     private let catchNotifier = CatchNotifier()
     private var catchGrouper = CatchGrouper()
     var revealing: [DownloadID]?
+    var catchPreferences = UserDefaults.standard.catchPreferences {
+        didSet {
+            guard catchPreferences != oldValue else { return }
+            UserDefaults.standard.catchPreferences = catchPreferences
+            preferenceUpdates.continuation.yield(catchPreferences)
+        }
+    }
+    private let preferenceUpdates = AsyncStream<CatchPreferences>.makeStream()
     private(set) var freeSpace: Int64?
 
     private let library: Library?
@@ -89,7 +97,7 @@ final class AppModel {
     private func startConnectServer(store: DownloadStore, library: Library) {
         let catcher = Catcher(library: library, settings: { AppModel.currentSettings() })
         let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
-        let server = ConnectServer(store: store, vault: vault, catcher: catcher) { request in
+        let server = ConnectServer(store: store, vault: vault, catcher: catcher, preferences: catchPreferences) { request in
             await MainActor.run { PairingAlert.ask(request) }
         }
         connectServer = server
@@ -97,6 +105,18 @@ final class AppModel {
         Task { [weak self] in
             for await caught in server.catches {
                 self?.announce(caught)
+            }
+        }
+        Task { [weak self] in
+            for await change in server.preferenceChanges {
+                guard let self else { return }
+                catchPreferences = change.applied(to: catchPreferences)
+            }
+        }
+        let updates = preferenceUpdates.stream
+        Task {
+            for await preferences in updates {
+                await server.publish(preferences)
             }
         }
     }

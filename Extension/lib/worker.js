@@ -13,6 +13,14 @@ export function browserName(navigator) {
   return named ?? "Chromium";
 }
 
+function catchingFrom(value) {
+  const sites = Array.isArray(value?.neverCatch) ? value.neverCatch : [];
+  return {
+    catches: value?.catches !== false,
+    neverCatch: sites.filter((site) => typeof site === "string").map((site) => site.toLowerCase()),
+  };
+}
+
 export function startWorker({ chrome, WebSocket, timers, navigator, random = Math.random, ports = PORTS, now = Date.now }) {
   const storage = chrome.storage.local;
   const version = chrome.runtime.getManifest().version;
@@ -23,6 +31,10 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   let reconnectAtOnce = false;
   let requests = 0;
   let connected = false;
+  let preferences = { catches: true, neverCatch: [] };
+  const loaded = storage.get("catching").then(({ catching }) => {
+    if (catching) preferences = catchingFrom(catching);
+  });
   const pending = new Map();
 
   async function setStatus(status) {
@@ -111,6 +123,11 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         await storage.remove("token");
         reconnectAtOnce = true;
         break;
+      case "settings.update":
+        await loaded;
+        preferences = catchingFrom(message);
+        await storage.set({ catching: preferences });
+        break;
       case "browser.download":
         await catching.downloadInBrowser(message.url);
         break;
@@ -182,6 +199,10 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   });
 
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "settings.change") {
+      if (connected) send("settings.change", { catches: message.catches, neverCatchSite: message.neverCatchSite });
+      return;
+    }
     if (message?.type !== "pair.retry") return;
     storage.remove("code").then(() => storage.set({ status: "pairing" })).then(() => {
       if (socket?.readyState === WebSocket.OPEN) askToPair();
@@ -192,7 +213,11 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     chrome,
     navigator,
     now,
-    link: { isConnected: () => connected && socket?.readyState === WebSocket.OPEN, request },
+    link: {
+      isConnected: () => connected && socket?.readyState === WebSocket.OPEN,
+      request,
+      preferences: () => loaded.then(() => preferences),
+    },
   });
 
   connect();

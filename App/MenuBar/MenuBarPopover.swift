@@ -51,6 +51,16 @@ struct MenuBarPopover: View {
                 }
             }
             HStack {
+                Text("Catch browser downloads")
+                    .accessibilityHidden(true)
+                Spacer()
+                Toggle("Catch browser downloads", isOn: catches)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .accessibilityLabel("Catch browser downloads")
+            }
+            HStack {
                 Button("Pause All") { model.pauseAll() }
                     .disabled(!summary.canPauseAll)
                 Button("Add Link…") { panel.showsQuickAdd = true }
@@ -63,6 +73,10 @@ struct MenuBarPopover: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
+    }
+
+    private var catches: Binding<Bool> {
+        Binding(get: { model.catchPreferences.catches }, set: { model.catchPreferences.catches = $0 })
     }
 
     private var moreMenu: some View {

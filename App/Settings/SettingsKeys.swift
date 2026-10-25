@@ -1,3 +1,4 @@
+import DowlioConnect
 import DowlioCore
 import DowlioLibrary
 import Foundation
@@ -17,6 +18,8 @@ enum SettingsKey {
     static let notifiesWhenFinished = "notifiesWhenFinished"
     static let thenAction = "thenAction"
     static let hasSeenWelcome = "hasSeenWelcome"
+    static let catchesDownloads = "catchesDownloads"
+    static let neverCatchSites = "neverCatchSites"
 }
 
 extension UserDefaults {
@@ -39,6 +42,16 @@ extension UserDefaults {
             dock: flag(SettingsKey.showsInDock) ?? true,
             startsInMenuBar: flag(SettingsKey.startsInMenuBar) ?? false
         )
+    }
+
+    var catchPreferences: CatchPreferences {
+        get {
+            CatchPreferences(catches: flag(SettingsKey.catchesDownloads) ?? true, neverCatch: stringArray(forKey: SettingsKey.neverCatchSites) ?? [])
+        }
+        set {
+            set(newValue.catches, forKey: SettingsKey.catchesDownloads)
+            set(newValue.neverCatch, forKey: SettingsKey.neverCatchSites)
+        }
     }
 
     /// `nil` when unset. Values can arrive as text, as from a launch argument, so the defaults

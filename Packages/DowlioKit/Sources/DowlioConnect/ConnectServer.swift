@@ -35,6 +35,10 @@ public actor ConnectServer {
     private var recentPairingRequests: [Date] = []
     private var sessions: [UUID: Session] = [:]
     private let caught: AsyncStream<CaughtDownload>.Continuation
+    private var preferences: CatchPreferences
+    private let changeRequests: AsyncStream<CatchPreferenceChange>.Continuation
+
+    public nonisolated let preferenceChanges: AsyncStream<CatchPreferenceChange>
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -45,6 +49,7 @@ public actor ConnectServer {
         now: @escaping @Sendable () -> Date = Date.init,
         catcher: Catcher? = nil,
         catchDeadline: Duration = .seconds(4),
+        preferences: CatchPreferences = CatchPreferences(),
         approve: @escaping @Sendable (PairingRequest) async -> Bool
     ) {
         self.catcher = catcher
@@ -54,7 +59,17 @@ public actor ConnectServer {
         self.vault = vault
         self.now = now
         self.approve = approve
+        self.preferences = preferences
         (catches, caught) = AsyncStream.makeStream()
+        (preferenceChanges, changeRequests) = AsyncStream.makeStream()
+    }
+
+    public func publish(_ preferences: CatchPreferences) {
+        guard preferences != self.preferences else { return }
+        self.preferences = preferences
+        for session in sessions.values where session.isOpen && session.pairing != nil {
+            send(.settingsUpdate(preferences), to: session)
+        }
     }
 
     public func start() async throws -> UInt16 {
@@ -156,6 +171,7 @@ public actor ConnectServer {
             }
             session.pairing = pairing
             send(.helloAccepted.replying(to: requestID), to: session)
+            send(.settingsUpdate(preferences), to: session)
         case .ping:
             if let pairing = session.pairing { markSeen(pairing) }
             send(.pong.replying(to: requestID), to: session)
@@ -165,6 +181,9 @@ public actor ConnectServer {
                 let reply = await answer(offer, from: session)
                 send(reply.replying(to: requestID), to: session)
             }
+        case let .settingsChange(change):
+            guard session.pairing != nil else { return close(session) }
+            changeRequests.yield(change)
         case .unknown:
             guard session.pairing != nil else { return close(session) }
             send(Outgoing.error("unknownType").replying(to: requestID), to: session)

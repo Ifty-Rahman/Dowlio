@@ -13,6 +13,22 @@ function sameLink(url) {
   }
 }
 
+export function hostOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+export function matchesSite(host, sites) {
+  return sites.some((site) => host === site || host.endsWith(`.${site}`));
+}
+
+function isNeverCaught(item, sites) {
+  return [item.url, item.finalUrl, item.referrer].map(hostOf).some((host) => host && matchesSite(host, sites));
+}
+
 function baseName(path) {
   return path.split(/[\\/]/).pop();
 }
@@ -55,6 +71,8 @@ export function startCatching({ chrome, link, navigator, now = Date.now }) {
     if (item.byExtensionId === chrome.runtime.id || wasHandedBack(item.url)) return;
     if (!isWebLink(item.url) || !isWebLink(source)) return;
     if (item.incognito || !link.isConnected()) return;
+    const { catches, neverCatch } = await link.preferences();
+    if (!catches || isNeverCaught(item, neverCatch)) return;
     const named = item.filename ? Promise.resolve({ path: item.filename }) : chosenPath(item.id);
     let paused = true;
     await downloads.pause(item.id).catch(() => {

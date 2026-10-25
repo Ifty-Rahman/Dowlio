@@ -96,6 +96,7 @@ struct ConnectServerTests {
         let client = try await fixture.client()
         try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
         _ = try await client.receive()
+        _ = try await client.receive()
         clock.advance(by: 90)
 
         try await client.send(["v": 1, "type": "ping", "requestId": "p1"])
@@ -111,6 +112,7 @@ struct ConnectServerTests {
         let token = try await fixture.pairedToken()
         let client = try await fixture.client()
         try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        _ = try await client.receive()
         _ = try await client.receive()
 
         try await client.send(["v": 1, "type": "teleport", "requestId": "u1"])
@@ -135,6 +137,7 @@ struct ConnectServerTests {
         let token = try await fixture.pairedToken()
         let client = try await fixture.client()
         try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        _ = try await client.receive()
         _ = try await client.receive()
 
         try await client.send(["v": 1, "type": "ping", "padding": String(repeating: "x", count: 300 * 1024)])

@@ -5,6 +5,7 @@ enum Incoming: Equatable {
     case hello(token: String, version: String)
     case ping
     case catchOffer(CatchOffer)
+    case settingsChange(CatchPreferenceChange)
     case unknown(type: String)
 }
 
@@ -50,6 +51,11 @@ struct Envelope {
                 url: url, finalURL: link("finalUrl"), referrer: link("referrer"),
                 mimeType: text("mime"), userAgent: text("userAgent"), browserPath: browserPath
             ))
+        case "settings.change":
+            let catches = object["catches"] as? Bool
+            let site = text("neverCatchSite")
+            guard catches != nil || site != nil else { return nil }
+            message = .settingsChange(CatchPreferenceChange(catches: catches, neverCatchSite: site))
         default:
             message = .unknown(type: type)
         }
@@ -63,6 +69,8 @@ struct Outgoing: Encodable {
     var token: String?
     var reason: String?
     var url: String?
+    var catches: Bool?
+    var neverCatch: [String]?
 
     static func pairApproved(token: String) -> Outgoing { Outgoing(type: "pair.approved", token: token) }
     static func pairRefused(_ reason: String) -> Outgoing { Outgoing(type: "pair.refused", reason: reason) }
@@ -71,6 +79,9 @@ struct Outgoing: Encodable {
     static let pong = Outgoing(type: "pong")
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
+    static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
+        Outgoing(type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch)
+    }
     static func browserDownload(_ link: URL) -> Outgoing { Outgoing(type: "browser.download", url: link.absoluteString) }
     static func catchDeclined(_ reason: CatchDeclineReason) -> Outgoing { Outgoing(type: "catch.declined", reason: reason.rawValue) }
 
