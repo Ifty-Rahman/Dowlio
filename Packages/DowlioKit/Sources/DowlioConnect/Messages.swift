@@ -145,8 +145,6 @@ struct Outgoing: Encodable {
     var token: String?
     var reason: String?
     var url: String?
-    var signIn: Bool?
-    var noSignIn: [String]?
     var catches: Bool?
     var neverCatch: [String]?
 
@@ -162,8 +160,7 @@ struct Outgoing: Encodable {
     static let linkReceived = Outgoing(type: "link.received")
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(
-            type: "settings.update", signIn: preferences.sharesSignIn, noSignIn: preferences.noSignIn,
-            catches: preferences.catches, neverCatch: preferences.neverCatch
+            type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch
         )
     }
     static func browserDownload(_ link: URL, reason: CatchDeclineReason? = nil) -> Outgoing {

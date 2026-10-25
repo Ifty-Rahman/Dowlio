@@ -63,7 +63,7 @@ struct DownloadRowView: View {
             actionButton("Pause", symbol: "pause.fill") { actions?.pause(row) }
         case .paused:
             actionButton("Resume", symbol: "play.fill") { actions?.resume(row) }
-                .disabled(row.lostSignIn)
+                .disabled(row.lostCookies)
         case .failed:
             actionButton("Retry", symbol: "arrow.clockwise") { actions?.retry(row) }
         case .completed:

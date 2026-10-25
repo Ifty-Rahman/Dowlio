@@ -79,7 +79,7 @@ struct NewDownloadTests {
     func aLinkThatNeedsSignInSaysToSignInAndSendItAgain(error: DownloadError) {
         #expect(LinkStatus(failure: error) == LinkStatus(
             line: "Needs your sign-in",
-            reason: "This site only gives the file to signed-in visitors. Sign in to it in your browser, then use Send to Dowlio on the link, so Dowlio can use your sign-in.",
+            reason: "This site only gives the file to signed-in visitors. Sign in to it in your browser, then use Send to Dowlio on the link, so Dowlio gets the site's cookies.",
             tone: .problem
         ))
     }

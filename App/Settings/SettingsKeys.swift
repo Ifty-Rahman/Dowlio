@@ -20,9 +20,8 @@ enum SettingsKey {
     static let hasSeenWelcome = "hasSeenWelcome"
     static let catchesDownloads = "catchesDownloads"
     static let neverCatchSites = "neverCatchSites"
-    static let sharesSignIn = "sharesSignIn"
-    static let noSignInSites = "noSignInSites"
-    static let signInLog = "signInLog"
+    /// Keys of settings Dowlio no longer has.
+    static let retired = ["sharesSignIn", "noSignInSites", "signInLog"]
 }
 
 extension UserDefaults {
@@ -51,22 +50,17 @@ extension UserDefaults {
         get {
             CatchPreferences(
                 catches: flag(SettingsKey.catchesDownloads) ?? true,
-                neverCatch: stringArray(forKey: SettingsKey.neverCatchSites) ?? [],
-                sharesSignIn: flag(SettingsKey.sharesSignIn) ?? true,
-                noSignIn: stringArray(forKey: SettingsKey.noSignInSites) ?? []
+                neverCatch: stringArray(forKey: SettingsKey.neverCatchSites) ?? []
             )
         }
         set {
             set(newValue.catches, forKey: SettingsKey.catchesDownloads)
             set(newValue.neverCatch, forKey: SettingsKey.neverCatchSites)
-            set(newValue.sharesSignIn, forKey: SettingsKey.sharesSignIn)
-            set(newValue.noSignIn, forKey: SettingsKey.noSignInSites)
         }
     }
 
-    var signInLog: SignInLog {
-        get { data(forKey: SettingsKey.signInLog).flatMap { try? JSONDecoder().decode(SignInLog.self, from: $0) } ?? SignInLog() }
-        set { set(try? JSONEncoder().encode(newValue), forKey: SettingsKey.signInLog) }
+    func removeRetiredSettings() {
+        SettingsKey.retired.forEach(removeObject(forKey:))
     }
 
     /// `nil` when unset. Values can arrive as text, as from a launch argument, so the defaults

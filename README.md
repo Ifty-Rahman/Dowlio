@@ -92,9 +92,9 @@ To stop catching, turn off Catch downloads in the Dowlio Connect popup or in Set
 
 Right-click a link and choose Send to Dowlio. The link opens in Quick add from the menu bar, or in the New Download sheet when the menu bar icon is off. Dowlio checks it first and says so when the link is a web page rather than a file. Nothing downloads until you choose Download, and Cancel drops it.
 
-### Sites that need you signed in
+### Cookies
 
-With Use my browser's sign-in for downloads on, Dowlio Connect passes along a site's cookies with each download it hands over, so files behind a sign-in work. Dowlio keeps them in memory for that download only and never writes them to disk. Settings › Sign-in lists the sites Dowlio has used your sign-in for, and blocks any site you choose.
+Dowlio Connect passes along a site's cookies with each download it hands over, so files from sites you're logged in to work in Dowlio too. Dowlio keeps them in memory for that download only and never writes them to disk.
 
 ---
 
@@ -124,14 +124,12 @@ Other tools in the library:
 - **Downloads:** the download folder, sorting into category folders, and what to do when a file with the same name exists: keep both, replace or skip.
 - **Connections:** connections per download, downloads at once, how extra connections open, how many times to retry a failed connection, and Take over slow segments.
 - **Browsers:** each Chromium browser on your Mac and whether it's connected, with Add, Test and Reload. Also the Catch downloads switch and the sites that are never caught.
-- **Sign-in:** whether to use your browser's sign-in for downloads, the sites Dowlio has used it for, and the sites it must never use it on.
-- **Network:** Dowlio uses your Mac's network and proxy settings. More options come later.
 
 ---
 
 ## 🔒 Privacy
 
-Dowlio has no account and no tracking. It stores what it needs to resume a download and show your history, the sites you've used your sign-in on or blocked, and the sites you never catch on. It stores no page titles, no cookies and no request bodies. It does keep the page a download came from, because some servers only resume a download for the page that linked to it. Cookies from Dowlio Connect stay in memory for the one download that needs them.
+Dowlio has no account and no tracking. It stores what it needs to resume a download and show your history, and the sites you never catch on. It stores no page titles, no cookies and no request bodies. It does keep the page a download came from, because some servers only resume a download for the page that linked to it. Cookies from Dowlio Connect stay in memory for the one download that needs them.
 
 Dowlio Connect talks to Dowlio only on your Mac, at `127.0.0.1`. Dowlio refuses web pages that try to connect, and a browser can do nothing until you allow it with its code. Report a Problem opens a prefilled GitHub issue with only the app and macOS versions. It never includes your links, file names or hosts.
 

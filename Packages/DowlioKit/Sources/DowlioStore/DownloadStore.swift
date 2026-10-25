@@ -51,7 +51,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var allowsWorkStealing: Bool?
     /// When the download first started fetching, for how long it took.
     public var startedAt: Date?
-    public var usedSignIn: Bool?
+    public var usedCookies: Bool?
     public var originKind: String?
     public var originBrowser: String?
 
@@ -96,7 +96,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         referrer = options.referrer
         userAgent = options.userAgent
         maximumFailures = options.maximumFailures
-        usedSignIn = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
+        usedCookies = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
     }
 
     public var destination: Destination {
@@ -217,6 +217,11 @@ public final class DownloadStore: Sendable {
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "originKind", .text)
                 table.add(column: "originBrowser", .text)
+            }
+        }
+        migrator.registerMigration("used cookies") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.rename(column: "usedSignIn", to: "usedCookies")
             }
         }
         return migrator

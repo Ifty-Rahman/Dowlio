@@ -305,7 +305,7 @@ struct RelaunchTests {
         }
     }
 
-    @Test func aDownloadThatUsedTheBrowsersSignInWaitsToBeSentAgainAfterARelaunch() async throws {
+    @Test func aDownloadThatUsedTheBrowsersCookiesWaitsToBeSentAgainAfterARelaunch() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
         let held = 256 * 1024
@@ -327,13 +327,13 @@ struct RelaunchTests {
         try await Task.sleep(for: .milliseconds(200))
 
         #expect(restored.state == .paused)
-        #expect(restored.lostSignIn)
+        #expect(restored.lostCookies)
         #expect(restored.detailLine.hasSuffix("Send it again from the browser"))
         #expect(try await relaunched.library.row(id) { _ in true }.state == .paused)
         #expect(server.requests.count == requestsBefore)
     }
 
-    @Test func aDownloadWithoutCookiesHasNoSignInToLose() async throws {
+    @Test func aDownloadWithoutCookiesHasNoCookiesToLose() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
         server.serve(.init(data: TestServer.makeData(size: 1024 * 1024, seed: 216), holdAfterBytes: 0, eTag: "\"s2\""), at: "/public.iso")
@@ -342,7 +342,7 @@ struct RelaunchTests {
         await fixture.library.pause(id)
         let restored = try await fixture.relaunched().library.row(id) { _ in true }
 
-        #expect(!restored.lostSignIn)
+        #expect(!restored.lostCookies)
         server.releaseHeldResponses()
     }
 
@@ -435,7 +435,7 @@ struct RelaunchTests {
         _ = try await relaunched.library.row(publicID) { $0.state == .completed }
 
         #expect(server.requests.allSatisfy { $0.headers["referer"] == "https://example.com/page" })
-        #expect(try await relaunched.library.row(privateID) { _ in true }.lostSignIn)
+        #expect(try await relaunched.library.row(privateID) { _ in true }.lostCookies)
         let database = try String(decoding: Data(contentsOf: fixture.databaseURL), as: UTF8.self)
         #expect(!database.contains("secret"))
     }

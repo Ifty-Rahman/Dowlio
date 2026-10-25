@@ -16,9 +16,9 @@ public actor Library {
     private var inEngine: Set<DownloadID> = []
     /// Cookies never reach the store, so a download that hasn't started keeps them here until it
     /// does.
-    private var waitingSignIns: [DownloadID: SignIn] = [:]
+    private var waitingHandoffs: [DownloadID: BrowserHandoff] = [:]
     private var missingFiles: Set<DownloadID> = []
-    private var lostSignIns: Set<DownloadID> = []
+    private var lostCookies: Set<DownloadID> = []
     private var observers: [UUID: AsyncStream<[DownloadRow]>.Continuation] = [:]
     private var published: [DownloadRow]?
     private var following: Task<Void, Never>?
@@ -56,7 +56,7 @@ public actor Library {
             case .queued:
                 save(record)
             case .paused, .downloading, .failed:
-                if record.usedSignIn == true { lostSignIns.insert(id) }
+                if record.usedCookies == true { lostCookies.insert(id) }
                 if await restore(record) {
                     inEngine.insert(id)
                 } else {
@@ -104,7 +104,7 @@ public actor Library {
         record.origin = origin
         records[id] = record
         save(record)
-        if let signIn = SignIn(options) { waitingSignIns[id] = signIn }
+        if let handoff = BrowserHandoff(options) { waitingHandoffs[id] = handoff }
         publish()
         if state == .downloading { await startInEngine(id) }
         return id
@@ -130,7 +130,7 @@ public actor Library {
     /// Continues a Paused or Queued download, or queues it when the limit is reached. One that
     /// never reached the engine, or whose partial file is gone, starts from its link.
     public func resume(_ id: DownloadID) async {
-        guard let state = records[id]?.state, state == .paused || state == .queued, !lostSignIns.contains(id) else { return }
+        guard let state = records[id]?.state, state == .paused || state == .queued, !lostCookies.contains(id) else { return }
         await runOrQueue(id)
     }
 
@@ -199,7 +199,7 @@ public actor Library {
         snapshots[id] = nil
         inEngine.remove(id)
         starting.remove(id)
-        waitingSignIns[id] = nil
+        waitingHandoffs[id] = nil
         try? store.delete(id.rawValue)
         publish()
         await engine.cancel(id)
@@ -261,9 +261,9 @@ public actor Library {
     private func startInEngine(_ id: DownloadID) async {
         guard var record = records[id] else { return }
         var options = record.options
-        if let signIn = waitingSignIns.removeValue(forKey: id) {
-            options.cookies = signIn.cookies
-            options.browserRequest = signIn.browserRequest
+        if let handoff = waitingHandoffs.removeValue(forKey: id) {
+            options.cookies = handoff.cookies
+            options.browserRequest = handoff.browserRequest
         }
         record.state = .downloading
         if record.startedAt == nil { record.startedAt = now() }
@@ -398,7 +398,7 @@ public actor Library {
             isFileMissing: missingFiles.contains(id),
             wasSkipped: live?.wasSkipped ?? record.wasSkipped
         )
-        row.lostSignIn = lostSignIns.contains(id)
+        row.lostCookies = lostCookies.contains(id)
         row.origin = record.origin
         return row
     }
@@ -423,7 +423,8 @@ public actor Library {
     }
 }
 
-private struct SignIn {
+/// The cookies and request a download brought from the browser.
+private struct BrowserHandoff {
     let cookies: [Cookie]
     let browserRequest: BrowserRequest?
 

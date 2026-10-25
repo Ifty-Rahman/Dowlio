@@ -88,11 +88,6 @@ final class BrowserSetup {
         }
     }
 
-    func open(_ row: BrowserRow) {
-        guard let appURL = row.appURL else { return }
-        NSWorkspace.shared.openApplication(at: appURL, configuration: NSWorkspace.OpenConfiguration())
-    }
-
     func test(_ row: BrowserRow) {
         guard let link = row.link, testing.insert(row.name).inserted else { return }
         testResults[row.name] = nil

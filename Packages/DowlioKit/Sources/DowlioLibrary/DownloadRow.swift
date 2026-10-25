@@ -38,7 +38,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     public var completedAt: Date?
     /// A Completed download whose file is no longer where Dowlio put it.
     public var isFileMissing: Bool
-    public var lostSignIn = false
+    public var lostCookies = false
     public var origin: DownloadOrigin?
 
     public var originText: String? {
@@ -168,7 +168,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         case .downloading:
             let connections = activeConnections == 1 ? "1 connection" : "\(activeConnections) connections"
             return activeConnections > 0 ? "\(progressText) · \(connections)" : progressText
-        case .paused where lostSignIn:
+        case .paused where lostCookies:
             return "\(progressText) · Send it again from the browser"
         case .queued, .paused, .retrying:
             return progressText

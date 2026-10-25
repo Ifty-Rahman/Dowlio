@@ -1,7 +1,7 @@
 import { browserName } from "./browser.js";
 import { startCatching } from "./catching.js";
 import { startSending } from "./sending.js";
-import { startSignIn } from "./signin.js";
+import { startCookies } from "./cookies.js";
 
 export { browserName };
 
@@ -17,8 +17,6 @@ function catchingFrom(value) {
   return {
     catches: value?.catches !== false,
     neverCatch: list(value?.neverCatch),
-    signIn: value?.signIn !== false,
-    noSignIn: list(value?.noSignIn),
   };
 }
 
@@ -32,7 +30,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   let reconnectAtOnce = false;
   let requests = 0;
   let connected = false;
-  let preferences = { catches: true, neverCatch: [], signIn: true, noSignIn: [] };
+  let preferences = { catches: true, neverCatch: [] };
   let preferencesLoaded = false;
   const loaded = storage.get("catching").then(({ catching }) => {
     if (catching) preferences = catchingFrom(catching);
@@ -243,7 +241,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
       connectionWaiters.add(finish);
     });
   }
-  const signIn = startSignIn({ chrome, preferences: () => loaded.then(() => preferences) });
+  const cookies = startCookies({ chrome });
   const connection = {
     isConnected,
     whenConnected,
@@ -251,7 +249,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     release: (requestId) => send("catch.released", { requestId }),
     preferences: () => loaded.then(() => preferences),
     preferencesNow: () => (preferencesLoaded ? preferences : null),
-    cookiesFor: (url) => signIn.cookiesFor(url),
+    cookiesFor: (url) => cookies.cookiesFor(url),
   };
   const catching = startCatching({ chrome, navigator, now, link: connection });
 

@@ -60,7 +60,7 @@ private struct BrowserRowView: View {
                 case .needsReload:
                     Button("Reload") { setup.reload(row) }
                 case .notConnected:
-                    if row.appURL != nil { Button("Open the browser") { setup.open(row) } }
+                    Button("Add") { setup.add(row) }
                     testButton
                 case .notInstalled:
                     Button("Add") { setup.add(row) }

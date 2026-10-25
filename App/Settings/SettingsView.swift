@@ -8,22 +8,17 @@ import UserNotifications
 struct SettingsView: View {
     let model: AppModel
     @AppStorage("settingsTab") private var tab = "general"
+    private static let tabs: Set<String> = ["general", "downloads", "connections", "browsers"]
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: Binding(get: { Self.tabs.contains(tab) ? tab : "general" }, set: { tab = $0 })) {
             GeneralSettings(model: model).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
             DownloadsSettings(model: model).tabItem { Label("Downloads", systemImage: "arrow.down.circle") }.tag("downloads")
             ConnectionsSettings(model: model).tabItem { Label("Connections", systemImage: "point.3.connected.trianglepath.dotted") }
                 .tag("connections")
-            ComingSoon(text: "Dowlio uses your Mac's network and proxy settings. More network options come in a later release.")
-                .tabItem { Label("Network", systemImage: "network") }
-                .tag("network")
             BrowsersSettings(model: model)
                 .tabItem { Label("Browsers", systemImage: "globe") }
                 .tag("browsers")
-            SignInSettings(model: model)
-                .tabItem { Label("Sign-in", systemImage: "person.badge.key") }
-                .tag("signin")
         }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
@@ -41,6 +36,12 @@ private struct GeneralSettings: View {
         Form {
             Section {
                 PresenceToggles(model: model)
+                LabeledContent("Welcome") {
+                    Button("Show Welcome Again") {
+                        hasSeenWelcome = false
+                        model.showLibraryWindow()
+                    }
+                }
             }
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
@@ -57,17 +58,8 @@ private struct GeneralSettings: View {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
             }
-            Section {
-                LabeledContent("Welcome") {
-                    Button("Show Welcome Again") {
-                        hasSeenWelcome = false
-                        model.showLibraryWindow()
-                    }
-                }
-            }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
         .task { await checkNotifications() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await checkNotifications() }
@@ -169,18 +161,11 @@ private struct DownloadsSettings: View {
                 Text("Replace").tag(NameConflictPolicy.replace.rawValue)
                 Text("Skip").tag(NameConflictPolicy.skip.rawValue)
             }
-            Section {
-                LabeledContent("History") {
-                    Button("Clear History…") { confirmingClear = true }
-                }
-            } footer: {
-                Text("Removes completed downloads from the list. The files stay where they are.")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
+            LabeledContent("History") {
+                Button("Clear History…") { confirmingClear = true }
             }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { folderPath = folder.path }
         }
@@ -218,17 +203,22 @@ private struct ConnectionsSettings: View {
 
     var body: some View {
         Form {
-            Section {
-                LabeledContent("Connections per download") {
-                    Text("\(connections)").monospacedDigit()
+            LabeledContent {
+                HStack(spacing: DowlioDesign.Spacing.sm) {
+                    Slider(value: Binding(get: { Double(connections) }, set: { connections = Int($0.rounded()) }), in: 1...16, step: 1)
+                        .frame(width: 160)
+                        .accessibilityLabel("Connections per download")
+                        .accessibilityValue("\(connections)")
+                    Text("\(connections)").monospacedDigit().frame(minWidth: 18, alignment: .trailing)
                 }
-                Slider(value: Binding(get: { Double(connections) }, set: { connections = Int($0.rounded()) }), in: 1...16, step: 1)
-                    .accessibilityLabel("Connections per download")
-                    .accessibilityValue("\(connections)")
-            } footer: {
-                Text("8 to 16 is fastest. Servers that allow fewer are detected automatically.")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
+            } label: {
+                HStack(spacing: DowlioDesign.Spacing.xs) {
+                    Text("Connections per download")
+                    InfoButton(
+                        topic: "Connections per download",
+                        text: "8 to 16 is fastest. Servers that allow fewer are detected automatically."
+                    )
+                }
             }
             LabeledContent("Downloads at once") {
                 HStack {
@@ -267,8 +257,7 @@ private struct ConnectionsSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
     }
 }
 
@@ -280,31 +269,33 @@ private struct BrowsersSettings: View {
             if let setup = model.browserSetup {
                 Section {
                     BrowsersList(setup: setup)
-                } header: {
-                    Text("Browsers")
-                } footer: {
-                    Text("Add puts Dowlio Connect in a folder that stays put when Dowlio moves or updates.")
-                        .font(DowlioDesign.TypeRole.detail)
-                        .foregroundStyle(.secondary)
                 }
             }
             Section {
-                Toggle("Catch downloads", isOn: $model.catchPreferences.catches)
-            } footer: {
-                Text("Downloads you start in a browser with Dowlio Connect finish in Dowlio. When Dowlio can't take one, the browser keeps it.")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
-            }
-            Section("Never catch on these sites") {
+                Toggle(isOn: $model.catchPreferences.catches) {
+                    HStack(spacing: DowlioDesign.Spacing.xs) {
+                        Text("Catch downloads")
+                        InfoButton(
+                            topic: "Catch downloads",
+                            text: "Downloads you start in a browser with Dowlio Connect finish in Dowlio. When Dowlio can't take one, the browser keeps it."
+                        )
+                    }
+                }
                 if model.catchPreferences.neverCatch.isEmpty {
-                    Text("Sites you add with Never catch on this site, in Dowlio Connect, appear here.")
-                        .font(DowlioDesign.TypeRole.detail)
-                        .foregroundStyle(.secondary)
+                    LabeledContent {
+                        Text("No sites").foregroundStyle(.secondary)
+                    } label: {
+                        HStack(spacing: DowlioDesign.Spacing.xs) {
+                            Text("Never catch on")
+                            InfoButton(
+                                topic: "Never catch on",
+                                text: "Choose Never catch in Dowlio Connect's popup to keep a site's downloads in the browser."
+                            )
+                        }
+                    }
                 } else {
                     ForEach(model.catchPreferences.neverCatch, id: \.self) { site in
-                        HStack {
-                            Text(site)
-                            Spacer()
+                        LabeledContent("Never catch on \(site)") {
                             Button("Remove") { model.catchPreferences.catchAgain(site) }
                                 .accessibilityLabel("Remove \(site)")
                         }
@@ -312,21 +303,14 @@ private struct BrowsersSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
     }
 }
 
-private struct ComingSoon: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(DowlioDesign.TypeRole.body)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(DowlioDesign.Spacing.xxl)
-            .frame(maxWidth: .infinity, minHeight: 160)
+private extension View {
+    func settingsForm() -> some View {
+        formStyle(.grouped)
+            .scrollIndicators(.never)
     }
 }
 

@@ -39,8 +39,8 @@ export function lastDeclineText(decline, now = Date.now()) {
   if (!decline || now - decline.at > DECLINE_MEMORY) return null;
   const why = {
     needsSignIn: decline.hadCookies
-      ? "the site refused Dowlio, even with your sign-in."
-      : "the site refused Dowlio, and the browser had no sign-in for it.",
+      ? "the site refused Dowlio, even with your cookies."
+      : "the site refused Dowlio, and the browser had no cookies for it.",
     unsupported: "Dowlio can't download this kind of link.",
     error: "Dowlio couldn't reach the file.",
     noAnswer: "Dowlio didn't answer in time.",

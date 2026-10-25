@@ -37,15 +37,6 @@ final class AppModel {
     private let catchNotifier = CatchNotifier()
     private var catchGrouper = CatchGrouper()
     var revealing: [DownloadID]?
-    var signInLog = UserDefaults.standard.signInLog {
-        didSet { UserDefaults.standard.signInLog = signInLog }
-    }
-
-    func forgetSignIn(on host: String) {
-        signInLog.remove(host)
-        catchPreferences.signInAgain(host)
-    }
-
     var catchPreferences = UserDefaults.standard.catchPreferences {
         didSet {
             guard catchPreferences != oldValue else { return }
@@ -60,6 +51,7 @@ final class AppModel {
     private var connectServer: ConnectServer?
 
     init() {
+        UserDefaults.standard.removeRetiredSettings()
         do {
             let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
@@ -132,11 +124,6 @@ final class AppModel {
         Task { [weak self] in
             for await link in server.sentLinks {
                 self?.receive(link)
-            }
-        }
-        Task { [weak self] in
-            for await host in server.signInUses {
-                self?.signInLog.record(host, at: Date())
             }
         }
         let updates = preferenceUpdates.stream

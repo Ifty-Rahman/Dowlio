@@ -1,12 +1,10 @@
-import { hostOf, matchesSite } from "./catching.js";
+import { hostOf } from "./catching.js";
 
 export const MAX_COOKIE_BYTES = 100000;
 
-export function startSignIn({ chrome, preferences }) {
+export function startCookies({ chrome }) {
   async function cookiesFor(url) {
-    const host = hostOf(url ?? "");
-    const { signIn, noSignIn } = await preferences();
-    if (!host || !signIn || matchesSite(host, noSignIn)) return undefined;
+    if (!hostOf(url ?? "")) return undefined;
     const found = await chrome.cookies.getAll({ url }).catch(() => []);
     const kept = [];
     let bytes = 0;

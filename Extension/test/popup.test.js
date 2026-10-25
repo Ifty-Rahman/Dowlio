@@ -35,11 +35,11 @@ test("the popup says in plain words why the last download stayed in the browser"
   const at = now - 60_000;
   assert.equal(
     lastDeclineText({ host: "send.now", reason: "needsSignIn", hadCookies: true, at }, now),
-    "send.now stayed in the browser: the site refused Dowlio, even with your sign-in.",
+    "send.now stayed in the browser: the site refused Dowlio, even with your cookies.",
   );
   assert.equal(
     lastDeclineText({ host: "send.now", reason: "needsSignIn", hadCookies: false, at }, now),
-    "send.now stayed in the browser: the site refused Dowlio, and the browser had no sign-in for it.",
+    "send.now stayed in the browser: the site refused Dowlio, and the browser had no cookies for it.",
   );
   assert.equal(
     lastDeclineText({ host: "files.net", reason: "unsupported", at }, now),

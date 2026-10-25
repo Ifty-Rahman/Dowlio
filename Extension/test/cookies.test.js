@@ -49,23 +49,12 @@ test("a sent link carries its site's cookies", async () => {
   assert.deepEqual(sent(socket, "link.send")[0].cookies, [{ name: "session", value: "abc" }]);
 });
 
-test("a site the user blocked in Dowlio gets no cookies, and neither do its subdomains", async () => {
-  const { chrome, socket } = await connected({ settings: { signIn: true, noSignIn: ["example.com"] } });
-
-  await chrome.downloads.create(download("https://files.example.com/a.pdf"));
-  await chrome.downloads.create(download("https://other.org/b.pdf", 8));
-
-  const [blocked, allowed] = sent(socket, "catch.offer");
-  assert.equal(blocked.cookies, undefined);
-  assert.deepEqual(allowed.cookies, [{ name: "id", value: "yyy" }]);
-});
-
-test("with sign-in sharing off in Dowlio, no site gets cookies", async () => {
-  const { chrome, socket } = await connected({ settings: { signIn: false, noSignIn: [] } });
+test("an older Dowlio's sign-in switch and block list no longer stop cookies", async () => {
+  const { chrome, socket } = await connected({ settings: { signIn: false, noSignIn: ["example.com"] } });
 
   await chrome.downloads.create(download("https://example.com/private/a.pdf"));
 
-  assert.equal(sent(socket, "catch.offer")[0].cookies, undefined);
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "session", value: "abc" }]);
 });
 
 test("a site with no cookies sends none", async () => {
@@ -87,7 +76,7 @@ test("a huge cookie jar is trimmed so the message stays small", async () => {
   assert.ok(JSON.stringify(cookies).length < 110000);
 });
 
-test("a catch Dowlio declines for sign-in starts again in the browser quietly", async () => {
+test("a catch the site refused starts again in the browser quietly", async () => {
   const { chrome, socket } = await connected();
   await chrome.downloads.create(download("https://example.com/private/a.pdf"));
 

@@ -65,8 +65,6 @@ public actor ConnectServer {
     private let sent: AsyncStream<SentLink>.Continuation
 
     public nonisolated let sentLinks: AsyncStream<SentLink>
-    private let signedIn: AsyncStream<String>.Continuation
-    public nonisolated let signInUses: AsyncStream<String>
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -102,7 +100,6 @@ public actor ConnectServer {
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
         (sentLinks, sent) = AsyncStream.makeStream()
         (browserChanges, browserChange) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
-        (signInUses, signedIn) = AsyncStream.makeStream()
     }
 
     public func publish(_ preferences: CatchPreferences) {
@@ -231,7 +228,6 @@ public actor ConnectServer {
         case var .catchOffer(offer):
             guard let pairing = session.pairing else { return close(session) }
             offer.browser = (try? store.browserPairing(pairing))?.browserName
-            offer.cookies = usable(offer.cookies, for: offer.finalURL ?? offer.url)
             Task { await take(offer, from: session, replyingTo: requestID) }
         case .catchReleased:
             guard session.pairing != nil else { return close(session) }
@@ -239,7 +235,7 @@ public actor ConnectServer {
         case let .linkSend(url, referrer, browser, cookies, userAgent):
             guard let pairing = session.pairing else { return close(session) }
             let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
-            sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: usable(cookies, for: url), userAgent: userAgent))
+            sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, userAgent: userAgent))
             send(.linkReceived.replying(to: requestID), to: session)
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
@@ -345,12 +341,6 @@ public actor ConnectServer {
     private func connectedSession(preferring id: UUID) -> Session? {
         let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
         return connected.first { $0.id == id } ?? connected.first
-    }
-
-    private func usable(_ cookies: [Cookie], for url: URL) -> [Cookie] {
-        guard !cookies.isEmpty, let host = url.host(), preferences.allowsSignIn(for: host) else { return [] }
-        signedIn.yield(host.lowercased())
-        return cookies
     }
 
     public func downloadInBrowser(_ download: CaughtDownload) async -> Bool {

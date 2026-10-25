@@ -93,11 +93,6 @@ struct ConnectFixture {
         throw ConnectClientError.closed
     }
 
-    func nextSignInUse() async throws -> String {
-        for await host in server.signInUses { return host }
-        throw ConnectClientError.closed
-    }
-
     func nextCatch() async throws -> CaughtDownload {
         for await caught in server.catches { return caught }
         throw ConnectClientError.closed
