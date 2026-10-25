@@ -124,6 +124,21 @@ public struct RequestOptions: Equatable, Sendable {
     public var fileName: String?
 }
 
+public struct DownloadOrigin: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case caught
+        case sent
+    }
+
+    public var kind: Kind
+    public var browser: String?
+
+    public init(kind: Kind, browser: String?) {
+        self.kind = kind
+        self.browser = browser
+    }
+}
+
 /// One cookie a download sends, as the browser had it for the download's link.
 public struct Cookie: Equatable, Sendable {
     public var name: String

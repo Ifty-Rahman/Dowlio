@@ -143,6 +143,7 @@ public struct NewDownloadDraft: Equatable, Sendable {
     private var checks: [URL: (check: Check, headers: RequestOptions)] = [:]
     private var renamed: (url: URL, name: String)?
     private var cookiesByLink: [URL: [Cookie]] = [:]
+    private var originByLink: [URL: DownloadOrigin] = [:]
 
     public init(text: String, folder: URL) {
         self.text = text
@@ -158,11 +159,19 @@ public struct NewDownloadDraft: Equatable, Sendable {
         text = current.isEmpty ? more : "\(current)\n\(more)"
     }
 
-    public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = []) {
+    public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = [], browser: String? = nil) {
         if referrer.trimmingCharacters(in: .whitespaces).isEmpty, let page { referrer = page.absoluteString }
         if !cookies.isEmpty { cookiesByLink[link] = cookies }
+        originByLink[link] = DownloadOrigin(kind: .sent, browser: browser)
         guard !links.contains(link) else { return }
         append(link.absoluteString)
+    }
+
+    public mutating func merge(_ other: NewDownloadDraft) {
+        if referrer.trimmingCharacters(in: .whitespaces).isEmpty { referrer = other.referrer }
+        cookiesByLink.merge(other.cookiesByLink) { _, new in new }
+        originByLink.merge(other.originByLink) { _, new in new }
+        append(other.text)
     }
 
     public mutating func grantSignIn(origin: URL, cookies: [Cookie]) {
@@ -173,6 +182,10 @@ public struct NewDownloadDraft: Equatable, Sendable {
 
     private static func origin(of url: URL) -> String {
         "\(url.scheme?.lowercased() ?? "")://\(url.host()?.lowercased() ?? "")"
+    }
+
+    public func origin(for url: URL) -> DownloadOrigin? {
+        originByLink[url]
     }
 
     public func inspectionOptions(for url: URL) -> RequestOptions {
@@ -246,6 +259,7 @@ public struct NewDownloadDraft: Equatable, Sendable {
         let current = links
         checks = checks.filter { current.contains($0.key) }
         cookiesByLink = cookiesByLink.filter { current.contains($0.key) }
+        originByLink = originByLink.filter { current.contains($0.key) }
         let due = current.filter { url in
             guard let existing = checks[url] else { return true }
             return existing.headers != inspectionOptions(for: url)
@@ -264,6 +278,7 @@ public struct NewDownloadDraft: Equatable, Sendable {
         lhs.text == rhs.text && lhs.folder == rhs.folder && lhs.connections == rhs.connections
             && lhs.referrer == rhs.referrer && lhs.userAgent == rhs.userAgent && lhs.startImmediately == rhs.startImmediately
             && lhs.renamed?.url == rhs.renamed?.url && lhs.renamed?.name == rhs.renamed?.name
-            && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check) && lhs.cookiesByLink == rhs.cookiesByLink
+            && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check)
+            && lhs.cookiesByLink == rhs.cookiesByLink && lhs.originByLink == rhs.originByLink
     }
 }

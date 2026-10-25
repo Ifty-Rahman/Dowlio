@@ -10,6 +10,7 @@ public struct CatchOffer: Equatable, Sendable {
     public var userAgent: String?
     public var browserPath: URL?
     public var cookies: [Cookie] = []
+    public var browser: String?
 
     public init(
         url: URL, finalURL: URL? = nil, referrer: URL? = nil, mimeType: String? = nil, userAgent: String? = nil,
@@ -98,8 +99,12 @@ public struct Catcher: Sendable {
         }
         let library = library
         let chosenOptions = options
+        let offer = offer
         return .accept(fileName: options.fileName ?? inspection.fileName, totalBytes: inspection.totalBytes) {
-            await library.add(link, destination: destination, options: chosenOptions, startImmediately: true)
+            await library.add(
+                link, destination: destination, options: chosenOptions, startImmediately: true,
+                origin: DownloadOrigin(kind: .caught, browser: offer.browser)
+            )
         }
     }
 

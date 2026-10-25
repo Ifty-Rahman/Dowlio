@@ -33,6 +33,7 @@ struct CatchTests {
         #expect(reply["type"] as? String == "catch.accepted")
         #expect(reply["requestId"] as? String == "c1")
         #expect(row.fileName == "Report.pdf")
+        #expect(row.origin == DownloadOrigin(kind: .caught, browser: "Arc"))
         #expect(try TestFiles.sha256(of: fixture.dowlioFolder.appending(path: "Report.pdf")) == TestFiles.sha256(data))
         let probe = try #require(server.requests.first { $0.path == "/files/Report.pdf" })
         #expect(probe.headers["referer"] == "https://example.com/reports")

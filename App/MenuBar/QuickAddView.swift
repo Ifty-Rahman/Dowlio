@@ -43,7 +43,7 @@ struct QuickAddView: View {
             Button("Open Dowlio") {
                 panel.quickAdd = nil
                 close()
-                model.requestNewDownload(sheet.draft.text)
+                model.continueInWindow(sheet)
             }
             Spacer()
             Button("Cancel", role: .cancel) {

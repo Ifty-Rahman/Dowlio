@@ -93,13 +93,15 @@ public actor Library {
         _ url: URL,
         destination: Destination,
         options: RequestOptions = RequestOptions(),
-        startImmediately: Bool = true
+        startImmediately: Bool = true,
+        origin: DownloadOrigin? = nil
     ) async -> DownloadID {
         let id = DownloadID()
         let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
-        let record = StoredDownload(
+        var record = StoredDownload(
             id: id.rawValue, sourceURL: url, destination: destination, options: options, state: state, addedAt: now()
         )
+        record.origin = origin
         records[id] = record
         save(record)
         if !options.cookies.isEmpty { waitingCookies[id] = options.cookies }
@@ -392,6 +394,7 @@ public actor Library {
             wasSkipped: live?.wasSkipped ?? record.wasSkipped
         )
         row.lostSignIn = lostSignIns.contains(id)
+        row.origin = record.origin
         return row
     }
 

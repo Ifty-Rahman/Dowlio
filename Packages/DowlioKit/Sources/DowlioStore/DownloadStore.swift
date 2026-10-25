@@ -52,6 +52,19 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     /// When the download first started fetching, for how long it took.
     public var startedAt: Date?
     public var usedSignIn: Bool?
+    public var originKind: String?
+    public var originBrowser: String?
+
+    public var origin: DownloadOrigin? {
+        get {
+            guard let kind = originKind.flatMap(DownloadOrigin.Kind.init(rawValue:)) else { return nil }
+            return DownloadOrigin(kind: kind, browser: originBrowser)
+        }
+        set {
+            originKind = newValue?.kind.rawValue
+            originBrowser = newValue?.browser
+        }
+    }
 
     public init(
         id: UUID,
@@ -198,6 +211,12 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("used sign-in") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "usedSignIn", .boolean)
+            }
+        }
+        migrator.registerMigration("origin") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "originKind", .text)
+                table.add(column: "originBrowser", .text)
             }
         }
         return migrator

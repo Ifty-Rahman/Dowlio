@@ -63,7 +63,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             panel.quickAdd = model.makeNewDownload()
             panel.showsQuickAdd = true
         }
-        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies)
+        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser)
     }
 
     func grantSignIn(_ grant: SignInGrant) {

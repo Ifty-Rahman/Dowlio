@@ -2,6 +2,7 @@ import DowlioCore
 import DowlioLibrary
 import DowlioTestSupport
 import Foundation
+import SQLite3
 import Testing
 
 @Suite(.timeLimit(.minutes(1)))
@@ -257,6 +258,51 @@ struct RelaunchTests {
         await relaunched.library.resume(id)
         _ = try await relaunched.library.row(id) { $0.state == .completed }
         #expect(try TestFiles.sha256(of: fixture.folder.appending(path: "long.iso")) == TestFiles.sha256(data))
+    }
+
+    @Test func whereADownloadCameFromSurvivesARelaunchAndOthersHaveNone() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 218), eTag: "\"o1\""), at: "/caught.zip")
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 219), eTag: "\"o2\""), at: "/typed.zip")
+
+        let caught = await fixture.library.add(
+            server.url(for: "/caught.zip"), destination: .folder(fixture.folder), origin: DownloadOrigin(kind: .caught, browser: "Arc")
+        )
+        let typed = await fixture.add(server.url(for: "/typed.zip"))
+        _ = try await fixture.library.row(caught) { $0.state == .completed }
+        _ = try await fixture.library.row(typed) { $0.state == .completed }
+        let relaunched = try await fixture.relaunched()
+
+        #expect(try await relaunched.library.row(caught) { _ in true }.origin == DownloadOrigin(kind: .caught, browser: "Arc"))
+        #expect(try await relaunched.library.row(typed) { _ in true }.origin == nil)
+    }
+
+    @Test func historyFromBeforeOriginsWereRecordedOpensWithNoOrigin() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 220), eTag: "\"o3\""), at: "/old.zip")
+        let id = await fixture.add(server.url(for: "/old.zip"))
+        _ = try await fixture.library.row(id) { $0.state == .completed }
+        try Self.dropOriginColumns(fixture.databaseURL)
+
+        let relaunched = try await fixture.relaunched()
+
+        #expect(try await relaunched.library.row(id) { _ in true }.origin == nil)
+        #expect(try await relaunched.library.row(id) { _ in true }.fileName == "old.zip")
+    }
+
+    private static func dropOriginColumns(_ database: URL) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open(database.path, &handle) == SQLITE_OK else { throw LibraryTestError.rowsEnded }
+        defer { sqlite3_close(handle) }
+        for statement in [
+            "ALTER TABLE download DROP COLUMN originKind",
+            "ALTER TABLE download DROP COLUMN originBrowser",
+            "DELETE FROM grdb_migrations WHERE identifier = 'origin'",
+        ] {
+            guard sqlite3_exec(handle, statement, nil, nil, nil) == SQLITE_OK else { throw LibraryTestError.rowsEnded }
+        }
     }
 
     @Test func aDownloadThatUsedTheBrowsersSignInWaitsToBeSentAgainAfterARelaunch() async throws {

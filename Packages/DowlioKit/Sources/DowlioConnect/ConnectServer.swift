@@ -200,8 +200,9 @@ public actor ConnectServer {
         case .ping:
             if let pairing = session.pairing { markSeen(pairing) }
             send(.pong.replying(to: requestID), to: session)
-        case let .catchOffer(offer):
-            guard session.pairing != nil else { return close(session) }
+        case var .catchOffer(offer):
+            guard let pairing = session.pairing else { return close(session) }
+            offer.browser = (try? store.browserPairing(pairing))?.browserName
             Task {
                 let reply = await answer(offer, from: session)
                 send(reply.replying(to: requestID), to: session)

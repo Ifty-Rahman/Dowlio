@@ -63,6 +63,28 @@ struct NewDownloadDraftTests {
         #expect(draft.inspectionOptions(for: local).cookies == [Cookie(name: "session", value: "ok")])
     }
 
+    @Test func aSentLinkRemembersWhichBrowserSentItAndATypedOneDoesnt() {
+        var draft = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
+
+        draft.addSent(zip, referrer: nil, browser: "Brave")
+
+        #expect(draft.origin(for: zip) == DownloadOrigin(kind: .sent, browser: "Brave"))
+        #expect(draft.origin(for: iso) == nil)
+    }
+
+    @Test func aQuickAddDraftMergedIntoAnOpenSheetKeepsWhatEachSentLinkCarried() {
+        var sheet = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
+        var quickAdd = NewDownloadDraft(text: "", folder: folder)
+        quickAdd.addSent(zip, referrer: URL(string: "https://a.com/page"), cookies: [Cookie(name: "s", value: "1")], browser: "Arc")
+
+        sheet.merge(quickAdd)
+
+        #expect(sheet.links == [iso, zip])
+        #expect(sheet.origin(for: zip) == DownloadOrigin(kind: .sent, browser: "Arc"))
+        #expect(sheet.options(for: zip).cookies == [Cookie(name: "s", value: "1")])
+        #expect(sheet.referrer == "https://a.com/page")
+    }
+
     @Test func typedLinksCountAtOnce() {
         var draft = NewDownloadDraft(text: "", folder: folder)
         draft.text = "https://a.com/one.zip"

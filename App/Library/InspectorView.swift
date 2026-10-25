@@ -22,6 +22,11 @@ struct InspectorView: View {
                             .font(DowlioDesign.TypeRole.heading)
                             .lineLimit(2)
                             .truncationMode(.middle)
+                        if let originText = row.originText {
+                            Text(originText)
+                                .font(DowlioDesign.TypeRole.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     if !row.segments.isEmpty {
                         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {

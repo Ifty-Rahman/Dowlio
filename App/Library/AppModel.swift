@@ -176,7 +176,7 @@ final class AppModel {
         case .sheet, .openWindowThenSheet:
             showLibraryWindow()
             if newDownload == nil { newDownload = makeNewDownload() }
-            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies)
+            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser)
         }
     }
 
@@ -214,6 +214,15 @@ final class AppModel {
             newDownload.append(text)
         } else {
             newDownload = makeNewDownload(text)
+        }
+    }
+
+    func continueInWindow(_ quickAdd: NewDownloadModel) {
+        showLibraryWindow()
+        if let newDownload {
+            newDownload.draft.merge(quickAdd.draft)
+        } else {
+            newDownload = quickAdd
         }
     }
 
@@ -286,11 +295,11 @@ final class AppModel {
             options.userAgent = chosen.userAgent
             options.fileName = chosen.fileName
             options.cookies = chosen.cookies
-            return (url, options)
+            return (url, options, draft.origin(for: url))
         }
         perform { library in
-            for (url, options) in added {
-                await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately)
+            for (url, options, origin) in added {
+                await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately, origin: origin)
             }
         }
     }
