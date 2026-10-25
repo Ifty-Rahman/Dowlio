@@ -1,3 +1,4 @@
+import DowlioCore
 import Foundation
 
 enum Incoming: Equatable {
@@ -6,7 +7,9 @@ enum Incoming: Equatable {
     case ping
     case catchOffer(CatchOffer)
     case settingsChange(CatchPreferenceChange)
-    case linkSend(url: URL, referrer: URL?, browser: String?)
+    case linkSend(url: URL, referrer: URL?, browser: String?, cookies: [Cookie])
+    case signInGranted(origin: URL, cookies: [Cookie])
+    case signInSites([URL])
     case unknown(type: String)
 }
 
@@ -32,6 +35,22 @@ struct Envelope {
             guard let value = object[key] as? String, value.count <= 8192, let url = URL(string: value), Self.isWebLink(url) else { return nil }
             return url
         }
+        func cookies() -> [Cookie]? {
+            guard let raw = object["cookies"] else { return [] }
+            guard let list = raw as? [[String: Any]], list.count <= 300 else { return nil }
+            return list.compactMap { entry in
+                guard let name = entry["name"] as? String, let value = entry["value"] as? String,
+                      Self.isCookieName(name), Self.isCookieValue(value)
+                else { return nil }
+                return Cookie(name: name, value: value)
+            }
+        }
+        func origin(_ value: Any?) -> URL? {
+            guard let text = value as? String, text.count <= 300, let url = URL(string: text), Self.isWebLink(url),
+                  let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased()
+            else { return nil }
+            return URL(string: "\(scheme)://\(host)")
+        }
         switch type {
         case "pair.request":
             guard let code = text("code"), code.count == 4, code.allSatisfy(\.isNumber),
@@ -44,15 +63,21 @@ struct Envelope {
         case "ping":
             message = .ping
         case "catch.offer":
-            guard let url = link("url") else { return nil }
+            guard let url = link("url"), let cookies = cookies() else { return nil }
             let browserPath = text("browserPath").flatMap { $0.hasPrefix("/") ? URL(filePath: $0) : nil }
             message = .catchOffer(CatchOffer(
                 url: url, finalURL: link("finalUrl"), referrer: link("referrer"),
-                mimeType: text("mime"), userAgent: text("userAgent"), browserPath: browserPath
+                mimeType: text("mime"), userAgent: text("userAgent"), browserPath: browserPath, cookies: cookies
             ))
         case "link.send":
-            guard let url = link("url") else { return nil }
-            message = .linkSend(url: url, referrer: link("referrer"), browser: text("browser"))
+            guard let url = link("url"), let cookies = cookies() else { return nil }
+            message = .linkSend(url: url, referrer: link("referrer"), browser: text("browser"), cookies: cookies)
+        case "signin.granted":
+            guard let origin = origin(object["origin"]), let cookies = cookies() else { return nil }
+            message = .signInGranted(origin: origin, cookies: cookies)
+        case "signin.sites":
+            guard let list = object["origins"] as? [Any], list.count <= 500 else { return nil }
+            message = .signInSites(list.compactMap(origin))
         case "settings.change":
             let catches = object["catches"] as? Bool
             let site = text("neverCatchSite")
@@ -65,6 +90,14 @@ struct Envelope {
 }
 
 extension Envelope {
+    static func isCookieName(_ name: String) -> Bool {
+        !name.isEmpty && name.count <= 256 && name.unicodeScalars.allSatisfy { $0.value > 32 && $0.value < 127 && $0 != ";" && $0 != "=" }
+    }
+
+    static func isCookieValue(_ value: String) -> Bool {
+        value.count <= 4096 && value.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value != 127 && $0 != ";" }
+    }
+
     static func isWebLink(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), let host = url.host(), !host.isEmpty else { return false }
         return scheme == "http" || scheme == "https"
@@ -78,6 +111,7 @@ struct Outgoing: Encodable {
     var token: String?
     var reason: String?
     var url: String?
+    var origin: String?
     var catches: Bool?
     var neverCatch: [String]?
 
@@ -89,6 +123,8 @@ struct Outgoing: Encodable {
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
     static let linkReceived = Outgoing(type: "link.received")
+    static func signInNeeded(_ link: URL) -> Outgoing { Outgoing(type: "signin.needed", url: link.absoluteString) }
+    static func signInRevoke(_ origin: URL) -> Outgoing { Outgoing(type: "signin.revoke", origin: origin.absoluteString) }
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch)
     }

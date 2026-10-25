@@ -57,6 +57,7 @@ public final class TestServer: @unchecked Sendable {
         /// `Content-Length`, and a body that ends when the server closes the connection. Ranges
         /// are ignored.
         public var omitsLength: Bool
+        public var requiredCookie: String?
 
         public init(
             data: Data,
@@ -78,8 +79,10 @@ public final class TestServer: @unchecked Sendable {
             rangeReplyHeadersOnProbe: Bool = true,
             ignoresSegmentRanges: Bool = false,
             misreportOnlyRangeStartingAt: Int? = nil,
-            omitsLength: Bool = false
+            omitsLength: Bool = false,
+            requiredCookie: String? = nil
         ) {
+            self.requiredCookie = requiredCookie
             self.omitsLength = omitsLength
             self.misreportOnlyRangeStartingAt = misreportOnlyRangeStartingAt
             self.ignoresSegmentRanges = ignoresSegmentRanges
@@ -338,6 +341,10 @@ public final class TestServer: @unchecked Sendable {
 
         guard var file else {
             return send(status: "404 Not Found", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
+        if let cookie = file.requiredCookie, !(headers["cookie"] ?? "").split(separator: ";").contains(where: { $0.trimmingCharacters(in: .whitespaces) == cookie }) {
+            return send(status: "401 Unauthorized", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
         if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {

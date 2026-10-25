@@ -95,6 +95,7 @@ export function startCatching({ chrome, link, navigator, now = Date.now }) {
         totalBytes: item.totalBytes > 0 ? item.totalBytes : undefined,
         browserPath: path,
         userAgent: navigator?.userAgent,
+        cookies: await link.cookiesFor?.(source),
       },
       CATCH_TIMEOUT,
     );
@@ -103,6 +104,7 @@ export function startCatching({ chrome, link, navigator, now = Date.now }) {
       await downloads.erase({ id: item.id }).catch(() => {});
     } else {
       await downloads.resume(item.id).catch(() => {});
+      if (reply?.type === "catch.declined" && reply.reason === "needsSignIn") link.askForSignIn?.(source);
     }
   }
 

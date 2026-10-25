@@ -1,4 +1,5 @@
-import { catchControls, popupText } from "./lib/popup-text.js";
+import { catchControls, popupText, signInControls } from "./lib/popup-text.js";
+import { allowedOriginsIn } from "./lib/signin.js";
 
 const storage = chrome.storage.local;
 let tabUrl;
@@ -26,6 +27,39 @@ async function render() {
   neverCatch.dataset.site = controls.site ?? "";
 }
 
+async function renderSignIn() {
+  const allowedOrigins = allowedOriginsIn(await chrome.permissions.getAll());
+  const controls = signInControls({ tabUrl, allowedOrigins });
+  document.getElementById("signin").hidden = !controls.origin && allowedOrigins.length === 0;
+  const button = document.getElementById("use-signin");
+  button.hidden = !controls.origin || controls.allowed;
+  button.textContent = controls.buttonText ?? "";
+  button.dataset.origin = controls.origin ?? "";
+  document.getElementById("signin-heading").hidden = allowedOrigins.length === 0;
+  const list = document.getElementById("signin-sites");
+  list.replaceChildren(
+    ...allowedOrigins.map((origin) => {
+      const item = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = new URL(origin).hostname;
+      const remove = document.createElement("button");
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${new URL(origin).hostname}`);
+      remove.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "signin.remove", origin });
+      });
+      item.append(name, remove);
+      return item;
+    }),
+  );
+}
+
+document.getElementById("use-signin").addEventListener("click", (event) => {
+  const origin = event.target.dataset.origin;
+  if (!origin) return;
+  chrome.permissions.request({ permissions: ["cookies"], origins: [`${origin}/*`] }).then(renderSignIn, renderSignIn);
+});
+
 document.getElementById("retry").addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "pair.retry" });
 });
@@ -40,10 +74,15 @@ document.getElementById("never-catch").addEventListener("click", (event) => {
 });
 
 chrome.storage.onChanged.addListener(render);
+chrome.permissions.onRemoved.addListener(renderSignIn);
+chrome.permissions.onAdded.addListener(renderSignIn);
 chrome.tabs
   .query({ active: true, currentWindow: true })
   .then(([tab]) => {
     tabUrl = tab?.url;
   })
   .catch(() => {})
-  .finally(render);
+  .finally(() => {
+    render();
+    renderSignIn();
+  });

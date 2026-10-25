@@ -17,7 +17,10 @@ struct SendLinkTests {
 
         #expect(receipt["type"] as? String == "link.received")
         #expect(receipt["requestId"] as? String == "l1")
-        #expect(sent == SentLink(url: URL(string: "https://cdn.example.com/files/Report.pdf")!, referrer: URL(string: "https://example.com/reports")!, browser: "Arc"))
+        #expect(sent.url == URL(string: "https://cdn.example.com/files/Report.pdf"))
+        #expect(sent.referrer == URL(string: "https://example.com/reports"))
+        #expect(sent.browser == "Arc")
+        #expect(sent.cookies.isEmpty)
     }
 
     @Test func aSentLinkThatIsntAWebLinkIsRefused() async throws {

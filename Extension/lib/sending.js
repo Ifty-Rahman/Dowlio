@@ -25,7 +25,7 @@ export function startSending({ chrome, navigator, link }) {
     if (!link.isConnected()) return openDowlioFirst();
     const receipt = await link.request(
       "link.send",
-      { url: info.linkUrl, referrer: info.pageUrl ?? tab?.url, browser: browserName(navigator) },
+      { url: info.linkUrl, referrer: info.pageUrl ?? tab?.url, browser: browserName(navigator), cookies: await link.cookiesFor?.(info.linkUrl) },
       RECEIPT_TIMEOUT,
     );
     if (receipt?.type !== "link.received") noAnswer();

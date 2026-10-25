@@ -99,6 +99,12 @@ public struct LinkStatus: Equatable, Sendable {
     public init(failure: DownloadError) {
         let text = FailureText(failure)
         switch failure {
+        case .needsSignIn, .forbidden:
+            self.init(
+                line: "Needs your sign-in",
+                reason: "This site only gives the file to signed-in visitors. Use the Dowlio button in your browser and allow sign-in sharing for this site.",
+                tone: .problem
+            )
         case .network, .tooManyRetries:
             self.init(line: text.reason, reason: "Download Anyway still adds it, and Dowlio tries again when it starts.", tone: .problem)
         default:
@@ -136,6 +142,7 @@ public struct NewDownloadDraft: Equatable, Sendable {
 
     private var checks: [URL: (check: Check, headers: RequestOptions)] = [:]
     private var renamed: (url: URL, name: String)?
+    private var cookiesByLink: [URL: [Cookie]] = [:]
 
     public init(text: String, folder: URL) {
         self.text = text
@@ -151,10 +158,33 @@ public struct NewDownloadDraft: Equatable, Sendable {
         text = current.isEmpty ? more : "\(current)\n\(more)"
     }
 
-    public mutating func addSent(_ link: URL, referrer page: URL?) {
+    public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = []) {
         if referrer.trimmingCharacters(in: .whitespaces).isEmpty, let page { referrer = page.absoluteString }
+        if !cookies.isEmpty { cookiesByLink[link] = cookies }
         guard !links.contains(link) else { return }
         append(link.absoluteString)
+    }
+
+    public mutating func grantSignIn(origin: URL, cookies: [Cookie]) {
+        for link in links where Self.origin(of: link) == Self.origin(of: origin) {
+            cookiesByLink[link] = cookies
+        }
+    }
+
+    private static func origin(of url: URL) -> String {
+        "\(url.scheme?.lowercased() ?? "")://\(url.host()?.lowercased() ?? "")"
+    }
+
+    public func inspectionOptions(for url: URL) -> RequestOptions {
+        var options = inspectionOptions
+        options.cookies = cookiesByLink[url] ?? []
+        return options
+    }
+
+    public func options(for url: URL) -> RequestOptions {
+        var options = options
+        options.cookies = cookiesByLink[url] ?? []
+        return options
     }
 
     public var isSingleLink: Bool { links.count == 1 }
@@ -215,12 +245,12 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public mutating func linksToCheck() -> [URL] {
         let current = links
         checks = checks.filter { current.contains($0.key) }
-        let headers = inspectionOptions
+        cookiesByLink = cookiesByLink.filter { current.contains($0.key) }
         let due = current.filter { url in
             guard let existing = checks[url] else { return true }
-            return existing.headers != headers
+            return existing.headers != inspectionOptions(for: url)
         }
-        for url in due { checks[url] = (.checking, headers) }
+        for url in due { checks[url] = (.checking, inspectionOptions(for: url)) }
         return due
     }
 
@@ -234,6 +264,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         lhs.text == rhs.text && lhs.folder == rhs.folder && lhs.connections == rhs.connections
             && lhs.referrer == rhs.referrer && lhs.userAgent == rhs.userAgent && lhs.startImmediately == rhs.startImmediately
             && lhs.renamed?.url == rhs.renamed?.url && lhs.renamed?.name == rhs.renamed?.name
-            && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check)
+            && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check) && lhs.cookiesByLink == rhs.cookiesByLink
     }
 }

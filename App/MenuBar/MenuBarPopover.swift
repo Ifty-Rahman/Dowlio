@@ -112,7 +112,7 @@ private struct PopoverRow: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help("Pause")
-            } else if row.state == .paused {
+            } else if row.state == .paused, !row.lostSignIn {
                 Button("Resume", systemImage: "play.fill") { model.resume(row) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)

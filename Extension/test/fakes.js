@@ -115,6 +115,39 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
         for (let turn = 0; turn < 3; turn += 1) await flush();
       },
     },
+    permissions: {
+      granted: { permissions: new Set(), origins: new Set() },
+      addedListeners: [],
+      removedListeners: [],
+      async contains({ permissions = [], origins = [] }) {
+        const granted = chrome.permissions.granted;
+        return permissions.every((name) => granted.permissions.has(name)) && origins.every((origin) => granted.origins.has(origin));
+      },
+      async getAll() {
+        return { permissions: [...chrome.permissions.granted.permissions], origins: [...chrome.permissions.granted.origins] };
+      },
+      async allow({ permissions = [], origins = [] }) {
+        permissions.forEach((name) => chrome.permissions.granted.permissions.add(name));
+        origins.forEach((origin) => chrome.permissions.granted.origins.add(origin));
+        chrome.permissions.addedListeners.forEach((listener) => listener({ permissions, origins }));
+        for (let turn = 0; turn < 3; turn += 1) await flush();
+      },
+      async remove({ permissions = [], origins = [] }) {
+        permissions.forEach((name) => chrome.permissions.granted.permissions.delete(name));
+        origins.forEach((origin) => chrome.permissions.granted.origins.delete(origin));
+        chrome.permissions.removedListeners.forEach((listener) => listener({ permissions, origins }));
+        return true;
+      },
+      onAdded: { addListener: (listener) => chrome.permissions.addedListeners.push(listener) },
+      onRemoved: { addListener: (listener) => chrome.permissions.removedListeners.push(listener) },
+    },
+    cookies: {
+      jar: {},
+      async getAll({ url }) {
+        if (!chrome.permissions.granted.permissions.has("cookies")) throw new Error("no cookies permission");
+        return chrome.cookies.jar[new URL(url).origin] ?? [];
+      },
+    },
     notifications: {
       shown: [],
       create(id, options) {

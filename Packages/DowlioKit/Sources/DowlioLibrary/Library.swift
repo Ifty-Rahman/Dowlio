@@ -18,6 +18,7 @@ public actor Library {
     /// does.
     private var waitingCookies: [DownloadID: [Cookie]] = [:]
     private var missingFiles: Set<DownloadID> = []
+    private var lostSignIns: Set<DownloadID> = []
     private var observers: [UUID: AsyncStream<[DownloadRow]>.Continuation] = [:]
     private var published: [DownloadRow]?
     private var following: Task<Void, Never>?
@@ -55,6 +56,7 @@ public actor Library {
             case .queued:
                 save(record)
             case .paused, .downloading, .failed:
+                if record.usedSignIn == true { lostSignIns.insert(id) }
                 if await restore(record) {
                     inEngine.insert(id)
                 } else {
@@ -126,7 +128,7 @@ public actor Library {
     /// Continues a Paused or Queued download, or queues it when the limit is reached. One that
     /// never reached the engine, or whose partial file is gone, starts from its link.
     public func resume(_ id: DownloadID) async {
-        guard let state = records[id]?.state, state == .paused || state == .queued else { return }
+        guard let state = records[id]?.state, state == .paused || state == .queued, !lostSignIns.contains(id) else { return }
         await runOrQueue(id)
     }
 
@@ -366,7 +368,7 @@ public actor Library {
     private func row(for record: StoredDownload) -> DownloadRow {
         let id = DownloadID(rawValue: record.id)
         let live = snapshots[id]
-        return DownloadRow(
+        var row = DownloadRow(
             id: id,
             state: record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state),
             fileName: live?.fileName ?? record.fileName,
@@ -389,6 +391,8 @@ public actor Library {
             isFileMissing: missingFiles.contains(id),
             wasSkipped: live?.wasSkipped ?? record.wasSkipped
         )
+        row.lostSignIn = lostSignIns.contains(id)
+        return row
     }
 
     private static func rowState(for state: DownloadState) -> DownloadRow.State {

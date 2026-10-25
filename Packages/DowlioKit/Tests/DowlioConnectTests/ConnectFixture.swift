@@ -90,6 +90,16 @@ struct ConnectFixture {
         throw ConnectClientError.closed
     }
 
+    func nextSignInGrant() async throws -> SignInGrant {
+        for await grant in server.signInGrants { return grant }
+        throw ConnectClientError.closed
+    }
+
+    func nextAllowedSites() async throws -> [URL] {
+        for await sites in server.allowedSites { return sites }
+        throw ConnectClientError.closed
+    }
+
     func nextCatch() async throws -> CaughtDownload {
         for await caught in server.catches { return caught }
         throw ConnectClientError.closed

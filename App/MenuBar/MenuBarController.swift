@@ -63,7 +63,13 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             panel.quickAdd = model.makeNewDownload()
             panel.showsQuickAdd = true
         }
-        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer)
+        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies)
+    }
+
+    func grantSignIn(_ grant: SignInGrant) {
+        guard let quickAdd = panel.quickAdd else { return }
+        if quickAdd.waitsForSignIn, !popover.isShown, item.isVisible { open() }
+        quickAdd.draft.grantSignIn(origin: grant.origin, cookies: grant.cookies)
     }
 
     @objc private func toggle() {
@@ -77,8 +83,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private func open() {
         if let button = item.button {
             catchToast.hide()
-            panel.showsQuickAdd = false
-            panel.quickAdd = nil
+            let keepsWaitingCard = panel.quickAdd?.waitsForSignIn == true
+            panel.showsQuickAdd = keepsWaitingCard
+            if !keepsWaitingCard { panel.quickAdd = nil }
             NSApp.activate()
             popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -89,7 +96,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         panel.showsQuickAdd = false
-        panel.quickAdd = nil
+        if panel.quickAdd?.waitsForSignIn != true { panel.quickAdd = nil }
         if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
         outsideClicks = nil
     }

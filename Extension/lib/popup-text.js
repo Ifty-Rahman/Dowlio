@@ -1,4 +1,5 @@
 import { hostOf, matchesSite } from "./catching.js";
+import { originOf } from "./signin.js";
 
 export function popupText(status) {
   switch (status) {
@@ -31,4 +32,11 @@ export function catchControls({ status, catching, tabUrl }) {
     neverCaught,
     siteText: neverCaught ? `Downloads from ${site} stay in this browser.` : `Never catch on ${site}`,
   };
+}
+
+export function signInControls({ tabUrl, allowedOrigins }) {
+  const origin = originOf(tabUrl ?? "");
+  if (!origin) return { origin: null };
+  const allowed = allowedOrigins.includes(origin);
+  return { origin, allowed, buttonText: `Use my sign-in on ${new URL(origin).hostname}` };
 }

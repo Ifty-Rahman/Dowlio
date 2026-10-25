@@ -278,6 +278,28 @@ private struct BrowsersSettings: View {
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
             }
+            Section {
+                if model.allowedSignInSites.isEmpty {
+                    Text("Sites you allow with Use my sign-in, in Dowlio Connect, appear here.")
+                        .font(DowlioDesign.TypeRole.detail)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.allowedSignInSites, id: \.self) { site in
+                        HStack {
+                            Text(site.host() ?? site.absoluteString)
+                            Spacer()
+                            Button("Remove") { model.revokeSignIn(site) }
+                                .accessibilityLabel("Remove \(site.host() ?? site.absoluteString)")
+                        }
+                    }
+                }
+            } header: {
+                Text("Sites that can use your sign-in")
+            } footer: {
+                Text("Dowlio uses your browser's cookies for these sites, in memory, for that download only.")
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
+            }
             Section("Never catch on these sites") {
                 if model.catchPreferences.neverCatch.isEmpty {
                     Text("Sites you add with Never catch on this site, in Dowlio Connect, appear here.")

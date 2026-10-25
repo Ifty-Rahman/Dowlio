@@ -41,11 +41,15 @@ struct QuickAddView: View {
         }
         HStack {
             Button("Open Dowlio") {
+                panel.quickAdd = nil
                 close()
                 model.requestNewDownload(sheet.draft.text)
             }
             Spacer()
-            Button("Cancel", role: .cancel) { close() }
+            Button("Cancel", role: .cancel) {
+                panel.quickAdd = nil
+                close()
+            }
                 .keyboardShortcut(.cancelAction)
             Button(downloadTitle(sheet)) { download(sheet) }
                 .buttonStyle(.borderedProminent)
@@ -61,6 +65,7 @@ struct QuickAddView: View {
 
     private func download(_ sheet: NewDownloadModel) {
         model.add(sheet.draft)
+        panel.quickAdd = nil
         close()
     }
 }

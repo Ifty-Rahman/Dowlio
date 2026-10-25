@@ -1,6 +1,7 @@
 import { browserName } from "./browser.js";
 import { startCatching } from "./catching.js";
 import { startSending } from "./sending.js";
+import { startSignIn } from "./signin.js";
 
 export { browserName };
 
@@ -116,6 +117,13 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         connected = true;
         await storage.remove("code");
         await setStatus("connected");
+        await signIn.reportSites();
+        break;
+      case "signin.needed":
+        if (typeof message.url === "string") signIn.askForSignIn(message.url);
+        break;
+      case "signin.revoke":
+        if (typeof message.origin === "string") await signIn.revoke(message.origin);
         break;
       case "hello.rejected":
         await storage.remove("token");
@@ -207,10 +215,14 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     });
   });
 
+  const isConnected = () => connected && socket?.readyState === WebSocket.OPEN;
+  const signIn = startSignIn({ chrome, connection: { isConnected, send } });
   const connection = {
-    isConnected: () => connected && socket?.readyState === WebSocket.OPEN,
+    isConnected,
     request,
     preferences: () => loaded.then(() => preferences),
+    cookiesFor: (url) => signIn.cookiesFor(url),
+    askForSignIn: (url) => signIn.askForSignIn(url),
   };
   const catching = startCatching({ chrome, navigator, now, link: connection });
 

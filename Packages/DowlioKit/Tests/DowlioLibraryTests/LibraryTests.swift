@@ -259,6 +259,47 @@ struct RelaunchTests {
         #expect(try TestFiles.sha256(of: fixture.folder.appending(path: "long.iso")) == TestFiles.sha256(data))
     }
 
+    @Test func aDownloadThatUsedTheBrowsersSignInWaitsToBeSentAgainAfterARelaunch() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        let held = 256 * 1024
+        server.serve(.init(data: TestServer.makeData(size: 4 * 1024 * 1024, seed: 215), holdAfterBytes: held, eTag: "\"s1\""), at: "/private.iso")
+        var options = RequestOptions()
+        options.connections = 1
+        options.cookies = [Cookie(name: "session", value: "abc")]
+
+        let id = await fixture.add(server.url(for: "/private.iso"), options: options)
+        _ = try await fixture.library.row(id) { $0.receivedBytes == Int64(held) }
+        await fixture.library.pause(id)
+        _ = try await fixture.library.row(id) { $0.state == .paused }
+
+        let relaunched = try await fixture.relaunched()
+        let restored = try await relaunched.library.row(id) { _ in true }
+        server.releaseHeldResponses()
+        let requestsBefore = server.requests.count
+        await relaunched.library.resume(id)
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(restored.state == .paused)
+        #expect(restored.lostSignIn)
+        #expect(restored.detailLine.hasSuffix("Send it again from the browser"))
+        #expect(try await relaunched.library.row(id) { _ in true }.state == .paused)
+        #expect(server.requests.count == requestsBefore)
+    }
+
+    @Test func aDownloadWithoutCookiesHasNoSignInToLose() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024, seed: 216), holdAfterBytes: 0, eTag: "\"s2\""), at: "/public.iso")
+
+        let id = await fixture.add(server.url(for: "/public.iso"))
+        await fixture.library.pause(id)
+        let restored = try await fixture.relaunched().library.row(id) { _ in true }
+
+        #expect(!restored.lostSignIn)
+        server.releaseHeldResponses()
+    }
+
     @Test func aFailedDownloadComesBackPausedAndResumeRetriesIt() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
@@ -332,20 +373,23 @@ struct RelaunchTests {
     @Test func aDownloadThatNeverStartedKeepsItsReferrerButNotItsCookies() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 216), eTag: "\"r6\""), at: "/private.pdf")
-        var options = RequestOptions()
-        options.referrer = URL(string: "https://example.com/page")
-        options.cookies = [Cookie(name: "session", value: "secret")]
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 216), eTag: "\"r6\""), at: "/public.pdf")
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 217), eTag: "\"r7\""), at: "/private.pdf")
+        var plain = RequestOptions()
+        plain.referrer = URL(string: "https://example.com/page")
+        var signedIn = plain
+        signedIn.cookies = [Cookie(name: "session", value: "secret")]
 
-        let id = await fixture.add(server.url(for: "/private.pdf"), options: options, startImmediately: false)
-        _ = try await fixture.library.row(id) { _ in true }
+        let publicID = await fixture.add(server.url(for: "/public.pdf"), options: plain, startImmediately: false)
+        let privateID = await fixture.add(server.url(for: "/private.pdf"), options: signedIn, startImmediately: false)
+        _ = try await fixture.library.row(privateID) { _ in true }
 
         let relaunched = try await fixture.relaunched()
-        await relaunched.library.resume(id)
-        _ = try await relaunched.library.row(id) { $0.state == .completed }
+        await relaunched.library.resume(publicID)
+        _ = try await relaunched.library.row(publicID) { $0.state == .completed }
 
         #expect(server.requests.allSatisfy { $0.headers["referer"] == "https://example.com/page" })
-        #expect(server.requests.allSatisfy { $0.headers["cookie"] == nil })
+        #expect(try await relaunched.library.row(privateID) { _ in true }.lostSignIn)
         let database = try String(decoding: Data(contentsOf: fixture.databaseURL), as: UTF8.self)
         #expect(!database.contains("secret"))
     }

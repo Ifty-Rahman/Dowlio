@@ -9,8 +9,13 @@ public struct CatchOffer: Equatable, Sendable {
     public var mimeType: String?
     public var userAgent: String?
     public var browserPath: URL?
+    public var cookies: [Cookie] = []
 
-    public init(url: URL, finalURL: URL? = nil, referrer: URL? = nil, mimeType: String? = nil, userAgent: String? = nil, browserPath: URL? = nil) {
+    public init(
+        url: URL, finalURL: URL? = nil, referrer: URL? = nil, mimeType: String? = nil, userAgent: String? = nil,
+        browserPath: URL? = nil, cookies: [Cookie] = []
+    ) {
+        self.cookies = cookies
         self.url = url
         self.finalURL = finalURL
         self.referrer = referrer
@@ -71,6 +76,7 @@ public struct Catcher: Sendable {
         var options = settings.options(connections: nil)
         options.referrer = offer.referrer
         options.userAgent = offer.userAgent
+        options.cookies = offer.cookies
         let link = offer.finalURL ?? offer.url
         let inspection: LinkInspection
         do {

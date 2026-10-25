@@ -75,6 +75,15 @@ struct NewDownloadTests {
         ))
     }
 
+    @Test(arguments: [DownloadError.needsSignIn, .forbidden])
+    func aLinkThatNeedsSignInSaysHowToShareIt(error: DownloadError) {
+        #expect(LinkStatus(failure: error) == LinkStatus(
+            line: "Needs your sign-in",
+            reason: "This site only gives the file to signed-in visitors. Use the Dowlio button in your browser and allow sign-in sharing for this site.",
+            tone: .problem
+        ))
+    }
+
     @Test func aLinkThatCantBeInspectedSaysWhyAndWhatToDo() {
         #expect(LinkStatus(failure: .notFound) == LinkStatus(line: "Not found", reason: "The link may have been removed", tone: .problem))
     }

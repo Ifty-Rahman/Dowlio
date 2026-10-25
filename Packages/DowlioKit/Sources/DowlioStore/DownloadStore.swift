@@ -51,6 +51,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var allowsWorkStealing: Bool?
     /// When the download first started fetching, for how long it took.
     public var startedAt: Date?
+    public var usedSignIn: Bool?
 
     public init(
         id: UUID,
@@ -82,6 +83,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         referrer = options.referrer
         userAgent = options.userAgent
         maximumFailures = options.maximumFailures
+        usedSignIn = options.cookies.isEmpty ? nil : true
     }
 
     public var destination: Destination {
@@ -191,6 +193,11 @@ public final class DownloadStore: Sendable {
                 table.column("extensionVersion", .text).notNull()
                 table.column("pairedAt", .datetime).notNull()
                 table.column("lastSeenAt", .datetime).notNull()
+            }
+        }
+        migrator.registerMigration("used sign-in") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "usedSignIn", .boolean)
             }
         }
         return migrator

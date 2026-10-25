@@ -118,6 +118,16 @@ final class AppModel {
                 self?.receive(link)
             }
         }
+        Task { [weak self] in
+            for await grant in server.signInGrants {
+                self?.grant(grant)
+            }
+        }
+        Task { [weak self] in
+            for await sites in server.allowedSites {
+                self?.allowedSignInSites = sites
+            }
+        }
         let updates = preferenceUpdates.stream
         Task {
             for await preferences in updates {
@@ -136,7 +146,29 @@ final class AppModel {
         }
     }
 
+    private(set) var allowedSignInSites: [URL] = []
+    private var recentlySent: [URL: SentLink] = [:]
+    private var askedForSignIn: Set<URL> = []
+
+    private func askForSignIn(_ url: URL) {
+        guard let sent = recentlySent[url], let connectServer, askedForSignIn.insert(url).inserted else { return }
+        Task { _ = await connectServer.askForSignIn(sent) }
+    }
+
+    private func grant(_ grant: SignInGrant) {
+        menuBar?.grantSignIn(grant)
+        newDownload?.draft.grantSignIn(origin: grant.origin, cookies: grant.cookies)
+        askedForSignIn = askedForSignIn.filter { $0.host() != grant.origin.host() }
+    }
+
+    func revokeSignIn(_ site: URL) {
+        guard let connectServer else { return }
+        Task { await connectServer.revokeSignIn(site) }
+    }
+
     private func receive(_ link: SentLink) {
+        recentlySent[link.url] = link
+        if recentlySent.count > 50 { recentlySent.removeValue(forKey: recentlySent.keys.first!) }
         let menuBarShown = menuBar?.isVisible ?? false
         switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
         case .quickAdd:
@@ -144,7 +176,7 @@ final class AppModel {
         case .sheet, .openWindowThenSheet:
             showLibraryWindow()
             if newDownload == nil { newDownload = makeNewDownload() }
-            newDownload?.draft.addSent(link.url, referrer: link.referrer)
+            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies)
         }
     }
 
@@ -191,6 +223,7 @@ final class AppModel {
         let model = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
             try await library.inspect(url, options: options)
         }
+        model.needsSignIn = { [weak self] url in self?.askForSignIn(url) }
         model.draft.connections = settings.connections
         return model
     }
@@ -245,14 +278,18 @@ final class AppModel {
     func add(_ draft: NewDownloadDraft) {
         notifier.askPermissionIfNeeded()
         let settings = settings
-        let chosen = draft.options
-        var options = settings.options(connections: chosen.connections)
-        options.referrer = chosen.referrer
-        options.userAgent = chosen.userAgent
-        options.fileName = chosen.fileName
         let destination = settings.destination(in: draft.folder)
+        let added = draft.links.map { url in
+            let chosen = draft.options(for: url)
+            var options = settings.options(connections: chosen.connections)
+            options.referrer = chosen.referrer
+            options.userAgent = chosen.userAgent
+            options.fileName = chosen.fileName
+            options.cookies = chosen.cookies
+            return (url, options)
+        }
         perform { library in
-            for url in draft.links {
+            for (url, options) in added {
                 await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately)
             }
         }

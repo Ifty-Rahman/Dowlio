@@ -1,3 +1,4 @@
+import DowlioCore
 import DowlioStore
 import Foundation
 import Network
@@ -14,16 +15,17 @@ public struct PairingRequest: Equatable, Sendable {
     }
 }
 
-public struct SentLink: Equatable, Sendable {
+public struct SentLink: Sendable {
     public let url: URL
     public let referrer: URL?
     public let browser: String?
+    public let cookies: [Cookie]
+    let session: UUID
+}
 
-    public init(url: URL, referrer: URL?, browser: String?) {
-        self.url = url
-        self.referrer = referrer
-        self.browser = browser
-    }
+public struct SignInGrant: Sendable {
+    public let origin: URL
+    public let cookies: [Cookie]
 }
 
 public enum ConnectServerError: Error, Equatable {
@@ -54,6 +56,11 @@ public actor ConnectServer {
     private let sent: AsyncStream<SentLink>.Continuation
 
     public nonisolated let sentLinks: AsyncStream<SentLink>
+    private let granted: AsyncStream<SignInGrant>.Continuation
+    public nonisolated let signInGrants: AsyncStream<SignInGrant>
+    private let sitesChanged: AsyncStream<[URL]>.Continuation
+    public nonisolated let allowedSites: AsyncStream<[URL]>
+    private var sitesByBrowser: [UUID: [URL]] = [:]
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -78,6 +85,8 @@ public actor ConnectServer {
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
         (sentLinks, sent) = AsyncStream.makeStream()
+        (signInGrants, granted) = AsyncStream.makeStream()
+        (allowedSites, sitesChanged) = AsyncStream.makeStream()
     }
 
     public func publish(_ preferences: CatchPreferences) {
@@ -197,11 +206,18 @@ public actor ConnectServer {
                 let reply = await answer(offer, from: session)
                 send(reply.replying(to: requestID), to: session)
             }
-        case let .linkSend(url, referrer, browser):
+        case let .linkSend(url, referrer, browser, cookies):
             guard let pairing = session.pairing else { return close(session) }
             let name = browser ?? (try? store.browserPairing(pairing))?.browserName
-            sent.yield(SentLink(url: url, referrer: referrer, browser: name))
+            sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, session: session.id))
             send(.linkReceived.replying(to: requestID), to: session)
+        case let .signInGranted(origin, cookies):
+            guard session.pairing != nil else { return close(session) }
+            granted.yield(SignInGrant(origin: origin, cookies: cookies))
+        case let .signInSites(origins):
+            guard let pairing = session.pairing else { return close(session) }
+            sitesByBrowser[pairing] = origins
+            sitesChanged.yield(currentSites())
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)
@@ -234,9 +250,30 @@ public actor ConnectServer {
         return .pairApproved(token: token)
     }
 
-    public func downloadInBrowser(_ download: CaughtDownload) async -> Bool {
+    public func askForSignIn(_ link: SentLink) async -> Bool {
+        guard let session = connectedSession(preferring: link.session) else { return false }
+        return await deliver(.signInNeeded(link.url), to: session)
+    }
+
+    public func revokeSignIn(_ origin: URL) {
+        for (id, sites) in sitesByBrowser { sitesByBrowser[id] = sites.filter { $0 != origin } }
+        for session in sessions.values where session.isOpen && session.pairing != nil {
+            send(.signInRevoke(origin), to: session)
+        }
+        sitesChanged.yield(currentSites())
+    }
+
+    private func currentSites() -> [URL] {
+        Array(Set(sitesByBrowser.values.flatMap { $0 })).sorted { $0.absoluteString < $1.absoluteString }
+    }
+
+    private func connectedSession(preferring id: UUID) -> Session? {
         let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
-        guard let session = connected.first(where: { $0.id == download.session }) ?? connected.first,
+        return connected.first { $0.id == id } ?? connected.first
+    }
+
+    public func downloadInBrowser(_ download: CaughtDownload) async -> Bool {
+        guard let session = connectedSession(preferring: download.session),
               await deliver(.browserDownload(download.link), to: session)
         else { return false }
         await catcher?.discard(download.id)

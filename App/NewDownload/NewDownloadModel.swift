@@ -10,12 +10,21 @@ import Observation
 final class NewDownloadModel: Identifiable {
     var draft: NewDownloadDraft {
         didSet {
-            if draft.links != oldValue.links || draft.inspectionOptions != oldValue.inspectionOptions { scheduleChecks() }
+            if draft.links != oldValue.links || draft.links.map(draft.inspectionOptions(for:)) != oldValue.links.map(oldValue.inspectionOptions(for:)) {
+                scheduleChecks()
+            }
         }
     }
 
     private let inspect: (URL, RequestOptions) async throws -> LinkInspection
     private var pending: Task<Void, Never>?
+    var needsSignIn: ((URL) -> Void)?
+
+    var waitsForSignIn: Bool {
+        draft.links.contains { url in
+            draft.check(for: url) == .failed(.needsSignIn) || draft.check(for: url) == .failed(.forbidden)
+        }
+    }
 
     init(text: String, folder: URL, inspect: @escaping (URL, RequestOptions) async throws -> LinkInspection) {
         draft = NewDownloadDraft(text: text, folder: folder)
@@ -29,8 +38,8 @@ final class NewDownloadModel: Identifiable {
     /// Checks every link that needs it, now.
     func checkLinks() {
         pending?.cancel()
-        let headers = draft.inspectionOptions
         for url in draft.linksToCheck() {
+            let headers = draft.inspectionOptions(for: url)
             Task { [weak self, inspect] in
                 let check: NewDownloadDraft.Check
                 do {
@@ -41,6 +50,7 @@ final class NewDownloadModel: Identifiable {
                     check = .failed(.network(NetworkFailure(error)))
                 }
                 self?.draft.record(check, for: url, checkedWith: headers)
+                if check == .failed(.needsSignIn) || check == .failed(.forbidden) { self?.needsSignIn?(url) }
             }
         }
     }
