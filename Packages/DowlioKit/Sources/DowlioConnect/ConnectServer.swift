@@ -14,6 +14,18 @@ public struct PairingRequest: Equatable, Sendable {
     }
 }
 
+public struct SentLink: Equatable, Sendable {
+    public let url: URL
+    public let referrer: URL?
+    public let browser: String?
+
+    public init(url: URL, referrer: URL?, browser: String?) {
+        self.url = url
+        self.referrer = referrer
+        self.browser = browser
+    }
+}
+
 public enum ConnectServerError: Error, Equatable {
     case noFreePort
 }
@@ -39,6 +51,9 @@ public actor ConnectServer {
     private let changeRequests: AsyncStream<CatchPreferenceChange>.Continuation
 
     public nonisolated let preferenceChanges: AsyncStream<CatchPreferenceChange>
+    private let sent: AsyncStream<SentLink>.Continuation
+
+    public nonisolated let sentLinks: AsyncStream<SentLink>
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -62,6 +77,7 @@ public actor ConnectServer {
         self.preferences = preferences
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
+        (sentLinks, sent) = AsyncStream.makeStream()
     }
 
     public func publish(_ preferences: CatchPreferences) {
@@ -181,6 +197,11 @@ public actor ConnectServer {
                 let reply = await answer(offer, from: session)
                 send(reply.replying(to: requestID), to: session)
             }
+        case let .linkSend(url, referrer, browser):
+            guard let pairing = session.pairing else { return close(session) }
+            let name = browser ?? (try? store.browserPairing(pairing))?.browserName
+            sent.yield(SentLink(url: url, referrer: referrer, browser: name))
+            send(.linkReceived.replying(to: requestID), to: session)
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)

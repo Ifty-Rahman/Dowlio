@@ -80,7 +80,7 @@ public struct Catcher: Sendable {
         } catch {
             return .decline(.error)
         }
-        if Self.isWebPage(inspection.contentType), !Self.isWebPage(offer.mimeType) {
+        if inspection.isWebPage, !LinkInspection.isWebPage(mimeType: offer.mimeType) {
             return .decline(.unsupported)
         }
         let destination: Destination
@@ -106,10 +106,5 @@ public struct Catcher: Sendable {
         let folder = path.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path
         let downloads = browserDownloadsFolder.standardizedFileURL.resolvingSymlinksInPath().path
         return folder == downloads ? nil : path
-    }
-
-    private static func isWebPage(_ mimeType: String?) -> Bool {
-        guard let type = mimeType?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }
-        return type == "text/html" || type == "application/xhtml+xml"
     }
 }

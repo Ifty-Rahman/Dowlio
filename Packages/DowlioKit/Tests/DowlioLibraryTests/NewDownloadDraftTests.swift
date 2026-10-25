@@ -10,6 +10,26 @@ struct NewDownloadDraftTests {
     private let zip = URL(string: "https://a.com/one.zip")!
     private let iso = URL(string: "https://b.com/two.iso")!
 
+    @Test func aSentLinkFillsTheDraftWithItsPageAsTheReferrer() {
+        var draft = NewDownloadDraft(text: "", folder: folder)
+
+        draft.addSent(zip, referrer: URL(string: "https://a.com/downloads"))
+
+        #expect(draft.links == [zip])
+        #expect(draft.referrer == "https://a.com/downloads")
+    }
+
+    @Test func aLinkSentWhileTheDraftIsOpenJoinsAsAnotherLineAndARepeatMerges() {
+        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
+
+        draft.addSent(iso, referrer: URL(string: "https://b.com/page"))
+        draft.addSent(zip, referrer: URL(string: "https://a.com/other"))
+
+        #expect(draft.links == [zip, iso])
+        #expect(draft.text == "https://a.com/one.zip\nhttps://b.com/two.iso")
+        #expect(draft.referrer == "https://b.com/page")
+    }
+
     @Test func typedLinksCountAtOnce() {
         var draft = NewDownloadDraft(text: "", folder: folder)
         draft.text = "https://a.com/one.zip"

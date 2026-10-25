@@ -14,7 +14,7 @@ struct MenuBarPopover: View {
     var body: some View {
         Group {
             if panel.showsQuickAdd {
-                QuickAddView(model: model, close: close)
+                QuickAddView(model: model, panel: panel, close: close)
             } else {
                 summary
             }

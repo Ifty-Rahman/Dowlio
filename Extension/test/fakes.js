@@ -99,6 +99,28 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       fire: (name) => alarmListeners.forEach((listener) => listener({ name })),
     },
     badge: { text: undefined, color: undefined },
+    contextMenus: {
+      items: [],
+      clickListeners: [],
+      removeAll(callback) {
+        chrome.contextMenus.items = [];
+        callback?.();
+      },
+      create(item) {
+        chrome.contextMenus.items.push(item);
+      },
+      onClicked: { addListener: (listener) => chrome.contextMenus.clickListeners.push(listener) },
+      async click(info, tab) {
+        chrome.contextMenus.clickListeners.forEach((listener) => listener(info, tab));
+        for (let turn = 0; turn < 3; turn += 1) await flush();
+      },
+    },
+    notifications: {
+      shown: [],
+      create(id, options) {
+        chrome.notifications.shown.push(options ?? id);
+      },
+    },
     storage: {
       local: {
         data,

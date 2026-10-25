@@ -113,6 +113,11 @@ final class AppModel {
                 catchPreferences = change.applied(to: catchPreferences)
             }
         }
+        Task { [weak self] in
+            for await link in server.sentLinks {
+                self?.receive(link)
+            }
+        }
         let updates = preferenceUpdates.stream
         Task {
             for await preferences in updates {
@@ -128,6 +133,18 @@ final class AppModel {
             menuBar.showCatch(notice)
         } else {
             catchNotifier.post(notice)
+        }
+    }
+
+    private func receive(_ link: SentLink) {
+        let menuBarShown = menuBar?.isVisible ?? false
+        switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
+        case .quickAdd:
+            menuBar?.showSent(link)
+        case .sheet, .openWindowThenSheet:
+            showLibraryWindow()
+            if newDownload == nil { newDownload = makeNewDownload() }
+            newDownload?.draft.addSent(link.url, referrer: link.referrer)
         }
     }
 

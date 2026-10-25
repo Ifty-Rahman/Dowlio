@@ -1,3 +1,4 @@
+import DowlioCore
 import Foundation
 import UniformTypeIdentifiers
 
@@ -14,6 +15,8 @@ enum FileNaming {
         name = clean(name)
         if split(name).ext.isEmpty, let ext = fileExtension(for: response) {
             name += ".\(ext)"
+        } else if LinkInspection.isWebPage(mimeType: response.value(forHTTPHeaderField: "Content-Type")), !["html", "htm", "xhtml"].contains(split(name).ext.lowercased()) {
+            name += ".html"
         }
         return capped(name)
     }

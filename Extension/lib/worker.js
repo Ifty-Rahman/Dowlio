@@ -1,4 +1,8 @@
+import { browserName } from "./browser.js";
 import { startCatching } from "./catching.js";
+import { startSending } from "./sending.js";
+
+export { browserName };
 
 export const PORTS = [51517, 51518, 51519, 51520];
 export const RETRY_DELAY = 5000;
@@ -6,12 +10,6 @@ export const PING_INTERVAL = 20000;
 export const WAKE_ALARM = "dowlio-connect";
 const PROTOCOL = 1;
 const GREY = "#8E8E93";
-
-export function browserName(navigator) {
-  const brands = navigator?.userAgentData?.brands ?? [];
-  const named = brands.map((entry) => entry.brand).find((brand) => !/not.?a.?brand|chromium/i.test(brand));
-  return named ?? "Chromium";
-}
 
 function catchingFrom(value) {
   const sites = Array.isArray(value?.neverCatch) ? value.neverCatch : [];
@@ -209,16 +207,14 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     });
   });
 
-  const catching = startCatching({
-    chrome,
-    navigator,
-    now,
-    link: {
-      isConnected: () => connected && socket?.readyState === WebSocket.OPEN,
-      request,
-      preferences: () => loaded.then(() => preferences),
-    },
-  });
+  const connection = {
+    isConnected: () => connected && socket?.readyState === WebSocket.OPEN,
+    request,
+    preferences: () => loaded.then(() => preferences),
+  };
+  const catching = startCatching({ chrome, navigator, now, link: connection });
+
+  startSending({ chrome, navigator, link: connection });
 
   connect();
 }

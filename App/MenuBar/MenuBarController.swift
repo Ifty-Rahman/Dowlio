@@ -57,12 +57,28 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         catchToast.show(notice, under: button)
     }
 
+    func showSent(_ link: SentLink) {
+        if !popover.isShown { open() }
+        if !panel.showsQuickAdd || panel.quickAdd == nil {
+            panel.quickAdd = model.makeNewDownload()
+            panel.showsQuickAdd = true
+        }
+        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer)
+    }
+
     @objc private func toggle() {
         if popover.isShown {
             popover.performClose(nil)
-        } else if let button = item.button {
+        } else {
+            open()
+        }
+    }
+
+    private func open() {
+        if let button = item.button {
             catchToast.hide()
             panel.showsQuickAdd = false
+            panel.quickAdd = nil
             NSApp.activate()
             popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -73,6 +89,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         panel.showsQuickAdd = false
+        panel.quickAdd = nil
         if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
         outsideClicks = nil
     }
@@ -127,6 +144,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 @Observable
 final class MenuBarPanel {
     var showsQuickAdd = false
+    var quickAdd: NewDownloadModel?
 }
 
 /// The menu bar icon: an arrow over a four-piece bar. While something downloads, the four

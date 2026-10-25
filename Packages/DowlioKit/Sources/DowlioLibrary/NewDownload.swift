@@ -69,6 +69,10 @@ public struct LinkStatus: Equatable, Sendable {
     public static let checking = LinkStatus(line: "Checking link…", reason: nil, tone: .neutral)
 
     public init(_ inspection: LinkInspection) {
+        if inspection.isWebPage {
+            self.init(line: "This link is a web page", reason: "Download saves the page as an .html file.", tone: .caution)
+            return
+        }
         switch (inspection.splitsIntoSegments, inspection.cannotResumeBecause) {
         case (true, nil):
             self.init(line: "Resumable, splits into segments", reason: nil, tone: .good)
@@ -140,6 +144,18 @@ public struct NewDownloadDraft: Equatable, Sendable {
     }
 
     public var links: [URL] { lines.compactMap(\.url) }
+
+    public mutating func append(_ more: String) {
+        guard !more.isEmpty else { return }
+        let current = text.trimmingCharacters(in: .newlines)
+        text = current.isEmpty ? more : "\(current)\n\(more)"
+    }
+
+    public mutating func addSent(_ link: URL, referrer page: URL?) {
+        if referrer.trimmingCharacters(in: .whitespaces).isEmpty, let page { referrer = page.absoluteString }
+        guard !links.contains(link) else { return }
+        append(link.absoluteString)
+    }
 
     public var isSingleLink: Bool { links.count == 1 }
 

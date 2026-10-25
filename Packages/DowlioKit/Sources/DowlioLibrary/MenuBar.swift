@@ -55,6 +55,7 @@ public enum NewLinkEntry: Sendable {
     case paste
     case drop
     case newDownloadCommand
+    case sentFromBrowser
 }
 
 /// Where a new link opens.
@@ -64,11 +65,12 @@ public enum NewLinkRoute: Equatable, Sendable {
     case sheet
     case openWindowThenSheet
 
-    public init(entry: NewLinkEntry, windowIsOpen: Bool) {
+    public init(entry: NewLinkEntry, windowIsOpen: Bool, menuBarShown: Bool = true) {
         switch entry {
         case .popoverAddLink: self = .quickAdd
         case .paste, .drop: self = .sheet
         case .newDownloadCommand: self = windowIsOpen ? .sheet : .openWindowThenSheet
+        case .sentFromBrowser: self = menuBarShown ? .quickAdd : windowIsOpen ? .sheet : .openWindowThenSheet
         }
     }
 }

@@ -23,9 +23,7 @@ final class NewDownloadModel: Identifiable {
     }
 
     func append(_ more: String) {
-        guard !more.isEmpty else { return }
-        let current = draft.text.trimmingCharacters(in: .newlines)
-        draft.text = current.isEmpty ? more : "\(current)\n\(more)"
+        draft.append(more)
     }
 
     /// Checks every link that needs it, now.

@@ -4,20 +4,20 @@ import SwiftUI
 
 struct QuickAddView: View {
     let model: AppModel
+    let panel: MenuBarPanel
     let close: () -> Void
-    @State private var sheet: NewDownloadModel?
     @FocusState private var linkFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
             Text("Add Link").font(DowlioDesign.TypeRole.title).accessibilityAddTraits(.isHeader)
-            if let sheet {
+            if let sheet = panel.quickAdd {
                 content(sheet)
             }
         }
         .onAppear {
-            sheet = model.makeNewDownload(DebugLaunch.quickAddLink ?? "")
-            sheet?.checkLinks()
+            if panel.quickAdd == nil { panel.quickAdd = model.makeNewDownload(DebugLaunch.quickAddLink ?? "") }
+            panel.quickAdd?.checkLinks()
             linkFocused = true
         }
     }

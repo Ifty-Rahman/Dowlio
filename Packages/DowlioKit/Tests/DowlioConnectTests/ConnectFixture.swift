@@ -85,6 +85,11 @@ struct ConnectFixture {
         throw ConnectClientError.closed
     }
 
+    func nextSentLink() async throws -> SentLink {
+        for await link in server.sentLinks { return link }
+        throw ConnectClientError.closed
+    }
+
     func nextCatch() async throws -> CaughtDownload {
         for await caught in server.catches { return caught }
         throw ConnectClientError.closed

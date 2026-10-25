@@ -64,6 +64,17 @@ struct NewDownloadTests {
         #expect(LinkStatus(inspection) == status)
     }
 
+    @Test(arguments: ["text/html", "application/xhtml+xml"])
+    func aLinkToAWebPageSaysSoAndStillOffersDownload(contentType: String) {
+        let inspection = LinkInspection(
+            fileName: "article.html", totalBytes: nil, contentType: contentType, category: nil,
+            splitsIntoSegments: false, cannotResumeBecause: .sizeUnknown, isNotSecure: false
+        )
+        #expect(LinkStatus(inspection) == LinkStatus(
+            line: "This link is a web page", reason: "Download saves the page as an .html file.", tone: .caution
+        ))
+    }
+
     @Test func aLinkThatCantBeInspectedSaysWhyAndWhatToDo() {
         #expect(LinkStatus(failure: .notFound) == LinkStatus(line: "Not found", reason: "The link may have been removed", tone: .problem))
     }

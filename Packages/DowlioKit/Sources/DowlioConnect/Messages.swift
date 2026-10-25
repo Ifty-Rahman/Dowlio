@@ -6,6 +6,7 @@ enum Incoming: Equatable {
     case ping
     case catchOffer(CatchOffer)
     case settingsChange(CatchPreferenceChange)
+    case linkSend(url: URL, referrer: URL?, browser: String?)
     case unknown(type: String)
 }
 
@@ -27,6 +28,10 @@ struct Envelope {
             guard let value = object[key] as? String, !value.isEmpty, value.count <= 200 else { return nil }
             return value
         }
+        func link(_ key: String) -> URL? {
+            guard let value = object[key] as? String, value.count <= 8192, let url = URL(string: value), Self.isWebLink(url) else { return nil }
+            return url
+        }
         switch type {
         case "pair.request":
             guard let code = text("code"), code.count == 4, code.allSatisfy(\.isNumber),
@@ -39,18 +44,15 @@ struct Envelope {
         case "ping":
             message = .ping
         case "catch.offer":
-            func link(_ key: String) -> URL? {
-                guard let value = text(key) ?? (object[key] as? String), let url = URL(string: value),
-                      let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
-                else { return nil }
-                return url
-            }
             guard let url = link("url") else { return nil }
             let browserPath = text("browserPath").flatMap { $0.hasPrefix("/") ? URL(filePath: $0) : nil }
             message = .catchOffer(CatchOffer(
                 url: url, finalURL: link("finalUrl"), referrer: link("referrer"),
                 mimeType: text("mime"), userAgent: text("userAgent"), browserPath: browserPath
             ))
+        case "link.send":
+            guard let url = link("url") else { return nil }
+            message = .linkSend(url: url, referrer: link("referrer"), browser: text("browser"))
         case "settings.change":
             let catches = object["catches"] as? Bool
             let site = text("neverCatchSite")
@@ -59,6 +61,13 @@ struct Envelope {
         default:
             message = .unknown(type: type)
         }
+    }
+}
+
+extension Envelope {
+    static func isWebLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), let host = url.host(), !host.isEmpty else { return false }
+        return scheme == "http" || scheme == "https"
     }
 }
 
@@ -79,6 +88,7 @@ struct Outgoing: Encodable {
     static let pong = Outgoing(type: "pong")
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
+    static let linkReceived = Outgoing(type: "link.received")
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch)
     }
