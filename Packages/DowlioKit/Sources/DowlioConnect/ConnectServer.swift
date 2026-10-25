@@ -47,6 +47,10 @@ public actor ConnectServer {
     private var listener: NWListener?
     private var isPairingPending = false
     private var recentPairingRequests: [Date] = []
+    private var listenFailed = false
+    private let testTimeout: Duration
+    private let nameBrowser: @Sendable (String) -> String
+    private var waitingPongs: [String: (session: UUID, answer: CheckedContinuation<LinkTestResult, Never>)] = [:]
     private var sessions: [UUID: Session] = [:]
     private let caught: AsyncStream<CaughtDownload>.Continuation
     private var preferences: CatchPreferences
@@ -72,6 +76,8 @@ public actor ConnectServer {
         catcher: Catcher? = nil,
         catchDeadline: Duration = .seconds(4),
         preferences: CatchPreferences = CatchPreferences(),
+        testTimeout: Duration = .seconds(2),
+        nameBrowser: @escaping @Sendable (String) -> String = { $0 },
         approve: @escaping @Sendable (PairingRequest) async -> Bool
     ) {
         self.catcher = catcher
@@ -81,6 +87,8 @@ public actor ConnectServer {
         self.vault = vault
         self.now = now
         self.approve = approve
+        self.testTimeout = testTimeout
+        self.nameBrowser = nameBrowser
         self.preferences = preferences
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
@@ -101,9 +109,11 @@ public actor ConnectServer {
         for port in ports {
             if let listener = try? await listen(on: port) {
                 self.listener = listener
+                listenFailed = false
                 return port
             }
         }
+        listenFailed = true
         throw ConnectServerError.noFreePort
     }
 
@@ -165,6 +175,7 @@ public actor ConnectServer {
             guard error == nil, let data else {
                 session.isOpen = false
                 session.connection.cancel()
+                Task { await self.closed(session) }
                 return
             }
             Task {
@@ -200,6 +211,10 @@ public actor ConnectServer {
         case .ping:
             if let pairing = session.pairing { markSeen(pairing) }
             send(.pong.replying(to: requestID), to: session)
+        case .pong:
+            guard let pairing = session.pairing else { return close(session) }
+            markSeen(pairing)
+            if let requestID, let waiting = waitingPongs.removeValue(forKey: requestID) { waiting.answer.resume(returning: .passed) }
         case var .catchOffer(offer):
             guard let pairing = session.pairing else { return close(session) }
             offer.browser = (try? store.browserPairing(pairing))?.browserName
@@ -236,6 +251,7 @@ public actor ConnectServer {
         recentPairingRequests.append(time)
         guard !isPairingPending else { return .pairRefused("busy") }
         isPairingPending = true
+        let browser = nameBrowser(browser)
         let allowed = await approve(PairingRequest(code: code, browser: browser, extensionVersion: version))
         isPairingPending = false
         guard allowed else { return .pairRefused("denied") }
@@ -249,6 +265,41 @@ public actor ConnectServer {
             return .pairRefused("error")
         }
         return .pairApproved(token: token)
+    }
+
+    public func browserLinks() -> [BrowserLink] {
+        let time = now()
+        let open = Set(sessions.values.filter(\.isOpen).compactMap(\.pairing))
+        return ((try? store.browserPairings()) ?? []).map { pairing in
+            let live = open.contains(pairing.id) && time.timeIntervalSince(pairing.lastSeenAt) <= 60
+            return BrowserLink(id: pairing.id, name: pairing.browserName, state: live ? .connected : .notConnected)
+        }
+    }
+
+    public func test(_ id: UUID) async -> LinkTestResult {
+        guard listener != nil else { return listenFailed ? .portInUse : .serverNotListening }
+        guard (try? store.browserPairing(id)) != nil else { return .pairingMissing }
+        guard let session = sessions.values.first(where: { $0.isOpen && $0.pairing == id }) else { return .notConnected }
+        let requestID = "test-\(UUID().uuidString)"
+        let deadline = testTimeout
+        Task {
+            try? await Task.sleep(for: deadline)
+            self.giveUp(on: requestID)
+        }
+        return await withCheckedContinuation { continuation in
+            waitingPongs[requestID] = (session.id, continuation)
+            send(Outgoing.ping.replying(to: requestID), to: session)
+        }
+    }
+
+    private func giveUp(on requestID: String) {
+        waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .noAnswer)
+    }
+
+    private func closed(_ session: Session) {
+        for (requestID, waiting) in waitingPongs where waiting.session == session.id {
+            waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .notConnected)
+        }
     }
 
     public func askForSignIn(_ link: SentLink) async -> Bool {

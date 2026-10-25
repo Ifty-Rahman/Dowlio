@@ -47,7 +47,9 @@ struct ConnectFixture {
         now: @escaping @Sendable () -> Date = Date.init,
         settings: (@Sendable (URL) -> DownloadSettings)? = nil,
         catchDeadline: Duration = .seconds(4),
-        preferences: CatchPreferences = CatchPreferences()
+        preferences: CatchPreferences = CatchPreferences(),
+        testTimeout: Duration = .seconds(2),
+        nameBrowser: @escaping @Sendable (String) -> String = { $0 }
     ) async throws {
         base = try TestFiles.makeFolder()
         dowlioFolder = base.appending(path: "Dowlio Downloads", directoryHint: .isDirectory)
@@ -64,7 +66,8 @@ struct ConnectFixture {
         let chosenSettings: @Sendable () -> DownloadSettings = { settings?(folder) ?? DownloadSettings(folder: folder) }
         let catcher = Catcher(library: library, settings: chosenSettings, browserDownloadsFolder: browserDownloads)
         server = ConnectServer(
-            ports: ports ?? Self.freePorts(), store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, preferences: preferences
+            ports: ports ?? Self.freePorts(), store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, preferences: preferences,
+            testTimeout: testTimeout, nameBrowser: nameBrowser
         ) { request in
             await approvals.decide(request)
         }

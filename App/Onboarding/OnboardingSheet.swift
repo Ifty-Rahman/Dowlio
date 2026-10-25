@@ -3,8 +3,7 @@ import DowlioCore
 import DowlioLibrary
 import SwiftUI
 
-/// The welcome a fresh install shows: two pages, each with Skip. Later phases add the browser and
-/// shortcut pages.
+/// The welcome a fresh install shows, each page with Skip. A later phase adds the shortcut page.
 struct OnboardingSheet: View {
     let model: AppModel
     let finish: () -> Void
@@ -13,6 +12,7 @@ struct OnboardingSheet: View {
     enum Page: Int, CaseIterable {
         case welcome
         case setup
+        case browsers
     }
 
     var body: some View {
@@ -21,6 +21,7 @@ struct OnboardingSheet: View {
                 switch page {
                 case .welcome: WelcomePage()
                 case .setup: SetupPage(model: model)
+                case .browsers: BrowsersPage(model: model)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
@@ -31,11 +32,11 @@ struct OnboardingSheet: View {
                 PageDots(current: page.rawValue, count: Page.allCases.count)
                 Spacer()
                 Button("Skip", action: finish)
-                if page != .welcome {
-                    Button("Back") { page = .welcome }
+                if let previous = Page(rawValue: page.rawValue - 1) {
+                    Button("Back") { page = previous }
                 }
-                Button(page == .setup ? "Get Started" : "Continue") {
-                    if page == .setup { finish() } else { page = .setup }
+                Button(page == .browsers ? "Get Started" : "Continue") {
+                    if let next = Page(rawValue: page.rawValue + 1) { page = next } else { finish() }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -94,6 +95,28 @@ private struct SetupPage: View {
         }
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { folderPath = folder.path }
+        }
+    }
+}
+
+private struct BrowsersPage: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
+            Text("Catch downloads from your browser")
+                .font(DowlioDesign.TypeRole.title)
+                .accessibilityAddTraits(.isHeader)
+            Text("Add Dowlio Connect to a browser, and files you download there finish in Dowlio.")
+                .foregroundStyle(.secondary)
+            if let setup = model.browserSetup {
+                Form {
+                    BrowsersList(setup: setup)
+                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 160)
+            }
         }
     }
 }

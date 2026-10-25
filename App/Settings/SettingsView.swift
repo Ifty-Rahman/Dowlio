@@ -271,6 +271,17 @@ private struct BrowsersSettings: View {
 
     var body: some View {
         Form {
+            if let setup = model.browserSetup {
+                Section {
+                    BrowsersList(setup: setup)
+                } header: {
+                    Text("Browsers")
+                } footer: {
+                    Text("Add puts Dowlio Connect in a folder that stays put when Dowlio moves or updates.")
+                        .font(DowlioDesign.TypeRole.detail)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section {
                 Toggle("Catch downloads", isOn: $model.catchPreferences.catches)
             } footer: {

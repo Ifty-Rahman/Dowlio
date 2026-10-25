@@ -162,3 +162,13 @@ test("a busy or rate-limited pairing asks again after 5 seconds", async () => {
   assert.equal(net.last().sent.length, 2);
   assert.equal(net.last().sent[1].type, "pair.request");
 });
+
+test("answers Dowlio's ping with a pong, so Test in Dowlio can pass", async () => {
+  const { net } = await boot({ stored: { token: "tok" } });
+  await net.last().accept();
+  await net.last().reply({ type: "hello.ok" });
+
+  await net.last().reply({ type: "ping", requestId: "test-1" });
+
+  assert.deepEqual(net.last().sent.filter((message) => message.type === "pong"), [{ v: 1, type: "pong", requestId: "test-1" }]);
+});

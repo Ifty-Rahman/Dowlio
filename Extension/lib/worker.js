@@ -119,6 +119,11 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         await setStatus("connected");
         await signIn.reportSites();
         break;
+      case "ping":
+        if (typeof message.requestId === "string" && socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ v: PROTOCOL, type: "pong", requestId: message.requestId }));
+        }
+        break;
       case "signin.needed":
         if (typeof message.url === "string") signIn.askForSignIn(message.url);
         break;

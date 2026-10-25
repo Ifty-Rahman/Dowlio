@@ -58,7 +58,7 @@ final class AppModel {
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
             let library = Library(engine: DownloadEngine(), store: store)
             self.library = library
-            startConnectServer(store: store, library: library)
+            startConnectServer(store: store, library: library, support: support)
         } catch {
             library = nil
             problem = "Dowlio can't open its history: \(error.localizedDescription)"
@@ -94,13 +94,20 @@ final class AppModel {
         }
     }
 
-    private func startConnectServer(store: DownloadStore, library: Library) {
+    private(set) var browserSetup: BrowserSetup?
+
+    private func startConnectServer(store: DownloadStore, library: Library, support: URL) {
+        let added = AddedBrowser()
         let catcher = Catcher(library: library, settings: { AppModel.currentSettings() })
         let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
-        let server = ConnectServer(store: store, vault: vault, catcher: catcher, preferences: catchPreferences) { request in
+        let server = ConnectServer(
+            store: store, vault: vault, catcher: catcher, preferences: catchPreferences,
+            nameBrowser: { added.name(for: $0) }
+        ) { request in
             await MainActor.run { PairingAlert.ask(request) }
         }
         connectServer = server
+        browserSetup = BrowserSetup(server: server, added: added, supportFolder: support)
         Task { _ = try? await server.start() }
         Task { [weak self] in
             for await caught in server.catches {

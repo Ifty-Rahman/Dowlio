@@ -31,6 +31,14 @@ targets:
         product: DowlioLibrary
       - package: DowlioKit
         product: DowlioConnect
+    postCompileScripts:
+      - name: Bundle Dowlio Connect
+        basedOnDependencyAnalysis: false
+        script: |
+          destination="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Dowlio Connect"
+          rm -rf "$destination"
+          mkdir -p "$destination"
+          rsync -a --exclude /test --exclude /package.json --exclude /node_modules --exclude .DS_Store "${SRCROOT}/Extension/" "$destination/"
     info:
       path: App/Info.plist
       properties:
@@ -51,6 +59,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         # Scripts sign release builds, so Xcode doesn't.
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO

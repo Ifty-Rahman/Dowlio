@@ -5,6 +5,7 @@ enum Incoming: Equatable {
     case pairRequest(code: String, browser: String, version: String, extensionID: String)
     case hello(token: String, version: String)
     case ping
+    case pong
     case catchOffer(CatchOffer)
     case settingsChange(CatchPreferenceChange)
     case linkSend(url: URL, referrer: URL?, browser: String?, cookies: [Cookie])
@@ -62,6 +63,8 @@ struct Envelope {
             message = .hello(token: token, version: version)
         case "ping":
             message = .ping
+        case "pong":
+            message = .pong
         case "catch.offer":
             guard let url = link("url"), let cookies = cookies() else { return nil }
             let browserPath = text("browserPath").flatMap { $0.hasPrefix("/") ? URL(filePath: $0) : nil }
@@ -120,6 +123,7 @@ struct Outgoing: Encodable {
     static let helloAccepted = Outgoing(type: "hello.ok")
     static let helloRejected = Outgoing(type: "hello.rejected")
     static let pong = Outgoing(type: "pong")
+    static let ping = Outgoing(type: "ping")
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
     static let linkReceived = Outgoing(type: "link.received")
