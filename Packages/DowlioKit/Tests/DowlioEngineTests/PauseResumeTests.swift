@@ -301,8 +301,9 @@ struct PauseResumeTests {
 
         await engine.pause(id)
         let requestsWhenPaused = server.requests.count
-        server.releaseHeldResponses()
         await engine.resume(id)
+        try await waitUntil { server.requests.count >= requestsWhenPaused + 2 }
+        server.releaseHeldResponses()
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)

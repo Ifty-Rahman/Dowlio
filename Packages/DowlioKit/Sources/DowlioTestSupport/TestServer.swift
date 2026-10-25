@@ -295,9 +295,18 @@ public final class TestServer: @unchecked Sendable {
     public static func makeData(size: Int, seed: UInt64 = 1) -> Data {
         var state = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
         var bytes = [UInt8](repeating: 0, count: size)
-        for index in bytes.indices {
-            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-            bytes[index] = UInt8(truncatingIfNeeded: state >> 33)
+        bytes.withUnsafeMutableBytes { buffer in
+            var offset = 0
+            while offset + 8 <= size {
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                buffer.storeBytes(of: state ^ (state >> 29), toByteOffset: offset, as: UInt64.self)
+                offset += 8
+            }
+            while offset < size {
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                buffer[offset] = UInt8(truncatingIfNeeded: state >> 33)
+                offset += 1
+            }
         }
         return Data(bytes)
     }
