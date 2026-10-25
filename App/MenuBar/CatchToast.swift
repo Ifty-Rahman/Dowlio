@@ -123,7 +123,7 @@ private struct CatchToastView: View {
         }
         .padding(DowlioDesign.Spacing.lg)
         .frame(width: 360, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.container))
+        .panelGlass(cornerRadius: DowlioDesign.Radius.container)
         .onHover(perform: hovering)
     }
 

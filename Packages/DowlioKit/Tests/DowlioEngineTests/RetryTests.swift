@@ -127,8 +127,6 @@ extension RetryTests {
 
         #expect(finished.receivedBytes == Int64(data.count))
         #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
-        // Retry's first request asked for only the bytes the download didn't have when it failed,
-        // with the validator, and that request was the download.
         let afterFailure = server.requests.filter { $0.path == "/stubborn.iso" }.dropFirst(requestsWhenFailed)
         #expect(failed.receivedBytes > 0)
         #expect(afterFailure.map { $0.headers["range"] } == ["bytes=\(failed.receivedBytes)-\(data.count - 1)"])
@@ -169,7 +167,6 @@ extension RetryTests {
 
     @Test func retryAfterTheFileChangedStartsOver() async throws {
         let server = try await TestServer()
-        // The first reply is slow, so a second connection asks with the validator it gave.
         server.serve(
             .init(data: TestServer.makeData(size: Self.size, seed: 28), newETagEveryRequest: true, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)),
             at: "/live.log"
@@ -189,8 +186,6 @@ extension RetryTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "live.log")) == TestFiles.sha256(settled))
-        // Retry's first request carried the old validator, and the 200 it got was the new version's
-        // first segment. Every later request carried the new validator.
         let afterFailure = server.requests[requestsWhenFailed...]
         #expect(afterFailure.first?.headers["if-range"] != "\"settled\"")
         #expect(!afterFailure.contains { $0.headers["range"] == "bytes=0-0" || $0.headers["range"] == "bytes=0-" })

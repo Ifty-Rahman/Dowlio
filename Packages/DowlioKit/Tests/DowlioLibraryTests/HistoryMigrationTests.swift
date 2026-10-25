@@ -6,8 +6,6 @@ import SQLite3
 import Testing
 
 struct HistoryMigrationTests {
-    /// History saved before "used sign-in" became "used cookies" still knows which downloads used
-    /// the browser's cookies.
     @Test func historyFromBeforeTheRenameKeepsWhichDownloadsUsedCookies() throws {
         let file = try TestFiles.makeFolder().appending(path: "Dowlio.sqlite")
         var options = RequestOptions()

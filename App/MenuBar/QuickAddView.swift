@@ -82,8 +82,7 @@ private struct QuickAddCard: View {
                 if let status = check?.status {
                     HStack(spacing: DowlioDesign.Spacing.xs) {
                         if status.tone == .neutral { ProgressView().controlSize(.small) }
-                        Text(status.line).foregroundStyle(status.tone.color)
-                        if let size = inspection?.totalBytes { Text("· \(ByteText.string(size))").foregroundStyle(.secondary).monospacedDigit() }
+                        LinkStatusLine(status: status, size: inspection?.totalBytes)
                     }
                     .font(DowlioDesign.TypeRole.detail)
                     if inspection?.isNotSecure ?? (url.scheme?.lowercased() == "http") {

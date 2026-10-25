@@ -41,8 +41,6 @@ struct RestoreTests {
         let segmentRanges = Set(server.requests[requestsBeforeResume...]
             .compactMap { $0.headers["range"] }
             .filter { $0 != "bytes=0-0" })
-        // A new connection may split a segment before its own request goes out, so each missing
-        // part is asked for from its first missing byte, up to its end or less.
         let asked = segmentRanges.compactMap(ClosedRangeHeader.init)
         #expect(snapshot.segments.count == 2)
         #expect(ClosedRangeHeader.eachMissingPartIsAskedFromItsStart(snapshot.segments, asked: asked))
@@ -132,7 +130,6 @@ struct RestoreTests {
         #expect(last?.state == .completed)
         #expect(!states.contains { if case .failed = $0 { true } else { false } })
         #expect(try TestFiles.sha256(of: folder.appending(path: "gone.pkg")) == TestFiles.sha256(data))
-        // It started over as a new download: its first request asks for the whole file again.
         let ranges = server.requests[requestsBeforeResume...].compactMap { $0.headers["range"] }
         #expect(ranges.first == "bytes=0-")
     }
@@ -255,7 +252,6 @@ extension RestoreTests {
     @Test func aRestoredConnectionSettingIsClampedTo16() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 46)
-        // Replies hold early enough that none of the 16 resumed connections can finish its part.
         let early = 64 * 1024
         let file = TestServer.File(data: data, holdAfterBytes: early, eTag: "\"v1\"")
         let (engine, id, folder) = try await startHeld(server, file: file, at: "/many.bin")
@@ -269,7 +265,6 @@ extension RestoreTests {
         let fresh = DownloadEngine(configuration: .fast)
         let restored = try await fresh.restore(partialFile: package)
         await fresh.resume(restored)
-        // A resumed connection got bytes, so the resume is past its probe.
         _ = try await fresh.firstSnapshot(of: restored) { $0.receivedBytes > Int64(2 * early) }
         await fresh.pause(restored)
 

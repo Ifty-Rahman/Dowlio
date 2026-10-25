@@ -17,21 +17,10 @@ struct DownloadRowView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
-            HStack(spacing: DowlioDesign.Spacing.sm) {
-                Text(row.fileName)
-                    .font(DowlioDesign.TypeRole.heading)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Label(row.stateWord, systemImage: row.state.symbolName)
-                    .font(DowlioDesign.TypeRole.caption)
-                    .foregroundStyle(row.state.tone)
-                    .fixedSize()
-                if row.isNotSecure {
-                    Label("Not secure", systemImage: "lock.open.fill")
-                        .font(DowlioDesign.TypeRole.caption)
-                        .foregroundStyle(Color(nsColor: .systemOrange))
-                        .fixedSize()
-                }
+            ViewThatFits(in: .horizontal) {
+                title(stateWord: true, notSecureWord: true)
+                title(stateWord: true, notSecureWord: false)
+                title(stateWord: false, notSecureWord: false)
             }
             SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone)
             HStack {
@@ -46,6 +35,33 @@ struct DownloadRowView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.spokenSummary)
+    }
+
+    private func title(stateWord: Bool, notSecureWord: Bool) -> some View {
+        HStack(spacing: DowlioDesign.Spacing.sm) {
+            Text(row.fileName)
+                .font(DowlioDesign.TypeRole.heading)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            badge(row.stateWord, symbol: row.state.symbolName, tone: row.state.tone, wordShown: stateWord)
+            if row.isNotSecure {
+                badge("Not secure", symbol: "lock.open.fill", tone: Color(nsColor: .systemOrange), wordShown: notSecureWord)
+            }
+        }
+    }
+
+    private func badge(_ word: String, symbol: String, tone: Color, wordShown: Bool) -> some View {
+        Group {
+            if wordShown {
+                Label(word, systemImage: symbol)
+            } else {
+                Label(word, systemImage: symbol).labelStyle(.iconOnly)
+            }
+        }
+        .font(DowlioDesign.TypeRole.caption)
+        .foregroundStyle(tone)
+        .fixedSize()
+        .help(word)
     }
 
     private var action: some View {

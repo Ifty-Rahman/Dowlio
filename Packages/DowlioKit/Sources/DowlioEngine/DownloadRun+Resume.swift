@@ -7,9 +7,6 @@ extension DownloadRun {
         case startsOver(Probed)
     }
 
-    /// Resume's first request asks for the first missing part with `If-Range`, so the server checks
-    /// the file in the request that continues it. A download that can't resume starts over as a
-    /// new one.
     func revalidate(_ plan: DownloadPlan) async throws -> DownloadPlan {
         guard plan.canResume, case .ranges(let validator?) = plan.layout, let total = plan.totalBytes else {
             let probed = try await followingTheLink(of: plan) { try await probeWithRetries($0) }
@@ -54,7 +51,6 @@ extension DownloadRun {
         }
     }
 
-    /// Signed final links expire, so Resume asks the original link first, then the last final link.
     private func followingTheLink<T>(of plan: DownloadPlan, _ ask: (URL) async throws -> T) async throws -> T {
         do {
             return try await ask(url)

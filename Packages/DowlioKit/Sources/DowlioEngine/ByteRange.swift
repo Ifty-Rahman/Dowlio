@@ -10,7 +10,6 @@ struct ByteRange: Equatable, Sendable {
     var headerValue: String { "bytes=\(start)-\(end)" }
 }
 
-/// What a `Range` header asks for: a closed range, or every byte from `start` to the end of the file.
 enum RangeRequest: Equatable, Sendable {
     case closed(ByteRange)
     case toEnd(from: Int64)

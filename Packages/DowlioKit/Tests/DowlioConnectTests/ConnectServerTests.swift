@@ -60,7 +60,6 @@ struct ConnectServerTests {
         #expect(await client.waitUntilClosed())
     }
 
-    /// One of each message a browser may send, except `pair.request`, `hello` and `ping`.
     static let messagesThatNeedPairing: [[String: any Sendable]] = [
         ["v": 1, "type": "catch.offer", "url": "http://127.0.0.1:9/file.zip", "cookies": [] as [String]],
         ["v": 1, "type": "catch.released", "requestId": "c1"],
@@ -82,8 +81,6 @@ struct ConnectServerTests {
         #expect(await fixture.rowsNow().isEmpty)
     }
 
-    /// The same messages from a paired browser are read and kept open, so the unpaired test above
-    /// is closed for its missing pairing, not for a message the server can't read.
     @Test(arguments: messagesThatNeedPairing)
     func aPairedConnectionCanSendEachMessageThatNeedsPairing(_ message: [String: any Sendable]) async throws {
         let fixture = try await ConnectFixture()

@@ -2,11 +2,6 @@ import DowlioCore
 import Foundation
 
 extension DownloadRun {
-    /// Neat Download Manager's way: one connection first, a second once the first has data,
-    /// and the rest once the second has data. Each new connection splits the largest part no
-    /// connection has reached yet. A refused new connection gives its part back to the segment
-    /// before it, whose connection asks for that part once it finishes its own. A part left without
-    /// a connection gets fetched in another round.
     func receiveSegments(_ plan: DownloadPlan, validator: String?) async throws {
         guard let total = plan.totalBytes else { return }
         let file = RangedFile(plan: plan, total: total, validator: validator)
@@ -26,7 +21,6 @@ extension DownloadRun {
         let waitsForData = options.openExtraConnections == .afterFirstConnectionStarts
         let firstData = OneShot()
         let secondData = OneShot()
-        // A connection that failed for good ends the round, so no new one opens meanwhile.
         let failed = OneShot()
 
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -46,8 +40,6 @@ extension DownloadRun {
             }
             var goesOn: Bool { !Task.isCancelled && !failed.hasFired }
 
-            // An open reply already waits for the first segment, so it takes its place before any
-            // other connection can.
             let held = planStore.takeConnection(startingAt: board.missing(segment: waiting[0]).start)
             if let held {
                 do {
@@ -79,9 +71,6 @@ extension DownloadRun {
         }
     }
 
-    /// One connection's life. With no `segment` it's a new connection: it waits for a free place,
-    /// then splits. When its segment is done, it splits again if stealing is on. A `held` reply
-    /// already has its place, and the segment's first try reads it.
     private func work(
         from segment: Int?,
         growing: Bool,
@@ -116,7 +105,6 @@ extension DownloadRun {
                     do {
                         try await receive(segment: current, of: file, over: reply, onData: onData)
                     } catch {
-                        // Lowered as the place is given back, so a waiting connection can't take it in between.
                         gate.release(lowering: RetryableFailure(classifying: error)?.isRefusal == true)
                         throw error
                     }
@@ -125,8 +113,6 @@ extension DownloadRun {
                 continue
             }
             dropHeld()
-            // A host that limits connections may not have seen a cut-short reply close yet, so a
-            // steal could be refused. Finished connections close instead.
             let hostLimitsConnections = gate.currentLimit < connectionSetting
             guard options.allowsWorkStealing, !hostLimitsConnections, let split = try await splitWithPlace(board, shown: false)
             else { return }
@@ -136,8 +122,6 @@ extension DownloadRun {
         }
     }
 
-    /// Waits for a free place, then splits. Gives the place back when nothing can be split. A
-    /// `shown` split is part of the ramp-up, so the interface draws it.
     private func splitWithPlace(_ board: ProgressBoard, shown: Bool) async throws -> Int? {
         try await gate.acquire()
         guard let split = shown ? board.splitShown() : board.steal() else {
@@ -147,9 +131,6 @@ extension DownloadRun {
         return split
     }
 
-    /// A new segment's first request, with the place `splitWithPlace` took. If the host refuses it
-    /// before its first byte, its part goes back to the segment before it, and this connection
-    /// ends. Returns whether the connection goes on.
     private func firstTry(
         of segment: Int,
         in file: RangedFile,
@@ -184,14 +165,11 @@ extension DownloadRun {
         }
     }
 
-    /// Shows the segments the ramp-up made, so the bar draws one piece per connection it opened.
-    /// Read as the change applies, so a later layout never loses to an earlier one.
     private func publishLayout(of board: ProgressBoard) async {
         guard board.drawsRampUp else { return }
         await changeSnapshot { $0.plannedSegments = board.shownLayout.map { SegmentBounds(start: $0.start, end: $0.end) } }
     }
 
-    /// Reads segment `index`'s missing part from `reply`, or from a new request.
     private func receive(segment index: Int, of file: RangedFile, over reply: Connection? = nil, onData: @Sendable () -> Void) async throws {
         let plan = file.plan
         let board = plan.board
@@ -226,7 +204,6 @@ extension DownloadRun {
             return connection
         case .wholeFile(let connection, _):
             connection.cancel()
-            // Without a validator, the server ignored the range.
             throw file.validator == nil ? RangesUnusable() : FileChangedOnServer()
         case .unusable:
             throw RangesUnusable()
@@ -234,8 +211,6 @@ extension DownloadRun {
     }
 }
 
-/// What every connection of a download with ranges needs: its plan, the file's size, and the
-/// validator each request sends with `If-Range`.
 struct RangedFile: Sendable {
     let plan: DownloadPlan
     let total: Int64

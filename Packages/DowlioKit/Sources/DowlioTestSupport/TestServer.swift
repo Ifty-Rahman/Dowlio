@@ -9,8 +9,6 @@ public final class TestServer: @unchecked Sendable {
         public var supportsRanges: Bool
         /// When set, every response for this file stops after this many body bytes until
         /// `releaseHeldResponses()` is called. Zero holds the whole body. One-byte bodies, such as
-        /// a resume's probe reply, are never held. The reply to `bytes=0-` always sends its first
-        /// 512 bytes, since URLSession hands over a response only once that many arrive.
         public var holdAfterBytes: Int?
         /// A broken server: range replies keep their `Content-Range` but carry this many fewer
         /// bytes, with a matching `Content-Length`.
@@ -46,22 +44,15 @@ public final class TestServer: @unchecked Sendable {
         /// Extra headers sent with every 206 reply only, such as a `Content-Encoding` that a range
         /// reply must not have.
         public var rangeReplyHeaders: [String: String]
-        /// Whether `rangeReplyHeaders` also go on the probe's reply, `bytes=0-` or `bytes=0-0`, or
-        /// only on the replies to segment requests.
         public var rangeReplyHeadersOnProbe: Bool
-        /// A broken server: it answers the probe's range, `bytes=0-` or `bytes=0-0`, but ignores
-        /// every other range and sends the whole file with 200.
         public var ignoresSegmentRanges: Bool
-        /// Limits `misreportRangeStartBy` to replies for ranges that start at this offset or later.
         public var misreportOnlyRangesFrom: Int?
-        /// A host that sends at most this many bytes for any range, and says so in `Content-Range`.
         public var maxRangeReplyBytes: Int?
         /// A streamed or generated file: every reply is a 200 with the whole file, no
         /// `Content-Length`, and a body that ends when the server closes the connection. Ranges
         /// are ignored.
         public var omitsLength: Bool
         public var requiredCookie: String?
-        /// Only a POST with exactly this body gets the file. Anything else gets a 405.
         public var requiredForm: Data?
 
         public init(
@@ -162,8 +153,6 @@ public final class TestServer: @unchecked Sendable {
     }
 
     /// Slows the replies to ranges that start at `rangeStart` to `bytesPerSecond`.
-    /// Slows replies for the range that starts at `rangeStart`, or with `andLater`, for every range
-    /// that starts there or later.
     public struct RangeThrottle: Sendable {
         public var rangeStart: Int
         public var bytesPerSecond: Int
@@ -394,8 +383,6 @@ public final class TestServer: @unchecked Sendable {
         // A reply stays in flight until the server closes its connection. The count goes down
         // before the close, so a client never sees the close before the server allows a new reply.
         var leave: @Sendable () -> Void = {}
-        // The one-byte probe of a resume doesn't count: its reply ends at once, but the client may
-        // already open its segment connections before this server sees the probe's connection close.
         if let cap = file.maxParallel, headers["range"] != "bytes=0-0" {
             let path = request.path
             let admitted: Bool = lock.withLock {
@@ -572,7 +559,6 @@ public final class TestServer: @unchecked Sendable {
             trickle(body, at: bytesPerSecond, on: connection, onClose: onClose)
             return
         }
-        // One-byte bodies, such as a resume's probe reply, are never held.
         guard let hold, hold < body.count, body.count > 1 else {
             connection.send(content: Data(head.utf8) + body, completion: .contentProcessed(close))
             return

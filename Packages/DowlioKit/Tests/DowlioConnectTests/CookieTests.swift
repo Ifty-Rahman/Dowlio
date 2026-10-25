@@ -56,7 +56,6 @@ struct CookieTests {
         #expect(sent.cookies == [Cookie(name: "prefs", value: "dark mode, large")])
     }
 
-    /// Dowlio always passes a site's cookies along, so the browser learns only how catching works.
     @Test func theBrowserLearnsOnlyItsCatchingSettings() async throws {
         let fixture = try await ConnectFixture(preferences: CatchPreferences(catches: false, neverCatch: ["bank.example.com"]))
         let token = try await fixture.pairedToken()

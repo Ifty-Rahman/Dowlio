@@ -4,14 +4,9 @@ import DowlioTestSupport
 import Foundation
 import Testing
 
-/// The download list shows the segments the ramp-up opened, one per connection, whatever stealing
-/// does under the hood. The inspector's segments show the real split.
 @Suite(.timeLimit(.minutes(1)))
 struct OriginalSegmentsTests {
     static let mebibyte = 1_048_576
-    /// Requests for the file's second half trickle, so connections from the first half finish early
-    /// and split the slow parts. Requests for the first half hold until all four connections have
-    /// asked, so the first one can't fetch the file alone.
     static let held = 256 * 1024
     static let slowHalf = TestServer.RangeThrottle(rangeStart: 16 * mebibyte, bytesPerSecond: mebibyte, andLater: true)
 
@@ -43,7 +38,6 @@ struct OriginalSegmentsTests {
         server.releaseHeldResponses()
         let (shownCounts, mostReal, last) = await recording.value
 
-        // The bar grows as the ramp-up opens connections, then stays at four.
         #expect(shownCounts.last == 4)
         #expect(shownCounts == shownCounts.sorted())
         #expect(mostReal > 4)

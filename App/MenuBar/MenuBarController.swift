@@ -14,21 +14,31 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
-    /// What closes the popover, live only while it's shown.
-    private var eventMonitors: [Any] = []
-    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    private lazy var dismissal = PopoverDismissal(hooks: .init(
+        popoverWindow: { [weak self] in self?.popover.contentViewController?.view.window },
+        isPointerOnIcon: { [weak self] in self?.isPointerOnIcon ?? false },
+        isPopoverShown: { [weak self] in self?.popover.isShown ?? false },
+        isMoreShown: { [weak self] in self?.moreMenu.isShown ?? false },
+        hideMore: { [weak self] in self?.moreMenu.hide() },
+        close: { [weak self] in self?.close() }
+    ))
     private lazy var catchToast = CatchToast(model: model)
+    private lazy var moreMenu = MoreMenu(
+        settings: { [weak self] in self?.runFromMore { $0.showSettings() } },
+        reportProblem: { [weak self] in self?.runFromMore { $0.reportProblem() } },
+        quit: { NSApp.terminate(nil) }
+    )
 
     init(model: AppModel) {
         self.model = model
         super.init()
-        // Dowlio decides when the popover closes, so a click on the icon only ever toggles it.
         popover.behavior = .applicationDefined
         popover.animates = false
         popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
             model: model, panel: panel,
-            close: { [weak self] in self?.close() }
+            close: { [weak self] in self?.close() },
+            toggleMore: { [weak self] in self?.toggleMore() }
         ))
         item.button?.target = self
         item.button?.action = #selector(toggle)
@@ -62,6 +72,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     func showSent(_ link: SentLink) {
         if !popover.isShown { open() }
+        moreMenu.hide()
         if !panel.showsQuickAdd || panel.quickAdd == nil {
             panel.quickAdd = model.makeNewDownload()
             panel.showsQuickAdd = true
@@ -73,7 +84,21 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         if popover.isShown { close() } else { open() }
     }
 
+    private func toggleMore() {
+        if moreMenu.isShown {
+            moreMenu.hide()
+        } else if let anchor = panel.moreAnchor {
+            moreMenu.show(under: anchor)
+        }
+    }
+
+    private func runFromMore(_ action: (AppModel) -> Void) {
+        close()
+        action(model)
+    }
+
     private func close() {
+        moreMenu.hide()
         guard popover.isShown else { return }
         popover.performClose(nil)
     }
@@ -88,67 +113,19 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
         NSApp.activate()
         window?.makeKey()
-        watchForClosing()
+        dismissal.start()
     }
 
     func popoverDidClose(_ notification: Notification) {
+        moreMenu.hide()
         panel.showsQuickAdd = false
         panel.quickAdd = nil
-        stopWatchingForClosing()
+        dismissal.stop()
     }
 
-    /// A click outside the popover, in another app or another Dowlio window, Escape, leaving
-    /// Dowlio, or switching Spaces closes it. A click on the icon is left to `toggle`.
-    private func watchForClosing() {
-        guard eventMonitors.isEmpty else { return }
-        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.isPointerOnIcon else { return }
-                self.close()
-            }
-        }) { eventMonitors.append(monitor) }
-        if let monitor = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
-            let clicked = event.window
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if clicked !== self.popover.contentViewController?.view.window, !self.isPointerOnIcon { self.close() }
-            }
-            return event
-        }) { eventMonitors.append(monitor) }
-        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            let window = event.window
-            guard event.keyCode == 53 else { return event }
-            let closed = MainActor.assumeIsolated {
-                guard let self, self.popover.isShown, window === self.popover.contentViewController?.view.window else { return false }
-                self.close()
-                return true
-            }
-            return closed ? nil : event
-        }) { eventMonitors.append(monitor) }
-        for (center, name) in [
-            (NotificationCenter.default, NSApplication.didResignActiveNotification),
-            (NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification),
-        ] {
-            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.close() }
-            }
-            observers.append((center, token))
-        }
-    }
-
-    /// The menu bar shows the icon in a window macOS may own, so its clicks can look like another
-    /// app's. They're left to `toggle`.
     private var isPointerOnIcon: Bool {
         guard let button = item.button, let window = button.window else { return false }
         return window.convertToScreen(button.convert(button.bounds, to: nil)).contains(NSEvent.mouseLocation)
-    }
-
-    private func stopWatchingForClosing() {
-        eventMonitors.forEach(NSEvent.removeMonitor)
-        eventMonitors.removeAll()
-        for observer in observers { observer.center.removeObserver(observer.token) }
-        observers.removeAll()
     }
 
     private func follow() {
@@ -175,6 +152,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 final class MenuBarPanel {
     var showsQuickAdd = false
     var quickAdd: NewDownloadModel?
+    @ObservationIgnored weak var moreAnchor: NSView?
 }
 
 /// The menu bar icon: an arrow over a four-piece bar. While something downloads, the four

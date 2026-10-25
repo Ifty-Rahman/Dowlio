@@ -96,8 +96,6 @@ final class Connection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         completionHandler(.allow)
     }
 
-    /// Follows redirects, but never carries the cookies or the browser's own headers to another
-    /// scheme, host or port than the hop before.
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

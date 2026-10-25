@@ -19,13 +19,8 @@ final class ProgressBoard: @unchecked Sendable {
     /// Per segment, the bytes from its start a connection has taken on: written, or about to be.
     /// Never below `receivedBytes`. Stealing never takes these bytes.
     private var claimed: [Int64]
-    /// Segments whose part went back to the segment before them. Their indexes stay taken.
     private var rolledBack: [Bool]
-    /// Where the pieces the interface draws start: the segments the ramp-up opened. Stealing
-    /// doesn't add any, so each piece holds a segment and whatever was stolen from it.
     private var shownStarts: Set<Int64>
-    /// Only a download that started as one segment draws its ramp-up. A restored one keeps the
-    /// pieces the interface saved.
     let drawsRampUp: Bool
 
     init(segments: [ByteRange]) {
@@ -83,7 +78,6 @@ final class ProgressBoard: @unchecked Sendable {
         }
     }
 
-    /// The segments that weren't rolled back, in file order. Call under `lock`.
     private var keptSegments: [SegmentProgress] {
         segments.indices.filter { !rolledBack[$0] }.map { segments[$0] }.sorted { $0.start < $1.start }
     }
@@ -98,7 +92,6 @@ final class ProgressBoard: @unchecked Sendable {
         }
     }
 
-    /// Splits like `steal`, and has the interface draw the new segment too, for the ramp-up.
     func splitShown() -> Int? {
         lock.withLock {
             guard let index = splitLocked() else { return nil }
@@ -119,8 +112,6 @@ final class ProgressBoard: @unchecked Sendable {
         lock.withLock { !rolledBack[index] && segments[index].missesBytes }
     }
 
-    /// Gives a segment that never received a byte back to the segment that ends right before it,
-    /// whose connection then carries on into it. Returns `false` when nothing ends there.
     func rollBack(segment index: Int) -> Bool {
         lock.withLock {
             guard !rolledBack[index], segments[index].receivedBytes == 0 else { return false }
@@ -156,8 +147,6 @@ final class ProgressBoard: @unchecked Sendable {
         lock.withLock { ByteRange(start: segments[index].start, end: segments[index].end) }
     }
 
-    /// The part of segment `index` no connection has received yet. Empty, with its start past its
-    /// end, once the segment is complete.
     func missing(segment index: Int) -> ByteRange {
         lock.withLock {
             let segment = segments[index]
@@ -182,7 +171,6 @@ final class ProgressBoard: @unchecked Sendable {
         lock.withLock { splitLocked() }
     }
 
-    /// Call under `lock`.
     private func splitLocked() -> Int? {
         let remaining: [ByteRange?] = segments.indices.map { index in
             guard !rolledBack[index] else { return nil }

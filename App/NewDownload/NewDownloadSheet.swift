@@ -53,7 +53,9 @@ struct NewDownloadSheet: View {
                 .padding(.top, DowlioDesign.Spacing.sm)
             }
             HStack {
-                Toggle("Start immediately", isOn: $sheet.draft.startImmediately).toggleStyle(.switch)
+                Toggle("Start immediately", isOn: $sheet.draft.startImmediately)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -116,12 +118,13 @@ private struct FileCard: View {
                 if let problem = line.problem {
                     Text(problem).font(DowlioDesign.TypeRole.detail).foregroundStyle(LinkStatus.Tone.problem.color)
                 } else if let status = check?.status {
-                    HStack(spacing: DowlioDesign.Spacing.sm) {
+                    HStack(alignment: .firstTextBaseline, spacing: DowlioDesign.Spacing.sm) {
                         if status.tone == .neutral { ProgressView().controlSize(.small) }
-                        Text(status.line).foregroundStyle(status.tone.color)
-                        if let size = inspection?.totalBytes { Text("· \(ByteText.string(size))").foregroundStyle(.secondary).monospacedDigit() }
+                        LinkStatusLine(status: status, size: inspection?.totalBytes)
                         if inspection?.isNotSecure ?? (line.url?.scheme?.lowercased() == "http") {
-                            Label("Not secure", systemImage: "lock.open.fill").foregroundStyle(LinkStatus.Tone.caution.color)
+                            Label("Not secure", systemImage: "lock.open.fill")
+                                .foregroundStyle(LinkStatus.Tone.caution.color)
+                                .fixedSize()
                         }
                     }
                     .font(DowlioDesign.TypeRole.detail)
@@ -163,6 +166,19 @@ private struct FileCard: View {
         case .notALink(let text): return text
         case .unsupported(let url): return url.absoluteString
         }
+    }
+}
+
+struct LinkStatusLine: View {
+    let status: LinkStatus
+    let size: Int64?
+
+    var body: some View {
+        var line = Text(status.line).foregroundStyle(status.tone.color)
+        if let size {
+            line = line + Text(" · \(ByteText.string(size))").foregroundStyle(.secondary).monospacedDigit()
+        }
+        return line.fixedSize(horizontal: false, vertical: true)
     }
 }
 

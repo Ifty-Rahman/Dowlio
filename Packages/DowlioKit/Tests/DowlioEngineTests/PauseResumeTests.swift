@@ -37,10 +37,6 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
-        // Resume's first request is the first segment's missing part. Each segment's missing part
-        // is asked for from its first missing byte, with the validator. A new connection may split
-        // a segment before its own request goes out, so a request may end early, but never asks
-        // for bytes the download has.
         let resumed = Array(server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused))
         let first = try #require(paused.segments.first)
         #expect(resumed.first?.headers["range"] == "bytes=\(first.start + first.receivedBytes)-\(first.end)")
@@ -169,13 +165,10 @@ struct PauseResumeTests {
         let afterPause = server.requests[requestsWhenPaused...].map(\.path)
         #expect(afterPause.first == "/once")
         #expect(afterPause.dropFirst().allSatisfy { $0 == "/signed.bin" })
-        // The segments were kept: no request starts the file again from byte 0.
         #expect(!server.requests[requestsWhenPaused...].contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
         #expect(try TestFiles.sha256(of: folder.appending(path: "signed.bin")) == TestFiles.sha256(data))
     }
 
-    /// Resume's first request stays open for its segment. Opening all connections at once still
-    /// sends the other segment's request only after it, on a host that allows one connection.
     @Test func resumingAllAtOnceOnAHostThatAllowsOneConnectionIsNeverRefused() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 43)
@@ -185,7 +178,6 @@ struct PauseResumeTests {
         let (engine, id, folder) = try await startHeld(server, file: file, at: "/one.iso", options: options)
         await engine.pause(id)
 
-        // From here on the server allows one reply at a time, and the first segment's rest trickles.
         var limited = file
         limited.maxParallel = 1
         limited.throttle = .init(rangeStart: Self.held, bytesPerSecond: 4 * 1024 * 1024)
@@ -236,9 +228,6 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "report.pdf")) == TestFiles.sha256(new))
-        // Resume's first request carried the old validator and got the new file with 200. That
-        // reply was the new version's first segment, so nothing asks for byte 0 again, and every
-        // later request carries the new validator.
         let resumed = server.requests[requestsWhenPaused...]
         #expect(resumed.first?.headers["if-range"] == "\"old\"")
         #expect(!resumed.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
@@ -274,9 +263,6 @@ struct PauseResumeTests {
         }
     }
 
-    /// Resume's first request can't continue the download, so it starts over with what the server
-    /// now serves. A 200 is read as the new file at once. Anything else asks for the whole file
-    /// with `bytes=0-`, which falls back to one connection when ranges don't work.
     @Test(arguments: ChangeWhilePaused.allCases)
     func aResumeThatCantContinueStartsOver(_ change: ChangeWhilePaused) async throws {
         let server = try await TestServer()
@@ -321,8 +307,6 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "notes.zip")) == TestFiles.sha256(data))
-        // A changed file can't be detected, so the download starts again as a new one: its first
-        // request asks for the whole file, and it splits again.
         #expect(server.requests[requestsWhenPaused].headers["range"] == "bytes=0-")
         let resumedStarts = Set(server.requests[requestsWhenPaused...].compactMap { request -> Int? in
             guard let range = request.headers["range"] else { return nil }
@@ -336,7 +320,6 @@ struct PauseResumeTests {
         let server = try await TestServer()
         let old = TestServer.makeData(size: Self.size, seed: 39)
         let new = TestServer.makeData(size: Self.size, seed: 40)
-        // The first request sees the old file, and its reply is slow. The second segment's
         // request, sent with If-Range "old", gets the new file with 200.
         server.serve(
             .init(
@@ -359,7 +342,6 @@ struct PauseResumeTests {
 
     @Test func aFileThatKeepsChangingFailsAsServerChangedFile() async throws {
         let server = try await TestServer()
-        // The first reply is slow, so a second connection asks with the validator it gave.
         server.serve(
             .init(data: TestServer.makeData(size: Self.size, seed: 41), newETagEveryRequest: true, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)),
             at: "/live.log"

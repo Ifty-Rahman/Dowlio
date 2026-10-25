@@ -116,7 +116,6 @@ struct CookieTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "k.bin")) == TestFiles.sha256(data))
-        // The first request, which goes quiet, a second segment, and the retry once the first times out.
         #expect(server.requests.count >= 3)
         #expect(server.requests.allSatisfy { $0.headers["cookie"] == Self.header })
     }

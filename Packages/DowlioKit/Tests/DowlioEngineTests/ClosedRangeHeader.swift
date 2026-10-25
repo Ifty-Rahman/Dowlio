@@ -1,6 +1,5 @@
 import DowlioCore
 
-/// A `Range: bytes=a-b` request header, read back from what a test server saw.
 struct ClosedRangeHeader: Equatable {
     let start: Int64
     let end: Int64
@@ -13,15 +12,12 @@ struct ClosedRangeHeader: Equatable {
         self.end = end
     }
 
-    /// Every segment with bytes missing has a request that starts at its first missing byte and
-    /// ends inside the segment.
     static func eachMissingPartIsAskedFromItsStart(_ segments: [SegmentProgress], asked: [ClosedRangeHeader]) -> Bool {
         segments.filter { $0.start + $0.receivedBytes <= $0.end }.allSatisfy { segment in
             asked.contains { $0.start == segment.start + segment.receivedBytes && $0.end <= segment.end }
         }
     }
 
-    /// No request covers a byte some segment had already received.
     static func noneAsksForReceivedBytes(_ segments: [SegmentProgress], asked: [ClosedRangeHeader]) -> Bool {
         asked.allSatisfy { range in
             segments.allSatisfy { segment in

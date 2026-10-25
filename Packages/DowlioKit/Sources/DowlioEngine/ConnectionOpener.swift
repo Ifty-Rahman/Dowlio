@@ -29,7 +29,6 @@ struct ConnectionOpener: Sendable {
         return Connection(request: request, idleTimeout: idleTimeout)
     }
 
-    /// Asks for `range` of a file of `total` bytes. Throws for a refusal or another failure.
     func askForRange(_ range: ByteRange, of total: Int64, ifRange validator: String?, at url: URL) async throws -> RangeAnswer {
         let connection = open(url, range: .closed(range), ifRange: validator)
         let response: HTTPURLResponse
@@ -89,14 +88,9 @@ struct ConnectionOpener: Sendable {
     }
 }
 
-/// How a server answered a request for part of a file.
 enum RangeAnswer {
-    /// A `206` for exactly the asked bytes, with no encoding.
     case range(Connection, HTTPURLResponse)
-    /// A `200`: the whole file from byte 0. To `If-Range`, it means the validator no longer matches.
     case wholeFile(Connection, HTTPURLResponse)
-    /// A reply that can't be the asked part: a `416`, an encoded or multipart reply, or one for other
-    /// bytes. Its connection is closed.
     case unusable(finalURL: URL?)
 }
 

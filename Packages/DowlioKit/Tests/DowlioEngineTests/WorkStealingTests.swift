@@ -10,8 +10,6 @@ import Testing
 struct WorkStealingTests {
     static let mebibyte = 1_048_576
 
-    /// A 32 MiB file over 4 connections. The first connection, the one that asks from byte 0,
-    /// trickles at 1 MiB a second, so on its own its quarter would take 8 seconds.
     static let size = 32 * mebibyte
     static let slowStart = 0
     static let slowSpeed = mebibyte
@@ -49,7 +47,6 @@ struct WorkStealingTests {
         let slow = try #require(completed.segments.first { $0.start == Int64(Self.slowStart) })
         #expect(slow.end < first.end)
         #expect(slow.receivedBytes == slow.end - slow.start + 1)
-        // The rest of its ramp-up segment went to new segments. Other connections asked for each
         // one from its own start, and each is complete.
         let takenOver = completed.segments.filter { $0.start > slow.end && $0.start <= first.end }
         #expect(takenOver.first?.start == slow.end + 1)
@@ -58,8 +55,6 @@ struct WorkStealingTests {
             starts.contains(segment.start) && segment.receivedBytes == segment.end - segment.start + 1
         })
         #expect(completed.segments.count > 4)
-        // The ramp-up made four segments, and stealing never changes them, so the interface can
-        // keep showing them.
         #expect(planned.count == 4)
         #expect(planned.first?.start == 0 && planned.last?.end == Int64(Self.size - 1))
         let afterRampUp = snapshots.drop { $0.plannedSegments.count < 4 }
@@ -71,10 +66,6 @@ struct WorkStealingTests {
     @Test func pauseAfterASplitKeepsTheManifestRightAndResumeFetchesOnlyTheMissingBytes() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: Self.size, seed: 32)
-        // Requests for the file's second half trickle, so the download is still running after
-        // connections from the first half finish and split the slow parts. Requests for the first
-        // half hold until all four connections have asked, so the first one can't fetch the file
-        // alone.
         let throttle = TestServer.RangeThrottle(rangeStart: Self.size / 2, bytesPerSecond: Self.slowSpeed, andLater: true)
         server.serve(.init(data: data, holdAfterBytes: 256 * 1024, eTag: "\"v1\"", throttle: throttle), at: "/split.iso")
         let folder = try TestFiles.makeFolder()
@@ -131,8 +122,6 @@ struct WorkStealingTests {
 }
 
 extension WorkStealingTests {
-    /// With stealing turned off, every segment keeps its own range to the end. Every reply is slow,
-    /// so the ramp-up opens every connection before the first one ends.
     @Test func withStealingOffEverySegmentKeepsItsRange() async throws {
         let server = try await TestServer()
         let size = 16 * Self.mebibyte

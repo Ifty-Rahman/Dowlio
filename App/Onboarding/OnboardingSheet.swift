@@ -3,7 +3,6 @@ import DowlioCore
 import DowlioLibrary
 import SwiftUI
 
-/// The welcome a fresh install shows, each page with Skip. A later phase adds the shortcut page.
 struct OnboardingSheet: View {
     let model: AppModel
     let finish: () -> Void

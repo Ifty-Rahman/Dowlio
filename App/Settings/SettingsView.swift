@@ -299,8 +299,6 @@ private struct BrowsersSettings: View {
 }
 
 private extension View {
-    /// macOS draws the toolbar's background when the pointer is over it. Settings keeps one
-    /// surface instead.
     @ViewBuilder
     func hidingToolbarBackground() -> some View {
         if #available(macOS 15, *) {

@@ -1,9 +1,6 @@
 @testable import DowlioEngine
 import Testing
 
-/// How many segments a fresh download ends up with when every connection splits the largest
-/// remaining part before any byte arrives, like Neat Download Manager's ramp-up. Expected
-/// counts are worked out by hand: halves of at least 120 KiB, at most the connections allowed.
 struct SegmentRampTests {
     static func segments(size: Int64, connections: Int) -> [ByteRange] {
         var remaining: [ByteRange?] = SegmentPlanner.firstSegment(size: size)
@@ -45,7 +42,6 @@ struct SegmentRampTests {
         }
     }
 
-    /// Neat's counts, with the bytes its connections had already received when it decided.
     static let rampUpCounts: [(missing: Int64, wanted: Int, opened: Int)] = [
         (131_072 - 16_384, 7, 0),
         (262_144 - 16_384, 7, 1),
@@ -67,7 +63,6 @@ struct SegmentRampTests {
 }
 
 /// Stealing. Expected splits are worked out by hand: a free connection takes the second
-/// half of the largest remaining range, and only when both halves stay at 120 KiB or more.
 struct SegmentStealTests {
     static let mebibyte: Int64 = 1_048_576
 

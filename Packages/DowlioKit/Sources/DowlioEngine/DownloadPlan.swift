@@ -40,7 +40,6 @@ final class PlanStore: @unchecked Sendable {
         dropped?.cancel()
     }
 
-    /// The held connection, if its reply starts at byte `start`.
     func takeConnection(startingAt start: Int64) -> Connection? {
         lock.withLock {
             guard let held, held.start == start else { return nil }
@@ -63,8 +62,6 @@ final class PlanStore: @unchecked Sendable {
     }
 }
 
-/// A connection whose reply is open and not read yet: a new download's probe, or Resume's first
-/// request. Its reply starts at byte `start` of the file.
 struct HeldConnection {
     let connection: Connection
     let start: Int64

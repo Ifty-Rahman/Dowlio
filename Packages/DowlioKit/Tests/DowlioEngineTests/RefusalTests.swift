@@ -14,8 +14,6 @@ struct RefusalTests {
         "127.0.0.1:\(server.port)"
     }
 
-    /// Once the host refused a connection, finished connections close instead of stealing, so
-    /// none opens a new one before the server sees a cut-short reply close.
     @Test func aServerThatAllowsThreeConnectionsEndsWithTheDownloadUsingThree() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 51)
@@ -46,7 +44,6 @@ struct RefusalTests {
     }
 
     /// The first download learns that the host allows two connections. The second, from the same
-    /// host, never opens more than two and is never refused.
     @Test func laterDownloadsFromTheSameHostStartWithItsLearnedLimit() async throws {
         let server = try await TestServer()
         let first = TestServer.makeData(size: 8 * 1024 * 1024, seed: 52)
@@ -73,9 +70,6 @@ struct RefusalTests {
         #expect(server.peakParallel(at: "/second.bin") <= 2)
     }
 
-    /// Like Neat Download Manager, a split whose connection the host refuses before its first byte
-    /// gives its part back. A host that allows one connection ends with one segment, and the next
-    /// download from it opens one connection and shows one segment from the start.
     @Test func aHostThatAllowsOneConnectionShowsOneSegment() async throws {
         let server = try await TestServer()
         let first = TestServer.makeData(size: 8 * 1024 * 1024, seed: 60)
@@ -110,8 +104,6 @@ struct RefusalTests {
         #expect(server.refusals(at: "/again.iso") == 0)
     }
 
-    /// The first reply is open before segment 0 takes its place, and opening all connections at
-    /// once still leaves that place for it, so the host never sees more than its learned limit.
     @Test func openingAllConnectionsAtOnceCountsTheFirstReply() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 63)
@@ -182,8 +174,6 @@ struct RefusalTests {
         #expect(limits.limit(for: Self.host(of: server)) == learned)
     }
 
-    /// 3 MiB splits into eight parts of at least 120 KiB, so a download set to 8 connections may
-    /// use eight, and a reset lowers the host's limit from those eight.
     @Test func aRefusalLowersTheLimitFromTheConnectionsTheDownloadUses() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 3 * 1024 * 1024, seed: 54)
@@ -204,8 +194,6 @@ struct RefusalTests {
     }
 
     /// Downloads a file whose server behaves as `file` describes, and checks that it completes
-    /// with the served bytes, the last request asking for the whole file without a range. The first reply
-    /// is slow, so the download asks for a second segment before it has the whole file.
     private func downloadFallsBackToOneConnection(_ file: TestServer.File, name: String) async throws -> TestServer {
         let server = try await TestServer()
         var file = file
@@ -240,8 +228,6 @@ struct RefusalTests {
         if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-", nil]) }
     }
 
-    /// A host that caps every range reply sends only part of the file to `bytes=0-`, so the first
-    /// reply can't be the first segment. The download asks for the whole file instead.
     @Test func aFirstReplyThatStopsShortOfTheEndFallsBackToOneConnection() async throws {
         let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 62)
         let server = try await downloadFallsBackToOneConnection(

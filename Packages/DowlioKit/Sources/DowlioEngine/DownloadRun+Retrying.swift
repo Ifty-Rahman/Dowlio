@@ -41,8 +41,6 @@ extension DownloadRun {
         options.maximumFailures.map { min(max($0, 0), 11) } ?? configuration.retry.maximumFailures
     }
 
-    /// A refused segment connection already lowered the download's gate, so the host keeps the
-    /// gate's limit. A refused probe or single connection lowers the host's limit by one.
     func lowerLimit(of host: URL, for key: RetryKey) {
         guard let hostKey = host.hostLimitKey else { return }
         if case .segment = key {

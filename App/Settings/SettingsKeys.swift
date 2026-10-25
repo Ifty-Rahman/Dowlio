@@ -20,8 +20,7 @@ enum SettingsKey {
     static let hasSeenWelcome = "hasSeenWelcome"
     static let catchesDownloads = "catchesDownloads"
     static let neverCatchSites = "neverCatchSites"
-    /// Keys of settings Dowlio no longer has.
-    static let retired = ["sharesSignIn", "noSignInSites", "signInLog"]
+    static let retiredKeys = ["sharesSignIn", "noSignInSites", "signInLog"]
 }
 
 extension UserDefaults {
@@ -60,7 +59,7 @@ extension UserDefaults {
     }
 
     func removeRetiredSettings() {
-        SettingsKey.retired.forEach(removeObject(forKey:))
+        SettingsKey.retiredKeys.forEach(removeObject(forKey:))
     }
 
     /// `nil` when unset. Values can arrive as text, as from a launch argument, so the defaults

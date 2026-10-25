@@ -423,7 +423,6 @@ public actor Library {
     }
 }
 
-/// The cookies and request a download brought from the browser.
 private struct BrowserHandoff {
     let cookies: [Cookie]
     let browserRequest: BrowserRequest?

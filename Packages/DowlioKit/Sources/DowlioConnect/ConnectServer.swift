@@ -30,6 +30,7 @@ public enum ConnectServerError: Error, Equatable {
 
 public actor ConnectServer {
     public static let defaultPorts: [UInt16] = [51517, 51518, 51519, 51520]
+    public static let defaultCatchDeadline: Duration = .seconds(12)
     static let pairingRequestsPerMinute = 5
 
     private let ports: [UInt16]
@@ -74,7 +75,7 @@ public actor ConnectServer {
         vault: any TokenVault,
         now: @escaping @Sendable () -> Date = Date.init,
         catcher: Catcher? = nil,
-        catchDeadline: Duration = .seconds(12),
+        catchDeadline: Duration = ConnectServer.defaultCatchDeadline,
         releaseWait: Duration = .seconds(2),
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
@@ -448,7 +449,6 @@ public actor ConnectServer {
     }
 }
 
-/// One catch's wait for Dowlio Connect to say the browser let go of its download.
 struct ReleaseKey: Hashable {
     let session: UUID
     let requestID: String?

@@ -4,8 +4,6 @@ import Foundation
 struct Probed {
     enum Body {
         case whole(Connection)
-        /// `firstReply` is still open when its reply is the whole file from byte 0, and goes on as
-        /// the first segment.
         case ranges(total: Int64, validator: String?, firstReply: Connection?)
 
         var openConnection: Connection? {
@@ -30,8 +28,6 @@ extension Probed {
         )
     }
 
-    /// A `200` to `If-Range`: the file changed, and the reply is the new version from byte 0. With
-    /// ranges and a known size it goes on as the first segment, as a new download's probe does.
     init(changedFile response: HTTPURLResponse, over connection: Connection, requested target: URL) {
         let ranges = response.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") == true
         guard ranges, response.isUsableRangeReply, let total = response.knownLength, total > 0 else {
@@ -53,12 +49,10 @@ extension Probed {
 struct ServerProbe: Sendable {
     let connections: ConnectionOpener
 
-    /// Asks for the whole file. A usable range reply stays open as the first segment.
     func probe(_ target: URL) async throws -> Probed {
         try await probe(target, asking: .toEnd(from: 0))
     }
 
-    /// Asks for the first byte only, for a probe that checks the server and reads nothing.
     func check(_ target: URL) async throws -> Probed {
         try await probe(target, asking: .closed(ByteRange(start: 0, end: 0)))
     }
