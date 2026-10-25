@@ -33,6 +33,10 @@ public actor ConnectServer {
     private var listener: NWListener?
     private var isPairingPending = false
     private var recentPairingRequests: [Date] = []
+    private var sessions: [UUID: Session] = [:]
+    private let caught: AsyncStream<CaughtDownload>.Continuation
+
+    public nonisolated let catches: AsyncStream<CaughtDownload>
 
     public init(
         ports: [UInt16] = ConnectServer.defaultPorts,
@@ -50,6 +54,7 @@ public actor ConnectServer {
         self.vault = vault
         self.now = now
         self.approve = approve
+        (catches, caught) = AsyncStream.makeStream()
     }
 
     public func start() async throws -> UInt16 {
@@ -102,6 +107,8 @@ public actor ConnectServer {
 
     private func accept(_ connection: NWConnection) {
         let session = Session(connection: connection)
+        sessions = sessions.filter { $0.value.isOpen }
+        sessions[session.id] = session
         connection.stateUpdateHandler = { state in
             switch state {
             case .failed, .cancelled: connection.cancel()
@@ -155,7 +162,7 @@ public actor ConnectServer {
         case let .catchOffer(offer):
             guard session.pairing != nil else { return close(session) }
             Task {
-                let reply = await answer(offer)
+                let reply = await answer(offer, from: session)
                 send(reply.replying(to: requestID), to: session)
             }
         case .unknown:
@@ -187,7 +194,26 @@ public actor ConnectServer {
         return .pairApproved(token: token)
     }
 
-    private func answer(_ offer: CatchOffer) async -> Outgoing {
+    public func downloadInBrowser(_ download: CaughtDownload) async -> Bool {
+        let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
+        guard let session = connected.first(where: { $0.id == download.session }) ?? connected.first,
+              await deliver(.browserDownload(download.link), to: session)
+        else { return false }
+        await catcher?.discard(download.id)
+        return true
+    }
+
+    private func deliver(_ message: Outgoing, to session: Session) async -> Bool {
+        let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
+        let context = NWConnection.ContentContext(identifier: "message", metadata: [metadata])
+        return await withCheckedContinuation { continuation in
+            session.connection.send(content: message.data, contentContext: context, isComplete: true, completion: .contentProcessed { error in
+                continuation.resume(returning: error == nil)
+            })
+        }
+    }
+
+    private func answer(_ offer: CatchOffer, from session: Session) async -> Outgoing {
         guard let catcher else { return .catchDeclined(.error) }
         let deadline = catchDeadline
         let decision = await withTaskGroup(of: CatchDecision?.self) { group in
@@ -201,8 +227,9 @@ public actor ConnectServer {
             return first
         }
         switch decision {
-        case let .accept(start)?:
-            await start()
+        case let .accept(fileName, totalBytes, start)?:
+            let id = await start()
+            caught.yield(CaughtDownload(id: id, link: offer.url, fileName: fileName, totalBytes: totalBytes, session: session.id))
             return .catchAccepted
         case let .decline(reason)?:
             return .catchDeclined(reason)
@@ -241,6 +268,7 @@ public actor ConnectServer {
 }
 
 final class Session: @unchecked Sendable {
+    let id = UUID()
     let connection: NWConnection
     private let lock = NSLock()
     private var open = true

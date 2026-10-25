@@ -78,6 +78,11 @@ struct ConnectFixture {
         return client
     }
 
+    func nextCatch() async throws -> CaughtDownload {
+        for await caught in server.catches { return caught }
+        throw ConnectClientError.closed
+    }
+
     func rowsNow() async -> [DownloadRow] {
         for await rows in await library.rows() { return rows }
         return []
@@ -103,7 +108,7 @@ struct ConnectFixture {
     }
 
     static func freePorts(count: Int = 4) -> [UInt16] {
-        let start = UInt16.random(in: 40000...60000)
+        let start = UInt16.random(in: 40000...50000)
         return (0..<UInt16(count)).map { start + $0 }
     }
 }

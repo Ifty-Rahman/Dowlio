@@ -34,6 +34,9 @@ final class AppModel {
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
     private let notifier = FinishNotifier()
+    private let catchNotifier = CatchNotifier()
+    private var catchGrouper = CatchGrouper()
+    var revealing: [DownloadID]?
     private(set) var freeSpace: Int64?
 
     private let library: Library?
@@ -91,6 +94,43 @@ final class AppModel {
         }
         connectServer = server
         Task { _ = try? await server.start() }
+        Task { [weak self] in
+            for await caught in server.catches {
+                self?.announce(caught)
+            }
+        }
+    }
+
+    private func announce(_ caught: CaughtDownload) {
+        notifier.askPermissionIfNeeded()
+        let notice = catchGrouper.add(caught, at: Date())
+        if let menuBar, menuBar.isVisible {
+            menuBar.showCatch(notice)
+        } else {
+            catchNotifier.post(notice)
+        }
+    }
+
+    func downloadInBrowser(_ notice: CatchNotice) {
+        guard let caught = notice.single, let connectServer else { return }
+        Task {
+            guard await !connectServer.downloadInBrowser(caught) else { return }
+            actionFailure = "Dowlio kept “\(caught.fileName)”, because no browser with Dowlio Connect is connected."
+            showLibraryWindow()
+        }
+    }
+
+    func show(_ notice: CatchNotice) {
+        revealing = notice.downloads.map(\.id)
+        showLibraryWindow()
+    }
+
+    func answerCatchNotification(_ identifier: String, action: CatchNotifier.Action) {
+        guard let notice = catchNotifier.notice(identifier) else { return showLibraryWindow() }
+        switch action {
+        case .downloadInBrowser: downloadInBrowser(notice)
+        case .show: show(notice)
+        }
     }
 
     func row(_ id: DownloadID) -> DownloadRow? {

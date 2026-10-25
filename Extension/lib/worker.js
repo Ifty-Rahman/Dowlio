@@ -13,7 +13,7 @@ export function browserName(navigator) {
   return named ?? "Chromium";
 }
 
-export function startWorker({ chrome, WebSocket, timers, navigator, random = Math.random, ports = PORTS }) {
+export function startWorker({ chrome, WebSocket, timers, navigator, random = Math.random, ports = PORTS, now = Date.now }) {
   const storage = chrome.storage.local;
   const version = chrome.runtime.getManifest().version;
   let socket = null;
@@ -111,6 +111,9 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         await storage.remove("token");
         reconnectAtOnce = true;
         break;
+      case "browser.download":
+        await catching.downloadInBrowser(message.url);
+        break;
     }
   }
 
@@ -185,9 +188,10 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     });
   });
 
-  startCatching({
+  const catching = startCatching({
     chrome,
     navigator,
+    now,
     link: { isConnected: () => connected && socket?.readyState === WebSocket.OPEN, request },
   });
 

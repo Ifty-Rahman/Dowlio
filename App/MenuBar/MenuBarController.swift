@@ -1,4 +1,5 @@
 import AppKit
+import DowlioConnect
 import DowlioLibrary
 import Observation
 import SwiftUI
@@ -14,6 +15,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
     private var outsideClicks: Any?
+    private lazy var catchToast = CatchToast(model: model)
 
     init(model: AppModel) {
         self.model = model
@@ -42,15 +44,24 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     var isVisible: Bool {
         get { item.isVisible }
         set {
-            if !newValue { popover.performClose(nil) }
+            if !newValue {
+                popover.performClose(nil)
+                catchToast.hide()
+            }
             item.isVisible = newValue
         }
+    }
+
+    func showCatch(_ notice: CatchNotice) {
+        guard let button = item.button else { return }
+        catchToast.show(notice, under: button)
     }
 
     @objc private func toggle() {
         if popover.isShown {
             popover.performClose(nil)
         } else if let button = item.button {
+            catchToast.hide()
             panel.showsQuickAdd = false
             NSApp.activate()
             popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion

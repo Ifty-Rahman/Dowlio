@@ -1,16 +1,33 @@
 export const CATCH_TIMEOUT = 5000;
+export const HAND_BACK_MARK_LIFETIME = 60000;
 
 function isWebLink(link) {
   return /^https?:/i.test(link ?? "");
+}
+
+function sameLink(url) {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
 }
 
 function baseName(path) {
   return path.split(/[\\/]/).pop();
 }
 
-export function startCatching({ chrome, link, navigator }) {
+export function startCatching({ chrome, link, navigator, now = Date.now }) {
   const downloads = chrome.downloads;
   const waitingForName = new Map();
+  const handedBack = new Map();
+
+  function wasHandedBack(url) {
+    const key = sameLink(url);
+    const markedAt = handedBack.get(key);
+    handedBack.delete(key);
+    return markedAt !== undefined && now() - markedAt < HAND_BACK_MARK_LIFETIME;
+  }
 
   function chosenPath(id) {
     return new Promise((resolve) => waitingForName.set(id, resolve));
@@ -35,8 +52,9 @@ export function startCatching({ chrome, link, navigator }) {
 
   async function offer(item) {
     const source = item.finalUrl || item.url;
+    if (item.byExtensionId === chrome.runtime.id || wasHandedBack(item.url)) return;
     if (!isWebLink(item.url) || !isWebLink(source)) return;
-    if (item.incognito || item.byExtensionId === chrome.runtime.id || !link.isConnected()) return;
+    if (item.incognito || !link.isConnected()) return;
     const named = item.filename ? Promise.resolve({ path: item.filename }) : chosenPath(item.id);
     let paused = true;
     await downloads.pause(item.id).catch(() => {
@@ -73,4 +91,12 @@ export function startCatching({ chrome, link, navigator }) {
   downloads.onCreated.addListener((item) => {
     offer(item);
   });
+
+  return {
+    async downloadInBrowser(url) {
+      if (!isWebLink(url)) return;
+      handedBack.set(sameLink(url), now());
+      await downloads.download({ url }).catch(() => handedBack.delete(sameLink(url)));
+    },
+  };
 }

@@ -6,6 +6,15 @@ import Testing
 struct RowSelectionTests {
     private let ids = (0..<6).map { _ in DownloadID() }
 
+    @Test func showingDownloadsSelectsExactlyThoseAndAShiftClickExtendsFromThem() {
+        var selection = RowSelection()
+        selection.click(ids[5], in: ids)
+        selection.select([ids[1], ids[2]])
+        #expect(selection.selected == [ids[1], ids[2]])
+        selection.click(ids[4], in: ids, modifiers: .shift)
+        #expect(selection.selected == Set(ids[2...4]))
+    }
+
     @Test func aClickSelectsOnlyThatRow() {
         var selection = RowSelection()
         selection.click(ids[1], in: ids)

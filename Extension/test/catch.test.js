@@ -3,12 +3,12 @@ import { test } from "node:test";
 import { startWorker } from "../lib/worker.js";
 import { fakeChrome, fakeSockets, FakeTimers, flush, navigatorLike } from "./fakes.js";
 
-async function connected() {
+async function connected({ clock = { time: 0 } } = {}) {
   const chrome = fakeChrome({ stored: { token: "tok" } });
   const timers = new FakeTimers();
   const net = fakeSockets();
   const navigator = { ...navigatorLike(), userAgent: "Mozilla/5.0 Arc" };
-  startWorker({ chrome, WebSocket: net.FakeWebSocket, timers, navigator });
+  startWorker({ chrome, WebSocket: net.FakeWebSocket, timers, navigator, now: () => clock.time });
   await flush();
   await net.last().accept();
   await net.last().reply({ type: "hello.ok" });
@@ -101,7 +101,7 @@ for (const [name, item] of [
   ["a data: link", { url: "data:text/csv;base64,YQ==", finalUrl: "data:text/csv;base64,YQ==" }],
   ["a file: link", { url: "file:///Users/me/a.zip", finalUrl: "file:///Users/me/a.zip" }],
   ["an incognito download", { incognito: true }],
-  ["a download Dowlio Connect started itself", { byExtensionId: "abcdefghijklmnopabcdefghijklmnop" }],
+  ["a download the browser says Dowlio Connect started", { byExtensionId: "abcdefghijklmnopabcdefghijklmnop" }],
 ]) {
   test(`${name} stays in the browser untouched`, async () => {
     const { chrome, socket } = await connected();
@@ -173,4 +173,42 @@ test("an accepted download is erased from the browser even when cancelling it fa
   await socket.reply({ type: "catch.accepted", requestId: offers(socket)[0].requestId });
 
   assert.deepEqual(chrome.downloads.calls, [["pause", 7], ["cancel", 7], ["erase", 7]]);
+});
+
+test("Download in Browser Instead starts the file in the browser without offering it to Dowlio again", async () => {
+  const { chrome, socket } = await connected();
+
+  await socket.reply({ type: "browser.download", url: "https://cdn.example.com/files/Report.pdf" });
+
+  assert.deepEqual(chrome.downloads.calls, [["download", "https://cdn.example.com/files/Report.pdf"]]);
+  assert.equal(offers(socket).length, 0);
+});
+
+test("the same link clicked again later is offered to Dowlio as usual", async () => {
+  const { chrome, socket } = await connected();
+  await socket.reply({ type: "browser.download", url: "https://cdn.example.com/files/Report.pdf" });
+
+  await chrome.downloads.create(download({ id: 8, url: "https://cdn.example.com/files/Report.pdf" }));
+
+  assert.equal(offers(socket).length, 1);
+});
+
+test("a hand-back the browser never started stops blocking that link after a minute", async () => {
+  const clock = { time: 0 };
+  const { chrome, socket } = await connected({ clock });
+  chrome.downloads.download = async () => 101;
+  await socket.reply({ type: "browser.download", url: "https://cdn.example.com/files/Report.pdf" });
+
+  clock.time = 61000;
+  await chrome.downloads.create(download({ id: 9, url: "https://cdn.example.com/files/Report.pdf" }));
+
+  assert.equal(offers(socket).length, 1);
+});
+
+test("a hand-back that isn't a web link is ignored", async () => {
+  const { chrome, socket } = await connected();
+
+  await socket.reply({ type: "browser.download", url: "file:///etc/passwd" });
+
+  assert.deepEqual(chrome.downloads.calls, []);
 });

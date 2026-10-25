@@ -56,13 +56,7 @@ public struct FinishNotice: Equatable, Sendable {
     }
 
     public var body: String {
-        let names = rows.map(\.fileName)
-        switch names.count {
-        case 0: return ""
-        case 1: return names[0]
-        case 2, 3: return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
-        default: return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more"
-        }
+        FileNames.sentence(rows.map(\.fileName))
     }
 
     /// "Then" in Settings runs for a single finish only, so several never open a pile of files.
@@ -90,6 +84,17 @@ public enum ThenAction: String, CaseIterable, Sendable {
         case .nothing: "Do nothing"
         case .showInFinder: "Show in Finder"
         case .open: "Open the file"
+        }
+    }
+}
+
+public enum FileNames {
+    public static func sentence(_ names: [String]) -> String {
+        switch names.count {
+        case 0: return ""
+        case 1: return names[0]
+        case 2, 3: return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+        default: return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more"
         }
     }
 }

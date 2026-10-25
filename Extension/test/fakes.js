@@ -70,6 +70,15 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       async erase(query) {
         await chrome.downloads.record("erase", query.id);
       },
+      nextId: 100,
+      async download(options) {
+        await chrome.downloads.record("download", options.url);
+        const id = chrome.downloads.nextId++;
+        createdListeners.forEach((listener) =>
+          listener({ id, url: options.url, finalUrl: options.url, filename: "", incognito: false, state: "in_progress" }),
+        );
+        return id;
+      },
       onCreated: { addListener: (listener) => createdListeners.push(listener) },
       onChanged: { addListener: (listener) => changedListeners.push(listener) },
       async create(item) {

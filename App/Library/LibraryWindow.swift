@@ -85,8 +85,10 @@ struct LibraryWindow: View {
                 model.isLibraryWindowOpen = true
                 model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
                 model.openSettingsWindow = { [openSettings] in openSettings() }
+                revealCaught()
             }
             .onDisappear { model.isLibraryWindowOpen = false }
+            .onChange(of: model.revealing) { revealCaught() }
             .task {
                 guard DebugLaunch.isOn else { return }
                 try? await Task.sleep(for: .seconds(1))
@@ -128,6 +130,14 @@ struct LibraryWindow: View {
             .alert(model.actionFailure ?? "", isPresented: failureShown) {
                 Button("OK") {}
             }
+    }
+
+    private func revealCaught() {
+        guard let ids = model.revealing else { return }
+        model.revealing = nil
+        search = ""
+        selectionInSidebar = .filter(.all)
+        selection.select(ids)
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {

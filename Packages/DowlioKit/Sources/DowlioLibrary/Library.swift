@@ -203,6 +203,12 @@ public actor Library {
         await fillSlots()
     }
 
+    public func discard(_ id: DownloadID) async {
+        guard let record = records[id] else { return }
+        guard record.state == .completed else { return await cancel(id) }
+        try? moveToTrash(id)
+    }
+
     /// Takes the row off the list. A Completed download's file stays. Anything with a partial
     /// file is cancelled, so the partial file doesn't stay behind.
     public func removeFromList(_ id: DownloadID) async {

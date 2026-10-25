@@ -27,8 +27,28 @@ public enum CatchDeclineReason: String, Sendable {
 }
 
 public enum CatchDecision: Sendable {
-    case accept(start: @Sendable () async -> Void)
+    case accept(fileName: String, totalBytes: Int64?, start: @Sendable () async -> DownloadID)
     case decline(CatchDeclineReason)
+}
+
+public struct CaughtDownload: Equatable, Sendable {
+    public let id: DownloadID
+    public let link: URL
+    public let fileName: String
+    public let totalBytes: Int64?
+    let session: UUID
+
+    public init(id: DownloadID, link: URL, fileName: String, totalBytes: Int64?) {
+        self.init(id: id, link: link, fileName: fileName, totalBytes: totalBytes, session: UUID())
+    }
+
+    init(id: DownloadID, link: URL, fileName: String, totalBytes: Int64?, session: UUID) {
+        self.id = id
+        self.link = link
+        self.fileName = fileName
+        self.totalBytes = totalBytes
+        self.session = session
+    }
 }
 
 public struct Catcher: Sendable {
@@ -72,9 +92,13 @@ public struct Catcher: Sendable {
         }
         let library = library
         let chosenOptions = options
-        return .accept {
+        return .accept(fileName: options.fileName ?? inspection.fileName, totalBytes: inspection.totalBytes) {
             await library.add(link, destination: destination, options: chosenOptions, startImmediately: true)
         }
+    }
+
+    func discard(_ id: DownloadID) async {
+        await library.discard(id)
     }
 
     private func chosenInSaveDialog(_ path: URL?) -> URL? {

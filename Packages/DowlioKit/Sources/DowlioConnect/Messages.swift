@@ -62,6 +62,7 @@ struct Outgoing: Encodable {
     var requestId: String?
     var token: String?
     var reason: String?
+    var url: String?
 
     static func pairApproved(token: String) -> Outgoing { Outgoing(type: "pair.approved", token: token) }
     static func pairRefused(_ reason: String) -> Outgoing { Outgoing(type: "pair.refused", reason: reason) }
@@ -70,6 +71,7 @@ struct Outgoing: Encodable {
     static let pong = Outgoing(type: "pong")
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
+    static func browserDownload(_ link: URL) -> Outgoing { Outgoing(type: "browser.download", url: link.absoluteString) }
     static func catchDeclined(_ reason: CatchDeclineReason) -> Outgoing { Outgoing(type: "catch.declined", reason: reason.rawValue) }
 
     func replying(to requestID: String?) -> Outgoing {
