@@ -22,6 +22,7 @@ struct SettingsView: View {
         }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
+        .hidingToolbarBackground()
     }
 }
 
@@ -29,19 +30,12 @@ private struct GeneralSettings: View {
     let model: AppModel
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
-    @AppStorage(SettingsKey.hasSeenWelcome) private var hasSeenWelcome = false
     @State private var notificationsDenied = false
 
     var body: some View {
         Form {
             Section {
                 PresenceToggles(model: model)
-                LabeledContent("Welcome") {
-                    Button("Show Welcome Again") {
-                        hasSeenWelcome = false
-                        model.showLibraryWindow()
-                    }
-                }
             }
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
@@ -281,26 +275,22 @@ private struct BrowsersSettings: View {
                         )
                     }
                 }
+            }
+            Section {
                 if model.catchPreferences.neverCatch.isEmpty {
-                    LabeledContent {
-                        Text("No sites").foregroundStyle(.secondary)
-                    } label: {
-                        HStack(spacing: DowlioDesign.Spacing.xs) {
-                            Text("Never catch on")
-                            InfoButton(
-                                topic: "Never catch on",
-                                text: "Choose Never catch in Dowlio Connect's popup to keep a site's downloads in the browser."
-                            )
-                        }
-                    }
+                    Text("No sites yet. Add one from Dowlio Connect's popup.")
+                        .font(DowlioDesign.TypeRole.detail)
+                        .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.catchPreferences.neverCatch, id: \.self) { site in
-                        LabeledContent("Never catch on \(site)") {
+                        LabeledContent(site) {
                             Button("Remove") { model.catchPreferences.catchAgain(site) }
                                 .accessibilityLabel("Remove \(site)")
                         }
                     }
                 }
+            } header: {
+                Text("Never catch downloads on")
             }
         }
         .settingsForm()
@@ -308,9 +298,25 @@ private struct BrowsersSettings: View {
 }
 
 private extension View {
+    /// macOS draws the toolbar's background when the pointer is over it. Settings keeps one
+    /// surface instead.
+    @ViewBuilder
+    func hidingToolbarBackground() -> some View {
+        if #available(macOS 15, *) {
+            toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
     func settingsForm() -> some View {
-        formStyle(.grouped)
-            .scrollIndicators(.never)
+        let form = formStyle(.grouped).scrollIndicators(.never)
+        if #available(macOS 26, *) {
+            form.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            form
+        }
     }
 }
 

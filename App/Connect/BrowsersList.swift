@@ -44,7 +44,7 @@ private struct BrowserRowView: View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
             HStack(spacing: DowlioDesign.Spacing.sm) {
                 BrowserIcon(appURL: row.appURL)
-                VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: DowlioDesign.Spacing.sm) {
                     Text(row.name)
                     Label(row.state.word, systemImage: row.state.symbol)
                         .font(DowlioDesign.TypeRole.detail)
@@ -84,7 +84,7 @@ private struct BrowserRowView: View {
 
 private struct BrowserIcon: View {
     let appURL: URL?
-    @ScaledMetric(relativeTo: .body) private var side: CGFloat = 28
+    @ScaledMetric(relativeTo: .body) private var side: CGFloat = 20
 
     var body: some View {
         Group {

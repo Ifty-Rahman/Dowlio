@@ -15,6 +15,10 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
     private var outsideClicks: Any?
+    private var spaceChanges: NSObjectProtocol?
+    /// When the popover last closed. The click on the icon that closes it also reaches `toggle`,
+    /// which must not open it again.
+    private var closedAt: TimeInterval = 0
     private lazy var catchToast = CatchToast(model: model)
 
     init(model: AppModel) {
@@ -69,7 +73,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     @objc private func toggle() {
         if popover.isShown {
             popover.performClose(nil)
-        } else {
+        } else if ProcessInfo.processInfo.systemUptime - closedAt > 0.3 {
             open()
         }
     }
@@ -86,14 +90,28 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             NSApp.activate()
             window?.makeKey()
             watchOutsideClicks()
+            watchSpaceChanges()
         }
     }
 
     func popoverDidClose(_ notification: Notification) {
+        closedAt = ProcessInfo.processInfo.systemUptime
         panel.showsQuickAdd = false
         panel.quickAdd = nil
         if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
         outsideClicks = nil
+        if let spaceChanges { NSWorkspace.shared.notificationCenter.removeObserver(spaceChanges) }
+        spaceChanges = nil
+    }
+
+    /// Switching to another Space closes the popover rather than carrying it along.
+    private func watchSpaceChanges() {
+        guard spaceChanges == nil else { return }
+        spaceChanges = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+        }
     }
 
     /// A click anywhere outside Dowlio closes the popover, even after a menu inside it was used.
@@ -110,7 +128,10 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         menu.addItem(withTitle: "Report a Problem", action: #selector(reportProblem), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Dowlio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        // Shown in the popover's own window, so it opens on the popover's Space, full screen too.
+        guard let view = popover.contentViewController?.view, let window = view.window else { return }
+        let point = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        menu.popUp(positioning: nil, at: point, in: view)
     }
 
     @objc private func openSettings() {
