@@ -47,33 +47,36 @@ struct MediaHeader: View {
 struct VideoThumbnail: View {
     let url: URL?
     let duration: Double?
+    var compact = false
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .darkGray)
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                EmptyView()
+        Color(nsColor: .darkGray)
+            .overlay {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color.clear
+                }
             }
-            Image(systemName: "play.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(.white)
-                .shadow(radius: 2)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if let duration {
-                Text(MediaText.duration(duration))
-                    .font(.caption2.weight(.semibold).monospacedDigit())
+            .overlay {
+                Image(systemName: "play.fill")
+                    .font(.system(size: compact ? 11 : 14))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 3))
-                    .padding(4)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
-        .accessibilityHidden(true)
+            .overlay(alignment: .bottomTrailing) {
+                if let duration {
+                    Text(MediaText.duration(duration))
+                        .font(.system(size: compact ? 9 : 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 3))
+                        .padding(compact ? 3 : 4)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : DowlioDesign.Radius.nested))
+            .accessibilityHidden(true)
     }
 }
 
@@ -135,13 +138,24 @@ struct VersionRows: View {
     let media: SentPageModel
     @FocusState private var focused: Bool
 
+    private static let rowHeight: CGFloat = 32
+    private static let spacing: CGFloat = 2
+    private static let visibleRows = 6
+
     var body: some View {
-        VStack(spacing: 2) {
-            ForEach(Array(versions.enumerated()), id: \.offset) { _, version in
-                VersionRow(version: version, isChosen: version == media.draft.chosenVersion) {
-                    media.pick(version)
-                    focused = true
+        let versions = versions
+        Group {
+            if versions.count > Self.visibleRows {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        list(versions)
+                    }
+                    .frame(height: CGFloat(Self.visibleRows) * Self.rowHeight + CGFloat(Self.visibleRows - 1) * Self.spacing)
+                    .onAppear { reveal(in: versions, with: proxy, animated: false) }
+                    .onChange(of: media.draft.chosenVersion) { reveal(in: versions, with: proxy, animated: true) }
                 }
+            } else {
+                list(versions)
             }
         }
         .focusable()
@@ -157,6 +171,28 @@ struct VersionRows: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Versions")
+    }
+
+    private func list(_ versions: [Version]) -> some View {
+        VStack(spacing: Self.spacing) {
+            ForEach(Array(versions.enumerated()), id: \.offset) { index, version in
+                VersionRow(version: version, isChosen: version == media.draft.chosenVersion) {
+                    media.pick(version)
+                    focused = true
+                }
+                .frame(height: Self.rowHeight)
+                .id(index)
+            }
+        }
+    }
+
+    private func reveal(in versions: [Version], with proxy: ScrollViewProxy, animated: Bool) {
+        guard let chosen = media.draft.chosenVersion, let index = versions.firstIndex(of: chosen) else { return }
+        if animated {
+            withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(index) }
+        } else {
+            proxy.scrollTo(index, anchor: .center)
+        }
     }
 
     private var versions: [Version] {
@@ -178,24 +214,26 @@ private struct VersionRow: View {
                 Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
                     .frame(width: 58, alignment: .leading)
-                VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: DowlioDesign.Spacing.xs) {
                     Text(MediaText.detail(of: version))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     if !MediaText.playsInQuickTime(version) {
-                        Text("May not play in QuickTime")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange.opacity(0.85))
+                            .help("May not play in QuickTime")
+                            .accessibilityLabel("May not play in QuickTime")
                     }
                 }
                 .font(DowlioDesign.TypeRole.detail)
-                .lineLimit(1)
                 Spacer(minLength: DowlioDesign.Spacing.sm)
                 Text(MediaText.size(of: version) ?? "")
                     .font(DowlioDesign.TypeRole.detailMetric)
+                    .fixedSize()
             }
             .padding(.horizontal, DowlioDesign.Spacing.sm)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(isChosen ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
             .contentShape(Rectangle())
         }
@@ -221,38 +259,163 @@ struct SkeletonRows: View {
 
 struct VideoStrip: View {
     let media: SentPageModel
+    @State private var first = 0
+    @State private var width: CGFloat = 0
+
+    private static let shown = 3
+    private static let gap: CGFloat = DowlioDesign.Spacing.sm
+    private static let ring: CGFloat = 3
 
     var body: some View {
+        let count = media.draft.candidates.count
+        let last = max(count - Self.shown, 0)
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
-            Text("\(media.draft.candidates.count) videos on this page")
-                .font(DowlioDesign.TypeRole.detail.weight(.semibold))
-                .foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: DowlioDesign.Spacing.sm) {
-                    ForEach(Array(media.draft.candidates.enumerated()), id: \.offset) { index, candidate in
-                        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
-                            Button { media.select(index) } label: {
-                                VideoThumbnail(url: candidate.thumbnail, duration: candidate.duration)
-                                    .frame(width: 84, height: 50)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested)
-                                            .strokeBorder(Color.accentColor, lineWidth: index == media.draft.selected ? 2.5 : 0)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .help(candidate.label)
-                            .accessibilityLabel("Video \(index + 1): \(candidate.label)")
-                            Toggle("Include", isOn: Binding(
-                                get: { media.draft.isIncluded(index) },
-                                set: { media.include(index, $0) }
-                            ))
-                            .toggleStyle(.checkbox)
-                            .font(DowlioDesign.TypeRole.detail)
-                        }
-                    }
+            HStack(spacing: DowlioDesign.Spacing.xs) {
+                Text(summary(count))
+                    .font(DowlioDesign.TypeRole.detail.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if count > Self.shown {
+                    StripArrow(systemImage: "chevron.left", label: "Previous videos", isEnabled: first > 0) { move(by: -1, last: last) }
+                    StripArrow(systemImage: "chevron.right", label: "Next videos", isEnabled: first < last) { move(by: 1, last: last) }
                 }
             }
+            HStack(spacing: Self.gap) {
+                ForEach(Array(media.draft.candidates.enumerated()), id: \.offset) { index, candidate in
+                    let visible = index >= first && index < first + Self.shown
+                    VideoCard(
+                            candidate: candidate,
+                            number: index + 1,
+                            isShown: index == media.draft.selected,
+                            isIncluded: media.draft.isIncluded(index),
+                            ring: Self.ring,
+                            show: { media.select(index) },
+                        toggle: { media.include(index, !media.draft.isIncluded(index)) }
+                    )
+                    .frame(width: cardWidth)
+                    .allowsHitTesting(visible)
+                    .accessibilityHidden(!visible)
+                }
+            }
+            .offset(x: -CGFloat(first) * (cardWidth + Self.gap))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: cardHeight)
+            .clipped()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         }
+        .onChange(of: media.draft.selected) { _, selected in reveal(selected, last: last) }
+        .onChange(of: count) { first = min(first, last) }
+    }
+
+    private var cardWidth: CGFloat {
+        max((width - Self.gap * CGFloat(Self.shown - 1)) / CGFloat(Self.shown), 0)
+    }
+
+    private var cardHeight: CGFloat {
+        max(cardWidth - Self.ring * 2, 0) * 9 / 16 + Self.ring * 2
+    }
+
+    private func summary(_ count: Int) -> String {
+        let chosen = (0..<count).filter { media.draft.isIncluded($0) }.count
+        return chosen == count ? "\(count) videos on this page" : "\(chosen) of \(count) videos chosen"
+    }
+
+    private func move(by step: Int, last: Int) {
+        withAnimation(.snappy(duration: 0.28)) { first = min(max(first + step, 0), last) }
+    }
+
+    private func reveal(_ index: Int, last: Int) {
+        guard index < first || index >= first + Self.shown else { return }
+        withAnimation(.snappy(duration: 0.28)) { first = min(max(index < first ? index : index - Self.shown + 1, 0), last) }
+    }
+}
+
+private struct StripArrow: View {
+    let systemImage: String
+    let label: String
+    let isEnabled: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 22, height: 22)
+                .background(Color.secondary.opacity(isHovered && isEnabled ? 0.25 : 0.14), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isEnabled ? .primary : .tertiary)
+        .disabled(!isEnabled)
+        .onHover { isHovered = $0 }
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct VideoCard: View {
+    let candidate: Candidate
+    let number: Int
+    let isShown: Bool
+    let isIncluded: Bool
+    let ring: CGFloat
+    let show: () -> Void
+    let toggle: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Button(action: show) {
+                VideoThumbnail(url: candidate.thumbnail, duration: candidate.duration, compact: true)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .opacity(isIncluded ? 1 : 0.45)
+                    .padding(ring)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6 + ring)
+                            .strokeBorder(isShown ? Color.accentColor : Color.secondary.opacity(isHovered ? 0.35 : 0), lineWidth: 2)
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(candidate.label)
+            .accessibilityLabel("Video \(number): \(candidate.label)")
+            .accessibilityAddTraits(isShown ? .isSelected : [])
+
+            Button(action: toggle) {
+                SelectionMark(isOn: isIncluded)
+                    .padding(ring + 4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isIncluded ? "Leave this video out" : "Download this video too")
+            .accessibilityLabel("Download video \(number)")
+            .accessibilityValue(isIncluded ? "On" : "Off")
+            .accessibilityAddTraits(.isToggle)
+        }
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.15), value: isIncluded)
+        .animation(.easeOut(duration: 0.15), value: isShown)
+    }
+}
+
+private struct SelectionMark: View {
+    let isOn: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isOn ? Color.accentColor : Color.black.opacity(0.35))
+            Circle()
+                .strokeBorder(.white, lineWidth: isOn ? 0 : 1.5)
+            if isOn {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
     }
 }
 

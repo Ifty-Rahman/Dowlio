@@ -181,7 +181,12 @@ final class AppModel {
 
     func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
         guard let library else { return AsyncStream { $0.yield(.found([])); $0.finish() } }
-        return PageAnalyzer { url, options in try await library.inspect(url, options: options) }.analyze(page)
+        let analysis = PageAnalyzer { url, options in try await library.inspect(url, options: options) }.analyze(page)
+        #if DEBUG
+        return SentPageRecord.recording(page, analysis)
+        #else
+        return analysis
+        #endif
     }
 
     func downloadInBrowser(_ notice: CatchNotice) {
