@@ -138,6 +138,8 @@ private struct DownloadsSettings: View {
     @AppStorage(SettingsKey.downloadFolder) private var folderPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].path
     @AppStorage(SettingsKey.sortsIntoCategoryFolders) private var sortsIntoCategoryFolders = false
     @AppStorage(SettingsKey.nameConflictPolicy) private var policy = NameConflictPolicy.keepBoth.rawValue
+    @AppStorage(SettingsKey.videoQualityCap) private var videoQualityCap = 0
+    @AppStorage(SettingsKey.prefersH264) private var prefersH264 = true
     @State private var choosingFolder = false
     @State private var confirmingReplace = false
     @State private var confirmingClear = false
@@ -156,6 +158,14 @@ private struct DownloadsSettings: View {
                 Text("Replace").tag(NameConflictPolicy.replace.rawValue)
                 Text("Skip").tag(NameConflictPolicy.skip.rawValue)
             }
+            Picker("Video quality", selection: $videoQualityCap) {
+                Text("Best available").tag(0)
+                ForEach(VideoQuality.caps, id: \.self) { cap in
+                    Text(verbatim: "Up to \(cap)p").tag(cap)
+                }
+            }
+            Toggle("Prefer H.264 MP4", isOn: $prefersH264)
+                .help("H.264 MP4 plays everywhere, including QuickTime, even when a higher resolution is offered in VP9 or AV1.")
             LabeledContent("History") {
                 Button("Clear History…") { confirmingClear = true }
             }

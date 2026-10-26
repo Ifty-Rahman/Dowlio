@@ -85,6 +85,42 @@ struct PageAnalyzerTests {
         #expect(Set(candidates.flatMap(\.versions).map(\.source.url.lastPathComponent)) == ["shown.mp4", "long.mp4", "own.mp4"])
     }
 
+    @Test func aVersionTakesItsResolutionAndCodecFromItsAddress() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Clip</title>", at: "/watch")
+        site.serve(video: 2_000_000, at: "/vid/avc1/720x1280/clip.mp4")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/vid/avc1/720x1280/clip.mp4"), kind: .file, contentType: "video/mp4")]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.first?.versions.first?.height == 720)
+        #expect(candidates.first?.versions.first?.codecs == "H.264")
+    }
+
+    @Test func downloadLinksTheBrowserFoundAreVersionsOfOneVideoToo() async throws {
+        let site = try await Site()
+        site.serve(html: """
+            <title>Self Checkout</title>
+            <a href="/dload/abc/240/1-240p.mp4">Download MP4 (240p, h264, 29.62 MB)</a>
+            <a href="/dload/abc/720/1-720p.mp4">Download MP4 (720p, h264, 301.68 MB)</a>
+            """, at: "/video-abc/")
+        site.serve(video: 300, at: "/dload/abc/240/1-240p.mp4")
+        site.serve(video: 900, at: "/dload/abc/720/1-720p.mp4")
+
+        let found = try await site.analyze("/video-abc/") {
+            $0.scan = [
+                ScannedMedia(url: site.url("/dload/abc/240/1-240p.mp4"), kind: .video),
+                ScannedMedia(url: site.url("/dload/abc/720/1-720p.mp4"), kind: .video),
+            ]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.count == 1)
+        #expect(candidates.first?.versions.compactMap(\.height).sorted() == [240, 720])
+    }
+
     @Test func aLinkToAPlainFileIsHandedBack() async throws {
         let site = try await Site()
         site.serve(video: 500, type: "application/pdf", at: "/files/report.pdf")
@@ -191,10 +227,14 @@ struct PageAnalyzerTests {
         let found = try await site.analyze("/video-AbCdEfGh123/sample-video/")
 
         guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
-        #expect(candidates.count == 8)
-        #expect(Set(candidates.map(\.label)) == ["Sample Video - Performer - TUBE"])
-        #expect(candidates.first?.duration == 2405)
-        #expect(candidates.first?.thumbnail == URL(string: "https://static.tube.example/thumbs/10000001/9_240.jpg"))
+        #expect(candidates.count == 1)
+        let video = try #require(candidates.first)
+        #expect(video.label == "Sample Video - Performer - TUBE")
+        #expect(video.duration == 2405)
+        #expect(video.thumbnail == URL(string: "https://static.tube.example/thumbs/10000001/9_240.jpg"))
+        #expect(video.versions.count == 8)
+        #expect(Set(video.versions.compactMap(\.height)) == [240, 360, 480, 720])
+        #expect(video.versions.filter { $0.height == 720 }.compactMap(\.codecs).sorted() == ["AV1", "H.264"])
     }
 }
 

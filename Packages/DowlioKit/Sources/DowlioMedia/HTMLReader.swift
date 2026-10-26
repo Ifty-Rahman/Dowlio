@@ -30,13 +30,18 @@ struct HTMLReader {
             case "/video", "/audio":
                 player = nil
             case "a":
-                guard let url = link("href"), let kind = MediaFile.kind(of: url) else { continue }
-                add(ScannedMedia(url: url, kind: kind))
+                continue
             case "meta":
                 readMeta(attributes, base: base)
             default:
                 continue
             }
+        }
+        for anchor in Self.anchors(in: html) {
+            guard let url = Self.resolve(anchor.href, against: base), let kind = MediaFile.kind(of: url) else { continue }
+            let described = anchor.text + " " + url.path
+            let height = MediaFile.height(in: described)
+            add(ScannedMedia(url: url, kind: kind, group: height == nil ? nil : Self.downloadLinks, height: height, codecs: MediaFile.codecs(in: described)))
         }
         if let range = html.range(of: #"<title[^>]*>([^<]*)</title>"#, options: [.regularExpression, .caseInsensitive]) {
             let inner = html[range].replacingOccurrences(of: #"</?title[^>]*>"#, with: "", options: [.regularExpression, .caseInsensitive])
@@ -116,6 +121,19 @@ struct HTMLReader {
                 if attributes[key] == nil { attributes[key] = decode(value) }
             }
             return Tag(name: name, attributes: attributes)
+        }
+    }
+
+    static let downloadLinks = 1_000_000
+
+    static func anchors(in html: String) -> [(href: String, text: String)] {
+        let pattern = try! NSRegularExpression(pattern: #"<a\b([^>]*)>(.*?)</a>"#, options: [.caseInsensitive, .dotMatchesLineSeparators])
+        let text = html as NSString
+        return pattern.matches(in: html, range: NSRange(location: 0, length: text.length)).compactMap { match in
+            let attributes = tags(in: "<a" + text.substring(with: match.range(at: 1)) + ">").first?.attributes ?? [:]
+            guard let href = attributes["href"] else { return nil }
+            let inner = text.substring(with: match.range(at: 2)).replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+            return (href, decode(inner))
         }
     }
 

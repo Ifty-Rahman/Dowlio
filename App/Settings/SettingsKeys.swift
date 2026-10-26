@@ -12,6 +12,8 @@ enum SettingsKey {
     static let opensAllConnectionsAtOnce = "opensAllConnectionsAtOnce"
     static let retries = "retries"
     static let takesOverSlowSegments = "takesOverSlowSegments"
+    static let videoQualityCap = "videoQualityCap"
+    static let prefersH264 = "prefersH264"
     static let showsInMenuBar = "showsInMenuBar"
     static let showsInDock = "showsInDock"
     static let startsInMenuBar = "startsInMenuBar"
@@ -34,6 +36,8 @@ extension UserDefaults {
         settings.openExtraConnections = bool(forKey: SettingsKey.opensAllConnectionsAtOnce) ? .allAtOnce : .afterFirstConnectionStarts
         settings.retries = integer(SettingsKey.retries) ?? settings.retries
         settings.takesOverSlowSegments = flag(SettingsKey.takesOverSlowSegments) ?? false
+        settings.videoQualityCap = integer(SettingsKey.videoQualityCap).flatMap { $0 > 0 ? $0 : nil }
+        settings.prefersH264 = flag(SettingsKey.prefersH264) ?? true
         return settings
     }
 
@@ -56,6 +60,10 @@ extension UserDefaults {
             set(newValue.catches, forKey: SettingsKey.catchesDownloads)
             set(newValue.neverCatch, forKey: SettingsKey.neverCatchSites)
         }
+    }
+
+    func setVideoQualityCap(_ height: Int) {
+        set(height, forKey: SettingsKey.videoQualityCap)
     }
 
     func removeRetiredSettings() {

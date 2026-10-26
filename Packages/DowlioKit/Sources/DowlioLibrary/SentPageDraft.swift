@@ -20,14 +20,17 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public let page: SentPage
+    public let preference: QualityPreference
+    public private(set) var showing = Showing.video
     public private(set) var phase = Phase.looking
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
     private var excluded: Set<Int> = []
     private var picks: [Int: Version] = [:]
 
-    public init(page: SentPage) {
+    public init(page: SentPage, preference: QualityPreference = QualityPreference()) {
         self.page = page
+        self.preference = preference
     }
 
     public var host: String {
@@ -51,6 +54,7 @@ public struct SentPageDraft: Equatable, Sendable {
             selected = 0
             excluded = []
             picks = [:]
+            showing = .video
             phase = found.isEmpty ? .nothingFound : .found
             return nil
         }
@@ -67,8 +71,22 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public func chosenVersion(of index: Int) -> Version? {
         guard candidates.indices.contains(index) else { return nil }
-        if let pick = picks[index], candidates[index].versions.contains(pick) { return pick }
-        return candidates[index].versions.first
+        let versions = candidates[index].versions
+        if let pick = picks[index], versions.contains(pick), MediaText.isAudio(pick) == (showing == .audio) { return pick }
+        if !versions.contains(where: MediaText.isAudio) || !versions.contains(where: { !MediaText.isAudio($0) }) {
+            return preference.pick(from: versions, showing: MediaText.isAudio(versions[0]) ? .audio : .video) ?? versions.first
+        }
+        return preference.pick(from: versions, showing: showing)
+    }
+
+    public mutating func show(_ kind: Showing) {
+        showing = kind
+    }
+
+    public mutating func moveChoice(by step: Int) {
+        let rows = hasVideoAndAudio ? versions(showing: showing) : selectedCandidate?.versions ?? []
+        guard !rows.isEmpty, let current = chosenVersion, let index = rows.firstIndex(of: current) else { return }
+        picks[selected] = rows[min(max(index + step, 0), rows.count - 1)]
     }
 
     public var chosenVersion: Version? { chosenVersion(of: selected) }
@@ -98,16 +116,6 @@ public struct SentPageDraft: Equatable, Sendable {
     public func versions(showing: Showing) -> [Version] {
         (selectedCandidate?.versions ?? []).filter { MediaText.isAudio($0) == (showing == .audio) }
     }
-
-    public static func fileName(for candidate: Candidate, version: Version) -> String {
-        let ext = version.source.url.pathExtension
-        let cleaned = candidate.label
-            .replacingOccurrences(of: ":", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = cleaned.isEmpty ? version.source.url.deletingPathExtension().lastPathComponent : String(cleaned.prefix(120))
-        return ext.isEmpty ? base : "\(base).\(ext)"
-    }
 }
 
 public enum MediaText {
@@ -115,14 +123,38 @@ public enum MediaText {
         MediaFile.kind(of: version.source.url, contentType: version.contentType) == .audio
     }
 
-    public static func title(of version: Version) -> String {
+    public static func isH264(_ version: Version) -> Bool {
+        let codecs = version.codecs?.lowercased() ?? ""
+        return codecs.contains("h.264") || codecs.contains("h264") || codecs.contains("avc")
+    }
+
+    public static func isMP4(_ version: Version) -> Bool {
+        ["mp4", "m4v"].contains(version.source.url.pathExtension.lowercased()) || version.contentType?.lowercased() == "video/mp4"
+    }
+
+    public static func playsInQuickTime(_ version: Version) -> Bool {
+        let codecs = version.codecs?.lowercased() ?? ""
+        return !(codecs.contains("vp9") || codecs.contains("vp09") || codecs.contains("av1") || codecs.contains("av01"))
+    }
+
+    public static func container(of version: Version) -> String {
         let ext = version.source.url.pathExtension.uppercased()
         if !ext.isEmpty { return ext }
         return version.contentType?.split(separator: "/").last.map { $0.uppercased() } ?? "File"
     }
 
+    public static func title(of version: Version) -> String {
+        if let height = version.height, !isAudio(version) { return "\(height)p" }
+        return container(of: version)
+    }
+
+    public static func detail(of version: Version) -> String {
+        let parts = [version.height == nil || isAudio(version) ? nil : container(of: version), version.codecs]
+        return parts.compactMap { $0 }.joined(separator: " · ")
+    }
+
     public static func size(of version: Version) -> String? {
-        version.totalBytes.map(ByteText.string)
+        version.totalBytes.map { (version.isEstimatedSize ? "~" : "") + ByteText.string($0) }
     }
 
     public static func duration(_ seconds: Double) -> String {

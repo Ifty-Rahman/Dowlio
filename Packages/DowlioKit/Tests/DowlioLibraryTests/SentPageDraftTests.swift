@@ -101,10 +101,6 @@ struct SentPageDraftTests {
         #expect(SentPageDraft(page: SentPage(url: page.url)).sourceLine == "example.com")
     }
 
-    @Test func aDownloadIsNamedAfterItsVideoWithoutCharactersMacOSRefuses() {
-        #expect(SentPageDraft.fileName(for: second, version: ogg) == "Second- clip-2.ogg")
-        #expect(SentPageDraft.fileName(for: Candidate(label: "  ", versions: []), version: mp4) == "clip.mp4")
-    }
 }
 
 private extension Version {

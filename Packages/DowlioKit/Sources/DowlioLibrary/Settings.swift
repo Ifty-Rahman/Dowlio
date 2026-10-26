@@ -14,6 +14,12 @@ public struct DownloadSettings: Equatable, Sendable {
     /// A connection that finishes early takes over half of the slowest segment's work. Off unless
     /// the user turns it on.
     public var takesOverSlowSegments = false
+    public var videoQualityCap: Int?
+    public var prefersH264 = true
+
+    public var qualityPreference: QualityPreference {
+        QualityPreference(quality: videoQualityCap.map(VideoQuality.upTo) ?? .best, prefersH264: prefersH264)
+    }
 
     public init(folder: URL) {
         self.folder = folder

@@ -62,13 +62,19 @@ public struct ScannedMedia: Equatable, Sendable {
     public var poster: URL?
     public var duration: Double?
     public var group: Int?
+    public var height: Int?
+    public var codecs: String?
 
-    public init(url: URL, kind: Kind, poster: URL? = nil, duration: Double? = nil, group: Int? = nil) {
+    public init(
+        url: URL, kind: Kind, poster: URL? = nil, duration: Double? = nil, group: Int? = nil, height: Int? = nil, codecs: String? = nil
+    ) {
         self.url = url
         self.kind = kind
         self.poster = poster
         self.duration = duration
         self.group = group
+        self.height = height
+        self.codecs = codecs
     }
 }
 
@@ -90,11 +96,24 @@ public struct Version: Equatable, Sendable {
     public var source: DownloadSource
     public var contentType: String?
     public var totalBytes: Int64?
+    public var isEstimatedSize: Bool
+    public var height: Int?
+    public var codecs: String?
 
-    public init(source: DownloadSource, contentType: String? = nil, totalBytes: Int64? = nil) {
+    public init(
+        source: DownloadSource,
+        contentType: String? = nil,
+        totalBytes: Int64? = nil,
+        isEstimatedSize: Bool = false,
+        height: Int? = nil,
+        codecs: String? = nil
+    ) {
         self.source = source
         self.contentType = contentType
         self.totalBytes = totalBytes
+        self.isEstimatedSize = isEstimatedSize
+        self.height = height
+        self.codecs = codecs
     }
 }
 

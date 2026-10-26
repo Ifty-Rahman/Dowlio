@@ -46,12 +46,16 @@ public struct PageAnalyzer: Sendable {
         if !candidates.isEmpty { report(.looking(candidates)) }
 
         let options = mediaOptions(page)
-        let sources = players.list.flatMap(\.sources).map(\.url)
+        let sources = players.list.flatMap(\.sources)
         let versions = await withTaskGroup(of: (URL, Version?).self) { group in
-            for url in sources {
+            for media in sources {
                 group.addTask { [inspect] in
+                    let url = media.url
                     guard let inspection = try? await inspect(url, options), Self.kind(of: inspection) != nil else { return (url, nil) }
-                    return (url, Version(source: .file(url), contentType: inspection.contentType, totalBytes: inspection.totalBytes))
+                    return (url, Version(
+                        source: .file(url), contentType: inspection.contentType, totalBytes: inspection.totalBytes,
+                        height: media.height ?? MediaFile.height(in: url.path), codecs: media.codecs ?? MediaFile.codecs(in: url.path)
+                    ))
                 }
             }
             var found: [URL: Version] = [:]
@@ -80,7 +84,12 @@ public struct PageAnalyzer: Sendable {
 
         mutating func add(_ media: ScannedMedia, from origin: String) {
             guard !list.contains(where: { $0.sources.contains { $0.url == media.url } }) else { return }
-            let key = media.group.map { "\(origin)-\($0)" } ?? media.url.absoluteString
+            let key: String
+            if media.group == HTMLReader.downloadLinks || (origin != "watched" && media.group == nil && MediaFile.height(in: media.url.path) != nil) {
+                key = "download-links"
+            } else {
+                key = media.group.map { "\(origin)-\($0)" } ?? media.url.absoluteString
+            }
             if let index = list.firstIndex(where: { $0.key == key }) {
                 list[index].sources.append(media)
             } else {

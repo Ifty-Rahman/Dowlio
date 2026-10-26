@@ -234,7 +234,8 @@ final class AppModel {
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "", sentPages: SentPageHost? = nil) -> NewDownloadModel? {
         guard let library else { return nil }
-        let model = NewDownloadModel(text: text, folder: downloadsFolder, sentPages: sentPages ?? SentPageHost(analyze: analyze)) { url, options in
+        let host = sentPages ?? SentPageHost(analyze: analyze) { AppModel.currentSettings().qualityPreference }
+        let model = NewDownloadModel(text: text, folder: downloadsFolder, sentPages: host) { url, options in
             try await library.inspect(url, options: options)
         }
         model.draft.connections = settings.connections
@@ -297,7 +298,9 @@ final class AppModel {
     }
 
     @discardableResult
-    func addMedia(_ draft: NewDownloadDraft, media: SentPageModel, fileName: String? = nil) async -> [DownloadID] {
+    func addMedia(
+        _ draft: NewDownloadDraft, media: SentPageModel, fileName: String? = nil, makesDefaultQuality: Bool = false
+    ) async -> [DownloadID] {
         guard let library else { return [] }
         notifier.askPermissionIfNeeded()
         let settings = settings
@@ -306,6 +309,11 @@ final class AppModel {
         let chosen = draft.options(for: page)
         let origin = draft.origin(for: page)
         let downloads = media.draft.downloads
+        if makesDefaultQuality, let height = media.draft.chosenVersion?.height {
+            UserDefaults.standard.setVideoQualityCap(height)
+        }
+        let isTaken = Self.nameIsTaken(in: draft.folder)
+        let addsResolution = settings.nameConflictPolicy == .keepBoth
         var ids: [DownloadID] = []
         for download in downloads {
             var options = settings.options(connections: chosen.connections)
@@ -313,7 +321,9 @@ final class AppModel {
             options.userAgent = chosen.userAgent
             options.cookies = chosen.cookies
             let named = downloads.count == 1 ? fileName : nil
-            options.fileName = named ?? SentPageDraft.fileName(for: download.candidate, version: download.version)
+            options.fileName = named ?? MediaNaming.fileName(
+                label: download.candidate.label, version: download.version, addsResolution: addsResolution, isTaken: isTaken
+            )
             let id = await library.add(
                 download.version.source, destination: destination, options: options,
                 startImmediately: draft.startImmediately, origin: origin
@@ -321,6 +331,11 @@ final class AppModel {
             ids.append(id)
         }
         return ids
+    }
+
+    nonisolated static func nameIsTaken(in folder: URL) -> (String) -> Bool {
+        let folders = [folder, folder.appending(path: FileCategory.video.folderName, directoryHint: .isDirectory)]
+        return { name in folders.contains { FileManager.default.fileExists(atPath: $0.appending(path: name).path) } }
     }
 
     func add(_ draft: NewDownloadDraft) {

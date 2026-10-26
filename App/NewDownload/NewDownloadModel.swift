@@ -42,19 +42,15 @@ final class NewDownloadModel: Identifiable {
     func discardSentPage() {
         sentPages.clear()
     }
-    var showing = SentPageDraft.Showing.video {
-        didSet {
-            guard let media, showing != oldValue, let first = media.draft.versions(showing: showing).first else { return }
-            media.pick(first)
-        }
-    }
+    var makesDefaultQuality = false
     private var namedFile: (version: Version, name: String)?
 
     var mediaFileName: String {
         get {
             guard let media, let candidate = media.draft.selectedCandidate, let version = media.draft.chosenVersion else { return "" }
             if let namedFile, namedFile.version == version { return namedFile.name }
-            return SentPageDraft.fileName(for: candidate, version: version)
+            let addsResolution = AppModel.currentSettings().nameConflictPolicy == .keepBoth
+            return MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: AppModel.nameIsTaken(in: draft.folder))
         }
         set {
             guard let version = media?.draft.chosenVersion else { return }
@@ -82,6 +78,7 @@ final class NewDownloadModel: Identifiable {
     }
 
     func analyze(_ page: SentPage) {
+        makesDefaultQuality = false
         sentPages.clear()
         draft.text = ""
         draft.addSent(page.url, referrer: nil, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)

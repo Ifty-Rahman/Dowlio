@@ -93,20 +93,74 @@ struct InitialTile: View {
     }
 }
 
-struct VersionRows: View {
+struct MediaChoices: View {
     let media: SentPageModel
-    let showing: SentPageDraft.Showing
+    @Binding var makesDefaultQuality: Bool
+    var boxed = false
 
     var body: some View {
-        VStack(spacing: 2) {
-            ForEach(Array(versions.enumerated()), id: \.offset) { _, version in
-                VersionRow(version: version, isChosen: version == media.draft.chosenVersion) { media.pick(version) }
+        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
+            if media.draft.hasVideoAndAudio {
+                Picker("Show", selection: Binding(get: { media.draft.showing }, set: { media.show($0) })) {
+                    Text("Video").tag(SentPageDraft.Showing.video)
+                    Text("Audio only").tag(SentPageDraft.Showing.audio)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            rows
+            if let height = media.draft.chosenVersion.flatMap({ MediaText.isAudio($0) ? nil : $0.height }) {
+                Toggle(isOn: $makesDefaultQuality) { Text(verbatim: "Make \(height)p my default quality") }
+                    .toggleStyle(.checkbox)
+                    .font(DowlioDesign.TypeRole.detail)
             }
         }
     }
 
+    @ViewBuilder private var rows: some View {
+        let list = VersionRows(media: media)
+        if boxed {
+            list
+                .padding(DowlioDesign.Spacing.xs)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.container))
+                .overlay(RoundedRectangle(cornerRadius: DowlioDesign.Radius.container).strokeBorder(Color(nsColor: .separatorColor)))
+        } else {
+            list
+        }
+    }
+}
+
+struct VersionRows: View {
+    let media: SentPageModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ForEach(Array(versions.enumerated()), id: \.offset) { _, version in
+                VersionRow(version: version, isChosen: version == media.draft.chosenVersion) {
+                    media.pick(version)
+                    focused = true
+                }
+            }
+        }
+        .focusable()
+        .focused($focused)
+        .focusEffectDisabled()
+        .onKeyPress(.upArrow) {
+            media.moveChoice(by: -1)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            media.moveChoice(by: 1)
+            return .handled
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Versions")
+    }
+
     private var versions: [Version] {
-        media.draft.hasVideoAndAudio ? media.draft.versions(showing: showing) : media.draft.selectedCandidate?.versions ?? []
+        media.draft.hasVideoAndAudio ? media.draft.versions(showing: media.draft.showing) : media.draft.selectedCandidate?.versions ?? []
     }
 }
 
@@ -123,7 +177,18 @@ private struct VersionRow: View {
                     .foregroundStyle(isChosen ? Color.accentColor : Color.secondary)
                 Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
-                    .frame(width: 64, alignment: .leading)
+                    .frame(width: 58, alignment: .leading)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(MediaText.detail(of: version))
+                        .foregroundStyle(.secondary)
+                    if !MediaText.playsInQuickTime(version) {
+                        Text("May not play in QuickTime")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .font(DowlioDesign.TypeRole.detail)
+                .lineLimit(1)
                 Spacer(minLength: DowlioDesign.Spacing.sm)
                 Text(MediaText.size(of: version) ?? "")
                     .font(DowlioDesign.TypeRole.detailMetric)

@@ -31,7 +31,7 @@ struct QuickAddView: View {
             .onSubmit { if sheet.canDownload { download(sheet) } }
         let links = sheet.draft.links
         if let media = sheet.media, media.draft.phase != .nothingFound {
-            MediaCard(media: media, showing: Bindable(sheet).showing)
+            MediaCard(media: media, makesDefaultQuality: Bindable(sheet).makesDefaultQuality)
         } else {
             if let media = sheet.media, media.draft.phase == .nothingFound {
                 Label("No video or audio on this page", systemImage: "video.slash")
@@ -57,6 +57,7 @@ struct QuickAddView: View {
                 close()
                 model.continueInWindow(sheet)
             }
+            .keyboardShortcut(.return, modifiers: .command)
             Spacer()
             Button("Cancel", role: .cancel) {
                 panel.endQuickAdd()
@@ -83,7 +84,8 @@ struct QuickAddView: View {
         if let media = sheet.media, media.draft.phase == .found {
             let draft = sheet.draft
             let fileName = sheet.chosenFileName
-            Task { await model.addMedia(draft, media: media, fileName: fileName) }
+            let makesDefault = sheet.makesDefaultQuality
+            Task { await model.addMedia(draft, media: media, fileName: fileName, makesDefaultQuality: makesDefault) }
         } else {
             model.add(sheet.draft)
         }
@@ -94,7 +96,7 @@ struct QuickAddView: View {
 
 private struct MediaCard: View {
     let media: SentPageModel
-    @Binding var showing: SentPageDraft.Showing
+    @Binding var makesDefaultQuality: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
@@ -115,16 +117,7 @@ private struct MediaCard: View {
             default:
                 MediaHeader(media: media)
                 if media.draft.candidates.count > 1 { VideoStrip(media: media) }
-                if media.draft.hasVideoAndAudio {
-                    Picker("Show", selection: $showing) {
-                        Text("Video").tag(SentPageDraft.Showing.video)
-                        Text("Audio").tag(SentPageDraft.Showing.audio)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-                VersionRows(media: media, showing: showing)
+                MediaChoices(media: media, makesDefaultQuality: $makesDefaultQuality)
             }
         }
         .padding(DowlioDesign.Spacing.md)

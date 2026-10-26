@@ -101,19 +101,7 @@ struct NewDownloadSheet: View {
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
                 MediaHeader(media: media, subtitle: versionsLine(media))
                 if media.draft.candidates.count > 1 { VideoStrip(media: media) }
-                if media.draft.hasVideoAndAudio {
-                    Picker("Show", selection: $sheet.showing) {
-                        Text("Video").tag(SentPageDraft.Showing.video)
-                        Text("Audio").tag(SentPageDraft.Showing.audio)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-                VersionRows(media: media, showing: sheet.showing)
-                    .padding(DowlioDesign.Spacing.xs)
-                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.container))
-                    .overlay(RoundedRectangle(cornerRadius: DowlioDesign.Radius.container).strokeBorder(Color(nsColor: .separatorColor)))
+                MediaChoices(media: media, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
                 if media.draft.downloads.count == 1 {
                     VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                         Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
@@ -152,7 +140,8 @@ struct NewDownloadSheet: View {
         if let media = sheet.media, media.draft.phase == .found {
             let draft = sheet.draft
             let fileName = sheet.chosenFileName
-            Task { await model.addMedia(draft, media: media, fileName: fileName) }
+            let makesDefault = sheet.makesDefaultQuality
+            Task { await model.addMedia(draft, media: media, fileName: fileName, makesDefaultQuality: makesDefault) }
         } else {
             model.add(sheet.draft)
         }
