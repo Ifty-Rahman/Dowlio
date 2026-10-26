@@ -31,7 +31,6 @@ public struct SentPageDraft: Equatable, Sendable {
     private var excluded: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var play: PlayRun?
-    private var emptyResults = 0
 
     private enum PlayRun {
         case byItself
@@ -74,7 +73,6 @@ public struct SentPageDraft: Equatable, Sendable {
             picks = [:]
             showing = .video
             phase = Self.phase(of: found)
-            if found.isEmpty { emptyResults += 1 }
             return nil
         }
     }
@@ -115,16 +113,10 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public var nothingFound: NothingFoundText {
-        let explanation = switch play {
-        case .byItself: "Dowlio played the page in a hidden window by itself, and no video loaded. Try Again plays it once more, for up to 10 seconds."
-        case .asked: "Dowlio played the page in a hidden window, and no video loaded. Try Again plays it once more, for up to 10 seconds."
-        case nil: "Look Again opens the page in a hidden window for up to 10 seconds to catch its video."
-        }
-        return NothingFoundText(
+        NothingFoundText(
             title: "No video or audio found on this page",
-            explanation: explanation,
-            action: play == nil ? "Look Again" : "Try Again",
-            note: emptyResults >= 2 ? "This page may not have a video, or its video is protected." : nil
+            explanation: "Dowlio couldn't find any audio or video to download on this page.",
+            action: play == nil ? "Look Again" : "Try Again"
         )
     }
 
@@ -197,13 +189,11 @@ public struct NothingFoundText: Equatable, Sendable {
     public var title: String
     public var explanation: String
     public var action: String
-    public var note: String?
 
-    public init(title: String, explanation: String, action: String, note: String?) {
+    public init(title: String, explanation: String, action: String) {
         self.title = title
         self.explanation = explanation
         self.action = action
-        self.note = note
     }
 }
 

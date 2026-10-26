@@ -15,7 +15,7 @@ public enum AVRemuxer {
             let asset = AVURLAsset(url: input)
             guard let tracks = try? await asset.load(.tracks), !tracks.isEmpty else { throw Error.unreadable }
             for track in tracks where kept.contains(track.mediaType) {
-                let range = try await track.load(.timeRange)
+                let range = try await timeRange(of: track, in: asset)
                 let added = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)
                 try added?.insertTimeRange(range, of: track, at: range.start)
             }
@@ -30,5 +30,12 @@ public enum AVRemuxer {
         } catch {
             throw Error.exportFailed(error.localizedDescription)
         }
+    }
+
+    private static func timeRange(of track: AVAssetTrack, in asset: AVURLAsset) async throws -> CMTimeRange {
+        if let range = try? await track.load(.timeRange) { return range }
+        let duration = try await asset.load(.duration)
+        guard duration.isNumeric, duration > .zero else { throw Error.unreadable }
+        return CMTimeRange(start: .zero, duration: duration)
     }
 }

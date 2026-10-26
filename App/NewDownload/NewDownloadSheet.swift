@@ -22,7 +22,7 @@ struct NewDownloadSheet: View {
             if let media = sheet.media {
                 mediaBlock(media)
             }
-            if !sheet.draft.lines.isEmpty, sheet.media.map({ $0.draft.phase == .nothingFound }) ?? true { cards }
+            if !sheet.draft.lines.isEmpty, sheet.media == nil { cards }
             if let explanation = sheet.draft.explanation {
                 Text(explanation).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
             }
@@ -127,7 +127,7 @@ struct NewDownloadSheet: View {
     }
 
     private var downloadTitle: String {
-        if let media = sheet.media, media.draft.phase != .nothingFound {
+        if let media = sheet.media {
             let count = media.draft.downloads.count
             return count > 1 ? "Download \(count)" : "Download"
         }

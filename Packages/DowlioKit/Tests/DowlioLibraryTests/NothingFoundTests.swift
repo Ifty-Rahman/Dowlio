@@ -24,7 +24,7 @@ struct NothingFoundTests {
         #expect(draft.lookingLine == "Looking at the page")
     }
 
-    @Test func nothingFoundWithoutPlayingOffersLookAgainAndExplainsIt() {
+    @Test func nothingFoundWithoutPlayingOffersLookAgain() {
         var draft = SentPageDraft(page: page)
 
         _ = draft.update(.found([]))
@@ -32,27 +32,21 @@ struct NothingFoundTests {
         #expect(draft.phase == .nothingFound)
         #expect(draft.nothingFound == NothingFoundText(
             title: "No video or audio found on this page",
-            explanation: "Look Again opens the page in a hidden window for up to 10 seconds to catch its video.",
-            action: "Look Again",
-            note: nil
+            explanation: "Dowlio couldn't find any audio or video to download on this page.",
+            action: "Look Again"
         ))
     }
 
-    @Test func nothingFoundAfterPlayingByItselfSaysSoAndOffersTryAgain() {
+    @Test func nothingFoundAfterPlayingOffersTryAgain() {
         var draft = SentPageDraft(page: page)
 
         _ = draft.update(.playing)
         _ = draft.update(.found([]))
 
-        #expect(draft.nothingFound == NothingFoundText(
-            title: "No video or audio found on this page",
-            explanation: "Dowlio played the page in a hidden window by itself, and no video loaded. Try Again plays it once more, for up to 10 seconds.",
-            action: "Try Again",
-            note: nil
-        ))
+        #expect(draft.nothingFound.action == "Try Again")
     }
 
-    @Test func aSecondEmptyResultSaysThePageMayHaveNoVideo() {
+    @Test func aSecondEmptyResultStillOffersTryAgain() {
         var draft = SentPageDraft(page: page)
         _ = draft.update(.playing)
         _ = draft.update(.found([]))
@@ -63,8 +57,7 @@ struct NothingFoundTests {
         _ = draft.update(.found([]))
 
         #expect(draft.nothingFound.action == "Try Again")
-        #expect(draft.nothingFound.explanation == "Dowlio played the page in a hidden window, and no video loaded. Try Again plays it once more, for up to 10 seconds.")
-        #expect(draft.nothingFound.note == "This page may not have a video, or its video is protected.")
+        #expect(draft.nothingFound.explanation == "Dowlio couldn't find any audio or video to download on this page.")
     }
 
     @Test func lookingAgainCanFindTheVideo() {
@@ -87,6 +80,5 @@ struct NothingFoundTests {
 
         #expect(draft.phase == .nothingFound)
         #expect(draft.nothingFound.action == "Look Again")
-        #expect(draft.nothingFound.note == nil)
     }
 }

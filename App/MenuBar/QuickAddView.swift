@@ -34,14 +34,13 @@ struct QuickAddView: View {
             NeedsSignInBody(media: media)
                 .padding(.horizontal, DowlioDesign.Spacing.md)
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
-        } else if let media = sheet.media, media.draft.phase != .nothingFound {
+        } else if let media = sheet.media, media.draft.phase == .nothingFound {
+            NothingFoundBody(media: media)
+                .padding(.horizontal, DowlioDesign.Spacing.md)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+        } else if let media = sheet.media {
             MediaCard(media: media, makesDefaultQuality: Bindable(sheet).makesDefaultQuality)
         } else {
-            if let media = sheet.media, media.draft.phase == .nothingFound {
-                NothingFoundBody(media: media)
-                    .padding(.horizontal, DowlioDesign.Spacing.md)
-                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
-            }
             if links.count == 1, let url = links.first {
                 QuickAddCard(url: url, check: sheet.draft.check(for: url))
             } else if links.count > 1 {
@@ -76,7 +75,7 @@ struct QuickAddView: View {
     }
 
     private func downloadTitle(_ sheet: NewDownloadModel) -> String {
-        if let media = sheet.media, media.draft.phase == .found {
+        if let media = sheet.media {
             let count = media.draft.downloads.count
             return count > 1 ? "Download \(count)" : "Download"
         }

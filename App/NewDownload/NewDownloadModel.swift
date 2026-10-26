@@ -69,8 +69,7 @@ final class NewDownloadModel: Identifiable {
         switch media.draft.phase {
         case .looking, .playing: return false
         case .found: return !media.draft.downloads.isEmpty
-        case .nothingFound: return draft.canDownload
-        case .needsSignIn, .restricted: return false
+        case .nothingFound, .needsSignIn, .restricted: return false
         }
     }
 

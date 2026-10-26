@@ -525,10 +525,7 @@ struct NothingFoundBody: View {
                 .font(.system(size: 26))
                 .foregroundStyle(.secondary)
             Text(text.title).font(DowlioDesign.TypeRole.heading)
-            Group {
-                Text(text.explanation)
-                if let note = text.note { Text(note) }
-            }
+            Text(text.explanation)
             .font(DowlioDesign.TypeRole.detail)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
