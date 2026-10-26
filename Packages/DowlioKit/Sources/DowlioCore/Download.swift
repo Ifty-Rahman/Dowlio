@@ -69,6 +69,7 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// The file changed on the server twice in a row while downloading, so Dowlio stopped instead
     /// of mixing versions.
     case serverChangedFile
+    case mediaNotSupportedYet
 }
 
 /// What went wrong with the network: the URL loading system's error code and its description.

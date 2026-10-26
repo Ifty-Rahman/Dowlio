@@ -28,6 +28,27 @@ struct HistoryMigrationTests {
         #expect(try reopened.all().first { $0.id == id }?.usedCookies == true)
     }
 
+    @Test func historyFromBeforeMediaSourcesKeepsEveryDownloadAsItsFile() throws {
+        let file = try TestFiles.makeFolder().appending(path: "Dowlio.sqlite")
+        let link = URL(string: "https://example.com/a.pdf")!
+        let id = UUID()
+        do {
+            let store = try DownloadStore(databaseAt: file)
+            try store.save(StoredDownload(
+                id: id, sourceURL: link, destination: .folder(file.deletingLastPathComponent()),
+                options: RequestOptions(), state: .paused, addedAt: Date()
+            ))
+        }
+        try Self.run("""
+            ALTER TABLE download DROP COLUMN mediaSource;
+            DELETE FROM grdb_migrations WHERE identifier = 'media source';
+            """, on: file)
+
+        let reopened = try DownloadStore(databaseAt: file)
+
+        #expect(try reopened.all().first { $0.id == id }?.source == .file(link))
+    }
+
     private static func run(_ sql: String, on file: URL) throws {
         var handle: OpaquePointer?
         guard sqlite3_open(file.path, &handle) == SQLITE_OK else { throw SQLiteFailure() }

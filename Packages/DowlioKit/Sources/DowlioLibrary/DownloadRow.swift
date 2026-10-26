@@ -230,6 +230,7 @@ public struct FailureText: Equatable, Sendable {
         case .notEnoughSpace: (reason, nextStep) = ("Not enough space", "Free up space, then Retry")
         case .destinationNotWritable: (reason, nextStep) = ("Can't save to this folder", "Fix its permissions, then Retry")
         case .incompleteFile: (reason, nextStep) = ("Incomplete file", "Retry fetches the missing part")
+        case .mediaNotSupportedYet: (reason, nextStep) = ("Video downloads aren't supported yet", "A later version of Dowlio can download it")
         }
     }
 }

@@ -35,6 +35,8 @@ struct PartialFileManifest: Codable, Equatable, Sendable {
     var layout: Layout?
     /// `nil` before format 3, which added it, and read as keep both.
     var nameConflictPolicy: NameConflictPolicy?
+    var mediaSource: MediaSource?
+    var finishedFragments: [FragmentPosition]?
 
     /// Whether every segment lies inside the file, after the one before it, and holds no more
     /// bytes than its own length. A manifest without a size has no segments.

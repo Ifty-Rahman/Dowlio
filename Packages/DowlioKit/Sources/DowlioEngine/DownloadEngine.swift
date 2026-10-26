@@ -59,17 +59,7 @@ public actor DownloadEngine {
         id: DownloadID = DownloadID()
     ) -> DownloadID {
         guard entries[id] == nil else { return id }
-        let snapshot = DownloadSnapshot(
-            id: id,
-            state: .probing,
-            fileName: options.fileName.map(FileNaming.chosen) ?? FileNaming.name(for: url),
-            destinationFolder: destination.root,
-            isNotSecure: url.isPlainHTTP,
-            displayHost: url.displayHost
-        )
-        let entry = DownloadEntry(snapshot: snapshot)
-        entries[id] = entry
-        publishToAll(snapshot)
+        let entry = register(id, url: url, destination: destination, options: options, state: .probing)
 
         let run = DownloadRun(
             id: id, url: url, destination: destination, options: options, partialFile: entry.partialFile,
@@ -80,6 +70,41 @@ public actor DownloadEngine {
         entries[id]?.run = run
         entries[id]?.task = Task { await run.run() }
         return id
+    }
+
+    @discardableResult
+    public func add(
+        source: DownloadSource,
+        destination: Destination,
+        options: RequestOptions = RequestOptions(),
+        id: DownloadID = DownloadID()
+    ) -> DownloadID {
+        switch source {
+        case .file(let url):
+            return add(url: url, destination: destination, options: options, id: id)
+        case .media:
+            guard entries[id] == nil else { return id }
+            register(id, url: source.url, destination: destination, options: options, state: .failed(.mediaNotSupportedYet))
+            return id
+        }
+    }
+
+    @discardableResult
+    private func register(
+        _ id: DownloadID, url: URL, destination: Destination, options: RequestOptions, state: DownloadState
+    ) -> DownloadEntry {
+        let snapshot = DownloadSnapshot(
+            id: id,
+            state: state,
+            fileName: options.fileName.map(FileNaming.chosen) ?? FileNaming.name(for: url),
+            destinationFolder: destination.root,
+            isNotSecure: url.isPlainHTTP,
+            displayHost: url.displayHost
+        )
+        let entry = DownloadEntry(snapshot: snapshot)
+        entries[id] = entry
+        publishToAll(snapshot)
+        return entry
     }
 
     /// Retries a Failed download (`GLOSSARY.md`): continues it from the bytes it has, checked

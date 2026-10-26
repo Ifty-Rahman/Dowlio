@@ -96,10 +96,21 @@ public actor Library {
         startImmediately: Bool = true,
         origin: DownloadOrigin? = nil
     ) async -> DownloadID {
+        await add(.file(url), destination: destination, options: options, startImmediately: startImmediately, origin: origin)
+    }
+
+    @discardableResult
+    public func add(
+        _ source: DownloadSource,
+        destination: Destination,
+        options: RequestOptions = RequestOptions(),
+        startImmediately: Bool = true,
+        origin: DownloadOrigin? = nil
+    ) async -> DownloadID {
         let id = DownloadID()
         let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
         var record = StoredDownload(
-            id: id.rawValue, sourceURL: url, destination: destination, options: options, state: state, addedAt: now()
+            id: id.rawValue, source: source, destination: destination, options: options, state: state, addedAt: now()
         )
         record.origin = origin
         records[id] = record
@@ -178,6 +189,12 @@ public actor Library {
         starting.insert(id)
         setState(.downloading, of: id)
         if failed { await engine.retry(id) } else { await engine.resume(id) }
+        await settle(id)
+    }
+
+    private func settle(_ id: DownloadID) async {
+        guard starting.remove(id) != nil, let snapshot = await engine.snapshot(of: id) else { return }
+        await apply(snapshot)
     }
 
     private func fillSlots() async {
@@ -272,7 +289,8 @@ public actor Library {
         publish()
         inEngine.insert(id)
         starting.insert(id)
-        await engine.add(url: record.sourceURL, destination: record.destination, options: options, id: id)
+        await engine.add(source: record.source, destination: record.destination, options: options, id: id)
+        await settle(id)
     }
 
     private func restore(_ record: StoredDownload) async -> Bool {
