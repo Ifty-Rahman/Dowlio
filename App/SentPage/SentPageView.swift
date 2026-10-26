@@ -6,11 +6,17 @@ import SwiftUI
 struct SentPageView: View {
     let model: AppModel
     let sentPage: SentPageModel
+    var backTitle: String?
+    var back: () -> Void = {}
     let close: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
+            if let backTitle {
+                Button(backTitle, systemImage: "chevron.left", action: back)
+                    .buttonStyle(.borderless)
+            }
             switch sentPage.draft.phase {
             case .looking:
                 looking

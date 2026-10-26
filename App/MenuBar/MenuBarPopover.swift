@@ -11,8 +11,14 @@ struct MenuBarPopover: View {
 
     var body: some View {
         Group {
-            if let sentPage = panel.sentPage {
-                SentPageView(model: model, sentPage: sentPage, close: close)
+            if let sentPage = panel.sentPages.current {
+                SentPageView(
+                    model: model,
+                    sentPage: sentPage,
+                    backTitle: SentPageHost.backTitle(links: panel.pendingLinks),
+                    back: { panel.sentPages.backToLinks() },
+                    close: { if panel.pendingLinks > 0 { panel.sentPages.backToLinks() } else { close() } }
+                )
             } else if panel.showsQuickAdd {
                 QuickAddView(model: model, panel: panel, close: close)
             } else {

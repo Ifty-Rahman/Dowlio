@@ -70,7 +70,7 @@ struct MenuBarTests {
         (false, true, .sheet),
         (false, false, .openWindowThenSheet),
     ])
-    func aLinkSentFromABrowserOpensWhereShowInMenuBarSays(menuBarShown: Bool, windowIsOpen: Bool, route: NewLinkRoute) {
+    func aLinkOrPageSentFromABrowserOpensWhereShowInMenuBarSays(menuBarShown: Bool, windowIsOpen: Bool, route: NewLinkRoute) {
         #expect(NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: windowIsOpen, menuBarShown: menuBarShown) == route)
     }
 

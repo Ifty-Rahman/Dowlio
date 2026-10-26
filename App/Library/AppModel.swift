@@ -34,6 +34,7 @@ final class AppModel {
     /// as after a quiet start at login.
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
+    @ObservationIgnored private lazy var sentPagePanel = SentPagePanel(model: self)
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
     private var catchGrouper = CatchGrouper()
@@ -159,12 +160,18 @@ final class AppModel {
         let file: (URL) -> Void = { [weak self] url in
             self?.receiveFile(url, referrer: referrer ?? page.url, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)
         }
-        guard let menuBar, menuBar.isVisible, let library else {
-            file(page.url)
-            return
+        let menuBarShown = menuBar?.isVisible ?? false
+        switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
+        case .quickAdd:
+            menuBar?.showSentPage(page, handBack: file)
+        case .sheet, .openWindowThenSheet:
+            sentPagePanel.show(page, handBack: file)
         }
-        let analyzer = PageAnalyzer { url, options in try await library.inspect(url, options: options) }
-        menuBar.showSentPage(SentPageModel(page: page, analyzer: analyzer, handBack: file))
+    }
+
+    func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+        guard let library else { return AsyncStream { $0.yield(.found([])); $0.finish() } }
+        return PageAnalyzer { url, options in try await library.inspect(url, options: options) }.analyze(page)
     }
 
     private func receiveFile(_ url: URL, referrer: URL?, cookies: [Cookie], browser: String?, userAgent: String?) {

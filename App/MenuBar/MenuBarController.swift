@@ -14,7 +14,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let model: AppModel
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
-    private let panel = MenuBarPanel()
+    private let panel: MenuBarPanel
     private var drawnFraction: Double??
     private var returnTo: NSRunningApplication?
     private var openedAt = Date()
@@ -35,6 +35,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     init(model: AppModel) {
         self.model = model
+        panel = MenuBarPanel(sentPages: SentPageHost(analyze: model.analyze))
         super.init()
         popover.behavior = .applicationDefined
         popover.animates = false
@@ -85,17 +86,14 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         panel.quickAdd?.draft.addSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
     }
 
-    func showSentPage(_ sentPage: SentPageModel) {
+    func showSentPage(_ page: SentPage, handBack: @escaping (URL) -> Void) {
         if !popover.isShown { open() }
         moreMenu.hide()
-        endSentPage()
-        panel.sentPage = sentPage
-        sentPage.start()
+        panel.sentPages.send(page, handBack: handBack)
     }
 
     private func endSentPage() {
-        panel.sentPage?.stop()
-        panel.sentPage = nil
+        panel.sentPages.backToLinks()
     }
 
     @objc private func toggle() {
@@ -182,7 +180,13 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 final class MenuBarPanel {
     var showsQuickAdd = false
     var quickAdd: NewDownloadModel?
-    var sentPage: SentPageModel?
+    let sentPages: SentPageHost
+
+    init(sentPages: SentPageHost) {
+        self.sentPages = sentPages
+    }
+
+    var pendingLinks: Int { showsQuickAdd ? quickAdd?.draft.links.count ?? 0 : 0 }
     @ObservationIgnored weak var moreAnchor: NSView?
 }
 
