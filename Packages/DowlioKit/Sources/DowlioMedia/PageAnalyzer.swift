@@ -46,7 +46,9 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
-        if HLSVersions.isPlaylist(page.url) { return report(await linkedPlaylist(page, label: page.url.lastPathComponent)) }
+        if DASHVersions.isStream(page.url) {
+            return report(await linkedPlaylist(page, label: page.url.lastPathComponent))
+        }
         let refusals = Refusals()
         let linked: LinkInspection?
         do {
@@ -56,7 +58,7 @@ public struct PageAnalyzer: Sendable {
             linked = nil
         }
         if let linked, !linked.isWebPage {
-            if HLSVersions.isPlaylist(page.url, contentType: linked.contentType) {
+            if DASHVersions.isStream(page.url, contentType: linked.contentType) {
                 return report(await linkedPlaylist(page, label: linked.fileName))
             }
             let version = Version(source: .file(page.url), contentType: linked.contentType, totalBytes: linked.totalBytes)
@@ -73,7 +75,7 @@ public struct PageAnalyzer: Sendable {
 
     private func linkedPlaylist(_ page: SentPage, label: String) async -> PageAnalysis {
         let refusals = Refusals()
-        let candidates = await playlistCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil)
+        let candidates = await streamCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil)
         return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates.map { $0.withExtractedAudio(splittable: []) })
     }
 
@@ -125,23 +127,32 @@ public struct PageAnalyzer: Sendable {
             }
             return candidate.versions.isEmpty ? nil : candidate
         }
-        let playlists = page.watched.filter { HLSVersions.isPlaylist($0.url, contentType: $0.contentType) }.map(\.url)
-        let streamed = await playlistCandidates(playlists, page: page, refusals: refusals, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
+        let streams = page.watched
+            .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
+            .map(\.url)
+        let streamed = await streamCandidates(streams, page: page, refusals: refusals, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
         return Self.merged(kept + streamed).map { $0.withExtractedAudio(splittable: splittable) }
     }
 
-    private func playlistCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
+    private func streamCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
         let options = mediaOptions(page)
         var parsed: [(URL, Playlist)] = []
-        for url in urls where !parsed.contains(where: { $0.0 == url }) {
-            if let playlist = await playlist(at: url, options: options, refusals: refusals) { parsed.append((url, playlist)) }
+        var candidates: [Candidate] = []
+        var seen = Set<URL>()
+        for url in urls where seen.insert(url).inserted {
+            guard let (data, http) = await fetch(request(for: url, options: options), refusals: refusals) else { continue }
+            if let playlist = Self.playlist(in: data, from: http, at: url) {
+                parsed.append((url, playlist))
+            } else if let manifest = try? MPDParser.parse(data, base: http.url ?? url),
+                      let candidate = DASHVersions.candidate(of: manifest, label: label, thumbnail: thumbnail) {
+                candidates.append(candidate)
+            }
         }
         var covered = Set<String>()
         for case let (_, .master(master)) in parsed {
             master.variants.forEach { covered.insert(Self.withoutQuery($0.url)) }
             master.audio.compactMap(\.url).forEach { covered.insert(Self.withoutQuery($0)) }
         }
-        var candidates: [Candidate] = []
         for (url, playlist) in parsed {
             switch playlist {
             case .master(let master):
@@ -240,14 +251,22 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func playlist(at url: URL, options: RequestOptions, refusals: Refusals) async -> Playlist? {
+        guard let (data, http) = await fetch(request(for: url, options: options), refusals: refusals) else { return nil }
+        return Self.playlist(in: data, from: http, at: url)
+    }
+
+    private static func playlist(in data: Data, from http: HTTPURLResponse, at url: URL) -> Playlist? {
+        try? M3U8Parser.parse(String(decoding: data, as: UTF8.self), base: http.url ?? url)
+    }
+
+    private func request(for url: URL, options: RequestOptions) -> URLRequest {
         var request = URLRequest(url: url)
         if let agent = options.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if !options.cookies.isEmpty {
             request.setValue(options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
-        guard let (data, http) = await fetch(request, refusals: refusals) else { return nil }
-        return try? M3U8Parser.parse(String(decoding: data, as: UTF8.self), base: http.url ?? url)
+        return request
     }
 
     private func fetch(_ request: URLRequest, refusals: Refusals) async -> (Data, HTTPURLResponse)? {
