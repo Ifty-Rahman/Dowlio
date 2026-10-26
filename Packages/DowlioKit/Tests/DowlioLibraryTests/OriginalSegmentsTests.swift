@@ -10,7 +10,7 @@ struct OriginalSegmentsTests {
     static let held = 256 * 1024
     static let slowHalf = TestServer.RangeThrottle(rangeStart: 16 * mebibyte, bytesPerSecond: mebibyte, andLater: true)
 
-    @Test func theListKeepsTheOriginalSegmentsWhileStealingSplitsThem() async throws {
+    @Test func theListKeepsTheOriginalSegmentsWhileStealingSplitsThemThenShowsOneBarWhenDone() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
         let data = TestServer.makeData(size: 32 * Self.mebibyte, seed: 700)
@@ -42,9 +42,8 @@ struct OriginalSegmentsTests {
         #expect(shownCounts == shownCounts.sorted())
         #expect(mostReal > 4)
         let finished = try #require(last)
-        #expect(finished.displaySegments.count == 4)
-        #expect(finished.displaySegments.first?.start == 0)
-        #expect(finished.displaySegments.allSatisfy { $0.receivedBytes == $0.end - $0.start + 1 })
+        #expect(finished.displaySegments.isEmpty)
+        #expect(finished.fractionDone == 1)
 
         let relaunched = try await fixture.relaunched()
         let restored = try await relaunched.library.row(finished.id) { _ in true }

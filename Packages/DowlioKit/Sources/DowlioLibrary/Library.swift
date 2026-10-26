@@ -393,9 +393,10 @@ public actor Library {
     private func row(for record: StoredDownload) -> DownloadRow {
         let id = DownloadID(rawValue: record.id)
         let live = snapshots[id]
+        let state = record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state)
         var row = DownloadRow(
             id: id,
-            state: record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state),
+            state: state,
             fileName: live?.fileName ?? record.fileName,
             sourceURL: record.sourceURL,
             host: live?.displayHost ?? record.displayHost,
@@ -404,7 +405,7 @@ public actor Library {
             receivedBytes: live?.receivedBytes ?? record.receivedBytes,
             totalBytes: live?.totalBytes ?? record.totalBytes,
             segments: live?.segments ?? [],
-            displaySegments: SegmentLayout.shown(planned: record.plannedSegments ?? [], current: live?.segments ?? []),
+            displaySegments: state == .completed ? [] : SegmentLayout.shown(planned: record.plannedSegments ?? [], current: live?.segments ?? []),
             activeConnections: live?.activeConnections ?? 0,
             bytesPerSecond: live?.bytesPerSecond ?? 0,
             timeRemaining: live?.timeRemaining,

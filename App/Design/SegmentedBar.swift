@@ -1,8 +1,8 @@
 import DowlioCore
 import SwiftUI
 
-/// The brand motif: one piece per segment, each as wide as its share of the file and filled by
-/// the bytes it has. A download of unknown size shows one piece.
+/// The brand motif: one equal piece per segment, each filled by the share of its own bytes that
+/// have arrived. A download of unknown size shows one piece.
 struct SegmentedBar: View {
     let segments: [SegmentProgress]
     /// The whole download's fill, for a download with no segments yet.
@@ -40,7 +40,7 @@ struct SegmentedBar: View {
         guard total > 0 else { return [Piece(share: 1, fill: fraction ?? 0)] }
         return segments.map { segment in
             Piece(
-                share: Double(segment.length) / Double(total),
+                share: 1 / Double(segments.count),
                 fill: segment.length > 0 ? min(Double(segment.receivedBytes) / Double(segment.length), 1) : 1
             )
         }
