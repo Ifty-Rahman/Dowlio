@@ -109,6 +109,7 @@ public struct Version: Equatable, Sendable {
     public var isEstimatedSize: Bool
     public var height: Int?
     public var codecs: String?
+    public var language: String?
 
     public init(
         source: DownloadSource,
@@ -116,7 +117,8 @@ public struct Version: Equatable, Sendable {
         totalBytes: Int64? = nil,
         isEstimatedSize: Bool = false,
         height: Int? = nil,
-        codecs: String? = nil
+        codecs: String? = nil,
+        language: String? = nil
     ) {
         self.source = source
         self.contentType = contentType
@@ -124,6 +126,7 @@ public struct Version: Equatable, Sendable {
         self.isEstimatedSize = isEstimatedSize
         self.height = height
         self.codecs = codecs
+        self.language = language
     }
 }
 

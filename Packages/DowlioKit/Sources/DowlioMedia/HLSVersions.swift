@@ -37,21 +37,18 @@ enum HLSVersions {
         ["mp4a", "ac-3", "ec-3", "opus"].contains { codec.lowercased().hasPrefix($0) }
     }
 
-    static func audioIsSeparate(for variant: Variant, in master: MasterPlaylist) -> Bool {
-        guard let group = variant.audioGroup else { return false }
-        return master.audio.contains { $0.groupID == group && $0.url != nil }
-    }
-
-    static func version(of media: MediaPlaylist, variant: Variant?, audioIsSeparate: Bool = false) -> Version? {
-        guard restriction(of: media) == nil, !media.fragments.isEmpty else { return nil }
-        let listed = variant?.codecs ?? []
-        let codecs = audioIsSeparate ? listed.filter { !isAudioCodec($0) } : listed
+    static func version(of media: MediaPlaylist, variant: Variant?, audio listed: MediaPlaylist? = nil) -> Version? {
+        guard isOffered(media) else { return nil }
+        if let listed, restriction(of: listed) != nil { return nil }
+        let audio = listed.flatMap { isOffered($0) ? $0 : nil }
+        let codecs = variant?.codecs ?? []
         let source: DownloadSource
-        if let file = media.singleFile {
+        if audio == nil, let file = media.singleFile {
             source = .file(file)
         } else {
-            let track = MediaTrack(kind: !audioIsSeparate && hasAudio(codecs) ? .combined : .video, initialization: media.initialization, fragments: media.fragments)
-            guard let built = try? MediaSource(tracks: [track]) else { return nil }
+            var tracks = [MediaTrack(kind: audio == nil && hasAudio(codecs) ? .combined : .video, playlist: media)]
+            if let audio { tracks.append(MediaTrack(kind: .audio, playlist: audio)) }
+            guard let built = try? MediaSource(tracks: tracks) else { return nil }
             source = .media(built)
         }
         let bandwidth = variant?.averageBandwidth ?? variant?.bandwidth
@@ -63,5 +60,20 @@ enum HLSVersions {
             height: variant?.height,
             codecs: codecNames(codecs)
         )
+    }
+
+    static func audioVersion(of media: MediaPlaylist, language: String?, codecs: [String]) -> Version? {
+        guard isOffered(media), let built = try? MediaSource(tracks: [MediaTrack(kind: .audio, playlist: media)]) else { return nil }
+        return Version(source: .media(built), contentType: built.contentType, codecs: codecNames(codecs.filter(isAudioCodec)), language: language)
+    }
+
+    private static func isOffered(_ media: MediaPlaylist) -> Bool {
+        restriction(of: media) == nil && !media.fragments.isEmpty
+    }
+}
+
+private extension MediaTrack {
+    init(kind: Kind, playlist: MediaPlaylist) {
+        self.init(kind: kind, initialization: playlist.initialization, fragments: playlist.fragments)
     }
 }

@@ -156,9 +156,40 @@ struct PageAnalyzerTests {
         #expect(media.tracks.first?.fragments.map(\.url.lastPathComponent) == ["seg0.ts", "seg1.ts", "seg2.ts"])
     }
 
-    @Test func aVariantWhoseSoundIsAnotherPlaylistIsVideoOnlyForNow() async throws {
+    @Test func aVariantWhoseSoundIsAnotherPlaylistDownloadsBothAndItsSoundIsAnAudioRow() async throws {
         let site = try await Site()
         site.serve(html: "<title>Clip</title>", at: "/watch")
+        site.serve(text: """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",DEFAULT=YES,URI="audio/en.m3u8"
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="French",URI="audio/fr.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1280x720,AUDIO="aud"
+            720p/video.m3u8
+            """, at: "/hls/master.m3u8")
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "seg"), at: "/hls/720p/video.m3u8")
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "en"), at: "/hls/audio/en.m3u8")
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "fr"), at: "/hls/audio/fr.m3u8")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest, contentType: "application/vnd.apple.mpegurl")]
+        }
+
+        guard case .found(let candidates) = found, let video = candidates.first, candidates.count == 1 else { Issue.record("not one video: \(found)"); return }
+        #expect(!video.versions.contains { $0.isExtractedAudio })
+        guard case .media(let both) = video.versions.first?.source else { Issue.record("not media"); return }
+        #expect(both.tracks.map(\.kind) == [.video, .audio])
+        #expect(both.tracks[1].fragments.first?.url == site.url("/hls/audio/en0.ts"))
+        #expect(video.versions.first?.codecs == "H.264 + AAC")
+        let audio = video.versions.filter(\.isAudio)
+        #expect(audio.map(\.language) == ["English", "French"])
+        #expect(audio.map(\.codecs) == ["AAC", "AAC"])
+        guard case .media(let english) = audio.first?.source else { Issue.record("not media"); return }
+        #expect(english.tracks.map(\.kind) == [.audio])
+    }
+
+    @Test func aVariantWhoseSoundIsProtectedCantBeDownloaded() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Film</title>", at: "/watch")
         site.serve(text: """
             #EXTM3U
             #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",DEFAULT=YES,URI="audio/en.m3u8"
@@ -166,18 +197,14 @@ struct PageAnalyzerTests {
             720p/video.m3u8
             """, at: "/hls/master.m3u8")
         site.serve(text: Self.mediaPlaylist(segments: 3, named: "seg"), at: "/hls/720p/video.m3u8")
-        site.serve(text: Self.mediaPlaylist(segments: 3, named: "aac"), at: "/hls/audio/en.m3u8")
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "en", key: "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://k\""), at: "/hls/audio/en.m3u8")
 
         let found = try await site.analyze("/watch") {
-            $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest, contentType: "application/vnd.apple.mpegurl")]
+            $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest)]
         }
 
-        guard case .found(let candidates) = found.withoutExtractedAudio, case .media(let media) = candidates.first?.versions.first?.source else {
-            Issue.record("not media: \(found)")
-            return
-        }
-        #expect(media.tracks.map(\.kind) == [.video])
-        #expect(candidates.first?.versions.first?.codecs == "H.264")
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.restriction) == [.protected])
     }
 
     @Test func downloadLinksAndThePlayersStreamOfOneVideoAreOneVideoWithEveryVersion() async throws {

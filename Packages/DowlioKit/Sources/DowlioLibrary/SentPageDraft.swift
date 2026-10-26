@@ -235,7 +235,7 @@ public enum MediaText {
 
     public static func detail(of version: Version) -> String {
         let parts = isAudio(version)
-            ? [container(of: version), version.codecs, version.isExtractedAudio ? "extracted after download" : nil]
+            ? [container(of: version), version.codecs, version.language, version.isExtractedAudio ? "extracted after download" : nil]
             : [version.height == nil ? nil : container(of: version), version.codecs]
         return parts.compactMap { $0 }.joined(separator: " · ")
     }

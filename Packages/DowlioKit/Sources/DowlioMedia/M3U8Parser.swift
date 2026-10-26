@@ -10,6 +10,21 @@ public struct MasterPlaylist: Equatable, Sendable {
     public var variants: [Variant]
     public var audio: [Rendition]
     public var isProtected = false
+
+    func defaultAudio(for variant: Variant) -> Rendition? {
+        guard let group = variant.audioGroup else { return nil }
+        let inGroup = audio.filter { $0.groupID == group && $0.url != nil }
+        return inGroup.first(where: \.isDefault) ?? inGroup.first
+    }
+
+    func codecs(ofAudioGroup group: String) -> [String] {
+        variants.filter { $0.audioGroup == group }.flatMap(\.codecs)
+    }
+
+    var audioAddresses: [URL] {
+        var seen = Set<URL>()
+        return audio.compactMap(\.url).filter { seen.insert($0).inserted }
+    }
 }
 
 public struct Variant: Equatable, Sendable {

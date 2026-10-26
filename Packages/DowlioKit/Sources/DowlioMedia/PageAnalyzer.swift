@@ -149,22 +149,28 @@ public struct PageAnalyzer: Sendable {
                     candidates.append(Candidate(label: label, thumbnail: thumbnail, versions: [], restriction: .protected))
                     continue
                 }
+                let audioPlaylists = await audioPlaylists(of: master, options: options, refusals: refusals)
                 let found = await withTaskGroup(of: VariantPlaylist.self) { group in
                     for (index, variant) in master.variants.enumerated() {
                         group.addTask {
                             guard case .media(let media) = await self.playlist(at: variant.url, options: options, refusals: refusals) else {
                                 return VariantPlaylist(index: index)
                             }
-                            let version = HLSVersions.version(of: media, variant: variant, audioIsSeparate: HLSVersions.audioIsSeparate(for: variant, in: master))
-                            return VariantPlaylist(index: index, media: media, version: version)
+                            let audio = master.defaultAudio(for: variant)?.url.flatMap { audioPlaylists[$0] }
+                            return VariantPlaylist(index: index, media: media, version: HLSVersions.version(of: media, variant: variant, audio: audio))
                         }
                     }
                     var results: [VariantPlaylist] = []
                     for await result in group { results.append(result) }
                     return results.sorted { $0.index < $1.index }
                 }
-                let playlists = found.compactMap(\.media)
-                let candidate = Candidate(label: label, thumbnail: thumbnail, duration: playlists.map(\.duration).max(), versions: found.compactMap(\.version))
+                let playlists = found.compactMap(\.media) + audioPlaylists.values
+                let audio = Self.audioVersions(of: master, playlists: audioPlaylists)
+                let videos = found.compactMap(\.version)
+                let candidate = Candidate(
+                    label: label, thumbnail: thumbnail, duration: found.compactMap(\.media?.duration).max(),
+                    versions: videos.isEmpty ? [] : videos + audio
+                )
                 if let shown = candidate.offeredOrRestricted(by: playlists) { candidates.append(shown) }
             case .media(let media):
                 guard !covered.contains(Self.withoutQuery(url)) else { continue }
@@ -174,6 +180,27 @@ public struct PageAnalyzer: Sendable {
             }
         }
         return candidates
+    }
+
+    private func audioPlaylists(of master: MasterPlaylist, options: RequestOptions, refusals: Refusals) async -> [URL: MediaPlaylist] {
+        await withTaskGroup(of: (URL, MediaPlaylist?).self) { group in
+            for url in master.audioAddresses {
+                group.addTask {
+                    guard case .media(let media) = await self.playlist(at: url, options: options, refusals: refusals) else { return (url, nil) }
+                    return (url, media)
+                }
+            }
+            var found: [URL: MediaPlaylist] = [:]
+            for await (url, media) in group { found[url] = media }
+            return found
+        }
+    }
+
+    private static func audioVersions(of master: MasterPlaylist, playlists: [URL: MediaPlaylist]) -> [Version] {
+        master.audioAddresses.compactMap { url in
+            guard let media = playlists[url], let listed = master.audio.first(where: { $0.url == url }) else { return nil }
+            return HLSVersions.audioVersion(of: media, language: listed.name, codecs: master.codecs(ofAudioGroup: listed.groupID))
+        }
     }
 
     private static func withoutQuery(_ url: URL) -> String {
