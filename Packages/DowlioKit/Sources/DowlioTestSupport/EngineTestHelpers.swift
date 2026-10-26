@@ -65,4 +65,19 @@ public enum TestFiles {
     public static func sha256(of file: URL) throws -> String {
         try sha256(Data(contentsOf: file))
     }
+
+    public static func difference(of file: URL, from expected: Data) -> String? {
+        guard let actual = try? Data(contentsOf: file) else { return "the file can't be read" }
+        guard actual != expected else { return nil }
+        let sizes = "\(actual.count) bytes, expected \(expected.count)"
+        let shared = min(actual.count, expected.count)
+        guard let first = (0..<shared).first(where: { actual[$0] != expected[$0] }) else {
+            return "\(sizes); matches up to the end of the shorter one"
+        }
+        var last = first
+        while last + 1 < shared, actual[last + 1] != expected[last + 1] { last += 1 }
+        let run = actual[first...last]
+        let what = run.allSatisfy { $0 == 0 } ? "all zeros on disk" : "other data on disk"
+        return "\(sizes); first difference at byte \(first), \(last - first + 1) bytes differ from there, \(what)"
+    }
 }

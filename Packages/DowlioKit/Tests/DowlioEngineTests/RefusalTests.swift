@@ -36,7 +36,7 @@ struct RefusalTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "capped.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "capped.iso"), from: data) == nil)
         #expect(limits.limit(for: Self.host(of: server)) == 3)
         // Once at three, the download never asked for more than the server allows.
         #expect(server.refusals(at: "/capped.iso") == 5)
@@ -64,7 +64,7 @@ struct RefusalTests {
         let finished = try await engine.completedOrFailed(secondID)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "second.bin")) == TestFiles.sha256(second))
+        #expect(TestFiles.difference(of: folder.appending(path: "second.bin"), from: second) == nil)
         #expect(server.refusals(at: "/second.bin") == 0)
         #expect(server.requests.first { $0.path == "/second.bin" }?.headers["range"] == "bytes=0-")
         #expect(server.peakParallel(at: "/second.bin") <= 2)
@@ -90,7 +90,7 @@ struct RefusalTests {
         let firstDone = try await engine.completedOrFailed(firstID)
 
         #expect(firstDone.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "one.iso")) == TestFiles.sha256(first))
+        #expect(TestFiles.difference(of: folder.appending(path: "one.iso"), from: first) == nil)
         #expect(firstDone.segments.count == 1)
         #expect(firstDone.plannedSegments.count == 1)
         #expect(limits.limit(for: Self.host(of: server)) == 1)
@@ -99,7 +99,7 @@ struct RefusalTests {
         let secondDone = try await engine.completedOrFailed(secondID)
 
         #expect(secondDone.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "again.iso")) == TestFiles.sha256(second))
+        #expect(TestFiles.difference(of: folder.appending(path: "again.iso"), from: second) == nil)
         #expect(secondDone.segments.count == 1)
         #expect(server.refusals(at: "/again.iso") == 0)
     }
@@ -124,7 +124,7 @@ struct RefusalTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "two.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "two.iso"), from: data) == nil)
         #expect(server.refusals(at: "/two.iso") == 0)
         #expect(server.peakParallel(at: "/two.iso") == 2)
     }
@@ -170,7 +170,7 @@ struct RefusalTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "refused.bin")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "refused.bin"), from: data) == nil)
         #expect(limits.limit(for: Self.host(of: server)) == learned)
     }
 
@@ -206,7 +206,7 @@ struct RefusalTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: name)) == TestFiles.sha256(file.data))
+        #expect(TestFiles.difference(of: folder.appending(path: name), from: file.data) == nil)
         #expect(server.requests.last?.headers["range"] == nil)
         return server
     }
@@ -292,7 +292,7 @@ struct RefusalTests {
         server.releaseHeldResponses()
         let finished = try await engine.completedOrFailed(id)
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "mixed.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "mixed.iso"), from: data) == nil)
     }
 
     private static func manifest(in package: URL) throws -> [String: Any] {

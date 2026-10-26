@@ -36,7 +36,7 @@ struct PauseResumeTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "big.iso"), from: data) == nil)
         let resumed = Array(server.requests.filter { $0.path == "/big.iso" }.dropFirst(requestsWhenPaused))
         let first = try #require(paused.segments.first)
         #expect(resumed.first?.headers["range"] == "bytes=\(first.start + first.receivedBytes)-\(first.end)")
@@ -144,7 +144,7 @@ struct PauseResumeTests {
 
         #expect(finished.state == .completed)
         #expect(server.requests[requestsWhenPaused].path == "/latest")
-        #expect(try TestFiles.sha256(of: folder.appending(path: "v1.bin")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "v1.bin"), from: data) == nil)
     }
 
     @Test func resumeUsesTheLastFinalLinkWhenTheOriginalIsGone() async throws {
@@ -166,7 +166,7 @@ struct PauseResumeTests {
         #expect(afterPause.first == "/once")
         #expect(afterPause.dropFirst().allSatisfy { $0 == "/signed.bin" })
         #expect(!server.requests[requestsWhenPaused...].contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
-        #expect(try TestFiles.sha256(of: folder.appending(path: "signed.bin")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "signed.bin"), from: data) == nil)
     }
 
     @Test func resumingAllAtOnceOnAHostThatAllowsOneConnectionIsNeverRefused() async throws {
@@ -188,7 +188,7 @@ struct PauseResumeTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "one.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "one.iso"), from: data) == nil)
         #expect(server.refusals(at: "/one.iso") == 0)
         #expect(server.peakParallel(at: "/one.iso") == 1)
     }
@@ -227,7 +227,7 @@ struct PauseResumeTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "report.pdf")) == TestFiles.sha256(new))
+        #expect(TestFiles.difference(of: folder.appending(path: "report.pdf"), from: new) == nil)
         let resumed = server.requests[requestsWhenPaused...]
         #expect(resumed.first?.headers["if-range"] == "\"old\"")
         #expect(!resumed.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
@@ -279,7 +279,7 @@ struct PauseResumeTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "changing.bin")) == TestFiles.sha256(now.data))
+        #expect(TestFiles.difference(of: folder.appending(path: "changing.bin"), from: now.data) == nil)
         let resumed = server.requests[requestsWhenPaused...].map { $0.headers["range"] }
         #expect(server.requests[requestsWhenPaused].headers["if-range"] == "\"r1\"")
         switch change {
@@ -307,7 +307,7 @@ struct PauseResumeTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "notes.zip")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "notes.zip"), from: data) == nil)
         #expect(server.requests[requestsWhenPaused].headers["range"] == "bytes=0-")
         let resumedStarts = Set(server.requests[requestsWhenPaused...].compactMap { request -> Int? in
             guard let range = request.headers["range"] else { return nil }
@@ -338,7 +338,7 @@ struct PauseResumeTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "build.zip")) == TestFiles.sha256(new))
+        #expect(TestFiles.difference(of: folder.appending(path: "build.zip"), from: new) == nil)
     }
 
     @Test func aFileThatKeepsChangingFailsAsServerChangedFile() async throws {

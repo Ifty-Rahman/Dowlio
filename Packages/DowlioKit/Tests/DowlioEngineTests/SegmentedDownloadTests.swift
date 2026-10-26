@@ -20,7 +20,7 @@ struct SegmentedDownloadTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "big.iso"), from: data) == nil)
         let segmentRanges = server.requests.compactMap { $0.headers["range"] }
         #expect(segmentRanges.count == 8)
         #expect(segmentRanges.first == "bytes=0-")
@@ -45,7 +45,7 @@ struct SegmentedDownloadTests {
         }
 
         #expect(last?.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "three.bin")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "three.bin"), from: data) == nil)
         #expect(server.requests.first?.headers["range"] == "bytes=0-")
         #expect(mostConnections <= 3)
         #expect(server.peakParallel(at: "/three.bin") <= 3)
@@ -89,7 +89,7 @@ struct SegmentedDownloadTests {
         server.releaseHeldResponses()
         let finished = try await engine.completedOrFailed(id)
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "burst.bin")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "burst.bin"), from: data) == nil)
     }
 
     @Test func snapshotsShowEachSegmentsProgress() async throws {
