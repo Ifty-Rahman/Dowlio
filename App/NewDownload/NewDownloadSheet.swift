@@ -109,6 +109,9 @@ struct NewDownloadSheet: View {
                 MediaHeader(media: media)
             }
             NothingFoundBody(media: media)
+        case .needsSignIn:
+            MediaHeader(media: media)
+            NeedsSignInBody(media: media)
         }
     }
 

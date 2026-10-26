@@ -49,6 +49,8 @@ enum SentPageRecord {
             }
         case .plainFile(let url):
             record["plainFile"] = url.absoluteString
+        case .needsSignIn:
+            record["needsSignIn"] = true
         case .looking, .playing, nil:
             record["unfinished"] = true
         }

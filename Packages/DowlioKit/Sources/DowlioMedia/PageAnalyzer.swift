@@ -39,36 +39,49 @@ public struct PageAnalyzer: Sendable {
         report(.playing)
         let played = await play(page)
         guard !Task.isCancelled else { return }
-        let found = await candidates(on: page.played(played), reading: nil) { _ in }
+        let refusals = Refusals()
+        let found = await candidates(on: page.played(played), reading: nil, refusals: refusals) { _ in }
         guard !Task.isCancelled else { return }
-        report(.found(found))
+        report(found.isEmpty && refusals.any ? .needsSignIn : .found(found))
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
-        if HLSVersions.isPlaylist(page.url) {
-            let candidates = await playlistCandidates([page.url], page: page, label: page.url.lastPathComponent, thumbnail: nil)
-            return report(.found(candidates))
+        if HLSVersions.isPlaylist(page.url) { return report(await linkedPlaylist(page, label: page.url.lastPathComponent)) }
+        let refusals = Refusals()
+        let linked: LinkInspection?
+        do {
+            linked = try await inspect(page.url, pageOptions(page))
+        } catch {
+            refusals.note(error)
+            linked = nil
         }
-        if let linked = try? await inspect(page.url, pageOptions(page)), !linked.isWebPage {
+        if let linked, !linked.isWebPage {
             if HLSVersions.isPlaylist(page.url, contentType: linked.contentType) {
-                let candidates = await playlistCandidates([page.url], page: page, label: linked.fileName, thumbnail: nil)
-                return report(.found(candidates))
+                return report(await linkedPlaylist(page, label: linked.fileName))
             }
             let version = Version(source: .file(page.url), contentType: linked.contentType, totalBytes: linked.totalBytes)
             guard Self.kind(of: linked) != nil else { return report(.plainFile(page.url)) }
             return report(.found([Candidate(label: linked.fileName, versions: [version])]))
         }
 
-        let found = await candidates(on: page, reading: await read(page), report: report)
+        let found = await candidates(on: page, reading: await read(page, refusals: refusals), refusals: refusals, report: report)
+        if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
         report(.found(found))
     }
 
-    private func candidates(on page: SentPage, reading: HTMLReader?, report: (PageAnalysis) -> Void) async -> [Candidate] {
+    private func linkedPlaylist(_ page: SentPage, label: String) async -> PageAnalysis {
+        let refusals = Refusals()
+        let candidates = await playlistCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil)
+        return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates)
+    }
+
+    private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
         for media in reading?.media ?? [] { players.add(media, from: "html") }
         let shown = Set(players.list.flatMap(\.sources).map(\.url))
+        let watchedFiles = Set(page.watched.filter { $0.kind == .file }.map(\.url)).subtracting(shown)
         for request in page.watched where request.kind == .file {
             players.add(ScannedMedia(url: request.url, kind: MediaFile.kind(of: request.url, contentType: request.contentType) ?? .video), from: "watched")
         }
@@ -84,7 +97,14 @@ public struct PageAnalyzer: Sendable {
             for media in sources {
                 group.addTask { [inspect] in
                     let url = media.url
-                    guard let inspection = try? await inspect(url, options), Self.kind(of: inspection) != nil else { return (url, nil) }
+                    let inspection: LinkInspection
+                    do {
+                        inspection = try await inspect(url, options)
+                    } catch {
+                        if !watchedFiles.contains(url) { refusals.note(error) }
+                        return (url, nil)
+                    }
+                    guard Self.kind(of: inspection) != nil else { return (url, nil) }
                     return (url, Version(
                         source: .file(url), contentType: inspection.contentType, totalBytes: inspection.totalBytes,
                         height: media.height ?? MediaFile.height(in: url.path), codecs: media.codecs ?? MediaFile.codecs(in: url.path)
@@ -103,15 +123,15 @@ public struct PageAnalyzer: Sendable {
             return candidate.versions.isEmpty ? nil : candidate
         }
         let playlists = page.watched.filter { HLSVersions.isPlaylist($0.url, contentType: $0.contentType) }.map(\.url)
-        let streamed = await playlistCandidates(playlists, page: page, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
+        let streamed = await playlistCandidates(playlists, page: page, refusals: refusals, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
         return Self.merged(kept + streamed)
     }
 
-    private func playlistCandidates(_ urls: [URL], page: SentPage, label: String, thumbnail: URL?) async -> [Candidate] {
+    private func playlistCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
         let options = mediaOptions(page)
         var parsed: [(URL, Playlist)] = []
         for url in urls where !parsed.contains(where: { $0.0 == url }) {
-            if let playlist = await playlist(at: url, options: options) { parsed.append((url, playlist)) }
+            if let playlist = await playlist(at: url, options: options, refusals: refusals) { parsed.append((url, playlist)) }
         }
         var covered = Set<String>()
         for case let (_, .master(master)) in parsed {
@@ -125,7 +145,7 @@ public struct PageAnalyzer: Sendable {
                 let found = await withTaskGroup(of: (Int, Version?, Double).self) { group in
                     for (index, variant) in master.variants.enumerated() {
                         group.addTask {
-                            guard case .media(let media) = await self.playlist(at: variant.url, options: options) else { return (index, nil, 0) }
+                            guard case .media(let media) = await self.playlist(at: variant.url, options: options, refusals: refusals) else { return (index, nil, 0) }
                             return (index, HLSVersions.version(of: media, variant: variant, audioIsSeparate: HLSVersions.audioIsSeparate(for: variant, in: master)), media.duration)
                         }
                     }
@@ -180,18 +200,24 @@ public struct PageAnalyzer: Sendable {
             .map(\.element)
     }
 
-    private func playlist(at url: URL, options: RequestOptions) async -> Playlist? {
+    private func playlist(at url: URL, options: RequestOptions, refusals: Refusals) async -> Playlist? {
         var request = URLRequest(url: url)
         if let agent = options.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
         if !options.cookies.isEmpty {
             request.setValue(options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
-        request.httpShouldHandleCookies = false
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= Self.largestPage
-        else { return nil }
+        guard let (data, http) = await fetch(request, refusals: refusals) else { return nil }
         return try? M3U8Parser.parse(String(decoding: data, as: UTF8.self), base: http.url ?? url)
+    }
+
+    private func fetch(_ request: URLRequest, refusals: Refusals) async -> (Data, HTTPURLResponse)? {
+        var request = request
+        request.httpShouldHandleCookies = false
+        guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return nil }
+        refusals.note(status: http.statusCode)
+        guard (200..<300).contains(http.statusCode), data.count <= Self.largestPage else { return nil }
+        return (data, http)
     }
 
     private struct Players {
@@ -245,19 +271,15 @@ public struct PageAnalyzer: Sendable {
         }
     }
 
-    private func read(_ page: SentPage) async -> HTMLReader? {
+    private func read(_ page: SentPage, refusals: Refusals) async -> HTMLReader? {
         var request = URLRequest(url: page.url)
         request.setValue("text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         if let agent = page.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         if !page.cookies.isEmpty {
             request.setValue(page.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
-        request.httpShouldHandleCookies = false
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")),
-              data.count <= Self.largestPage
-        else { return nil }
+        guard let (data, http) = await fetch(request, refusals: refusals),
+              LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")) else { return nil }
         let html = String(decoding: data, as: UTF8.self)
         return HTMLReader(html, base: http.url ?? page.url)
     }
@@ -273,5 +295,22 @@ public struct PageAnalyzer: Sendable {
         var options = pageOptions(page)
         options.referrer = page.url
         return options
+    }
+}
+
+final class Refusals: @unchecked Sendable {
+    private let lock = NSLock()
+    private var refused = false
+
+    var any: Bool { lock.withLock { refused } }
+
+    func note(_ error: any Error) {
+        guard let error = error as? DownloadError, error == .needsSignIn || error == .forbidden else { return }
+        lock.withLock { refused = true }
+    }
+
+    func note(status: Int) {
+        guard status == 401 || status == 403 else { return }
+        lock.withLock { refused = true }
     }
 }

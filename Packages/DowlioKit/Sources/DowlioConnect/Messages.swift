@@ -115,7 +115,7 @@ struct Envelope {
             message = .pageSend(SentPage(
                 url: url, title: text("title", limit: 1000), browser: text("browser"), cookies: cookies,
                 userAgent: text("userAgent", limit: Self.maximumHeaderValue), scan: Array(media), embeddedJSON: Array(embedded),
-                watched: Array(watched)
+                watched: Array(watched), throughDowlioConnect: true
             ))
         case "settings.change":
             let catches = object["catches"] as? Bool

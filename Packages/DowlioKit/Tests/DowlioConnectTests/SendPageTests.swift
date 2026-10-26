@@ -46,7 +46,8 @@ struct SendPageTests {
             watched: [
                 WatchedRequest(url: URL(string: "https://video.example.net/master.m3u8")!, kind: .manifest, contentType: "application/vnd.apple.mpegurl", referrer: URL(string: "https://example.com/watch?v=1")),
                 WatchedRequest(url: URL(string: "https://video.example.net/clip.mp4")!, kind: .file, contentType: "video/mp4"),
-            ]
+            ],
+            throughDowlioConnect: true
         ))
     }
 

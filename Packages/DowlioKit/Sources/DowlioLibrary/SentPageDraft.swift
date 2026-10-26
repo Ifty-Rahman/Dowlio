@@ -8,6 +8,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case playing
         case found
         case nothingFound
+        case needsSignIn
     }
 
     public enum Showing: Equatable, Sendable {
@@ -59,6 +60,10 @@ public struct SentPageDraft: Equatable, Sendable {
             phase = .playing
             if play == nil { play = .byItself }
             return nil
+        case .needsSignIn:
+            candidates = []
+            phase = .needsSignIn
+            return nil
         case .plainFile(let url):
             return url
         case .found(let found):
@@ -82,6 +87,11 @@ public struct SentPageDraft: Equatable, Sendable {
         guard phase == .playing else { return }
         phase = .nothingFound
         play = nil
+    }
+
+    public var signIn: [String] {
+        let next = "This site only shows this video to signed-in visitors. Sign in to it in your browser, then send the page again."
+        return page.throughDowlioConnect ? [next] : [next, "Install Dowlio Connect so Dowlio can use your sign-in."]
     }
 
     public var lookingLine: String {

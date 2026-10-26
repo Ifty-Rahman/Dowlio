@@ -10,6 +10,7 @@ public struct SentPage: Equatable, Sendable {
     public var scan: [ScannedMedia]
     public var embeddedJSON: [String]
     public var watched: [WatchedRequest]
+    public var throughDowlioConnect: Bool
 
     public init(
         url: URL,
@@ -19,7 +20,8 @@ public struct SentPage: Equatable, Sendable {
         userAgent: String? = nil,
         scan: [ScannedMedia] = [],
         embeddedJSON: [String] = [],
-        watched: [WatchedRequest] = []
+        watched: [WatchedRequest] = [],
+        throughDowlioConnect: Bool = false
     ) {
         self.url = url
         self.title = title
@@ -29,6 +31,7 @@ public struct SentPage: Equatable, Sendable {
         self.scan = scan
         self.embeddedJSON = embeddedJSON
         self.watched = watched
+        self.throughDowlioConnect = throughDowlioConnect
     }
 }
 
@@ -120,6 +123,7 @@ public struct Version: Equatable, Sendable {
 public enum PageAnalysis: Equatable, Sendable {
     case looking([Candidate])
     case playing
+    case needsSignIn
     case plainFile(URL)
     case found([Candidate])
 }

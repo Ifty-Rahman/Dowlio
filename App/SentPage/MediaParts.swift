@@ -461,3 +461,25 @@ struct NothingFoundBody: View {
         .padding(.vertical, DowlioDesign.Spacing.sm)
     }
 }
+
+struct NeedsSignInBody: View {
+    let media: SentPageModel
+
+    var body: some View {
+        VStack(spacing: DowlioDesign.Spacing.sm) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.system(size: 26))
+                .foregroundStyle(.secondary)
+            Text("Needs sign-in").font(DowlioDesign.TypeRole.heading)
+            ForEach(media.draft.signIn, id: \.self) { line in
+                Text(line)
+            }
+            .font(DowlioDesign.TypeRole.detail)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, DowlioDesign.Spacing.sm)
+    }
+}

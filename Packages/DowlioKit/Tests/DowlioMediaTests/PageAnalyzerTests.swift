@@ -309,6 +309,8 @@ struct PageAnalyzerTests {
         #expect(media.allSatisfy { $0.headers["referer"] == site.url("/members/watch").absoluteString })
         #expect(media.allSatisfy { $0.headers["user-agent"] == "Mozilla/5.0 Dia" })
         #expect(site.server.requests.filter { $0.path == "/members/watch" }.allSatisfy { $0.headers["user-agent"] == "Mozilla/5.0 Dia" })
+        #expect(media.allSatisfy { $0.headers["cookie"] == "session=abc" })
+        #expect(site.server.requests.filter { $0.path == "/members/watch" }.allSatisfy { $0.headers["cookie"] == "session=abc" })
     }
 
     @Test func mediaTheBrowserScannedIsProbedAndKept() async throws {

@@ -14,7 +14,10 @@ public typealias LookAgain = @Sendable (SentPage) async -> PlayedPage
 
 extension SentPage {
     func played(_ played: PlayedPage) -> SentPage {
-        var seen = SentPage(url: url, title: played.title ?? title, browser: browser, cookies: cookies, userAgent: userAgent)
+        var seen = self
+        seen.title = played.title ?? title
+        seen.scan = []
+        seen.embeddedJSON = []
         seen.watched = played.media
         return seen
     }
