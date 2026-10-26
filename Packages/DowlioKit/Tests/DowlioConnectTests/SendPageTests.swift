@@ -20,6 +20,12 @@ struct SendPageTests {
                 ["url": "https://cdn.example.com/talk.m4a", "kind": "audio"],
             ],
             "embeddedJson": [#"{"video_versions":[]}"#],
+            "requests": [
+                ["url": "https://video.example.net/master.m3u8", "kind": "manifest", "contentType": "application/vnd.apple.mpegurl", "referrer": "https://example.com/watch?v=1"],
+                ["url": "https://video.example.net/clip.mp4", "kind": "file", "contentType": "video/mp4"],
+                ["url": "blob:https://example.com/1", "kind": "file"],
+                ["url": "https://video.example.net/x.mp4", "kind": "segment"],
+            ],
         ])
         let receipt = try await client.receive()
         let page = try await fixture.nextSentPage()
@@ -36,7 +42,11 @@ struct SendPageTests {
                 ScannedMedia(url: URL(string: "https://cdn.example.com/clip.mp4")!, kind: .video, poster: URL(string: "https://cdn.example.com/p.jpg"), duration: 61.5, group: 1),
                 ScannedMedia(url: URL(string: "https://cdn.example.com/talk.m4a")!, kind: .audio),
             ],
-            embeddedJSON: [#"{"video_versions":[]}"#]
+            embeddedJSON: [#"{"video_versions":[]}"#],
+            watched: [
+                WatchedRequest(url: URL(string: "https://video.example.net/master.m3u8")!, kind: .manifest, contentType: "application/vnd.apple.mpegurl", referrer: URL(string: "https://example.com/watch?v=1")),
+                WatchedRequest(url: URL(string: "https://video.example.net/clip.mp4")!, kind: .file, contentType: "video/mp4"),
+            ]
         ))
     }
 

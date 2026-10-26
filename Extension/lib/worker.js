@@ -2,6 +2,7 @@ import { browserName } from "./browser.js";
 import { startCatching } from "./catching.js";
 import { startSending } from "./sending.js";
 import { startCookies } from "./cookies.js";
+import { startWatching } from "./watching.js";
 
 export { browserName };
 
@@ -253,7 +254,8 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   };
   const catching = startCatching({ chrome, navigator, now, link: connection });
 
-  startSending({ chrome, navigator, link: connection });
+  const watching = startWatching({ chrome });
+  startSending({ chrome, navigator, link: connection, watching });
 
   connect();
 }

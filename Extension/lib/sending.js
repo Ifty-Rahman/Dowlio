@@ -5,7 +5,7 @@ export const MENU_ITEM = "send-to-dowlio";
 export const PAGE_MENU_ITEM = "send-page-to-dowlio";
 export const RECEIPT_TIMEOUT = 5000;
 
-export function startSending({ chrome, navigator, link }) {
+export function startSending({ chrome, navigator, link, watching }) {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: MENU_ITEM, title: "Send to Dowlio", contexts: ["link"] });
     chrome.contextMenus.create({ id: PAGE_MENU_ITEM, title: "Send to Dowlio", contexts: ["page"] });
@@ -64,6 +64,7 @@ export function startSending({ chrome, navigator, link }) {
         userAgent: navigator?.userAgent,
         cookies: await link.cookiesFor?.(tab.url),
         media: found.media,
+        requests: watching?.requestsFor(tab.id) ?? [],
         embeddedJson: found.embeddedJson,
       },
       RECEIPT_TIMEOUT,

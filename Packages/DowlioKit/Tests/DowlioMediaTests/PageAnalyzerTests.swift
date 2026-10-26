@@ -41,6 +41,50 @@ struct PageAnalyzerTests {
         #expect(candidates.map { $0.versions.map(\.source.url.lastPathComponent) } == [["mov_bbb.mp4", "mov_bbb.ogg"], ["talk.mp3"]])
     }
 
+    @Test func mediaFilesTheTabRequestedBecomeCandidates() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Clip page</title><div id=player></div>", at: "/watch")
+        site.serve(video: 2_000_000, at: "/stream/clip.mp4")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/stream/clip.mp4"), kind: .file, contentType: "video/mp4")]
+        }
+
+        #expect(found == .found([Candidate(
+            label: "Clip page",
+            versions: [Version(source: .file(site.url("/stream/clip.mp4")), contentType: "video/mp4", totalBytes: 2_000_000)]
+        )]))
+    }
+
+    @Test func playlistsTheTabRequestedArentOfferedUntilTheyCanBeDownloaded() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Stream</title>", at: "/watch")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest, contentType: "application/vnd.apple.mpegurl")]
+        }
+
+        #expect(found == .found([]))
+    }
+
+    @Test func smallFilesFromAnotherSiteAreTakenForAdsUnlessThePageShowsThem() async throws {
+        let site = try await Site()
+        let other = try await Site()
+        site.serve(html: #"<title>Watch</title><video src="\#(other.url("/shown.mp4").absoluteString)"></video>"#, at: "/watch")
+        other.serve(video: 300_000, at: "/ad.mp4")
+        other.serve(video: 300_000, at: "/shown.mp4")
+        other.serve(video: 3_000_000, at: "/long.mp4")
+        site.serve(video: 300_000, at: "/own.mp4")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = ["/ad.mp4", "/shown.mp4", "/long.mp4"].map { WatchedRequest(url: other.url($0), kind: .file, contentType: "video/mp4") }
+                + [WatchedRequest(url: site.url("/own.mp4"), kind: .file, contentType: "video/mp4")]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(Set(candidates.flatMap(\.versions).map(\.source.url.lastPathComponent)) == ["shown.mp4", "long.mp4", "own.mp4"])
+    }
+
     @Test func aLinkToAPlainFileIsHandedBack() async throws {
         let site = try await Site()
         site.serve(video: 500, type: "application/pdf", at: "/files/report.pdf")

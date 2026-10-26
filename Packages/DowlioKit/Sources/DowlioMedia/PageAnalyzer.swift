@@ -35,6 +35,10 @@ public struct PageAnalyzer: Sendable {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
         for media in reading?.media ?? [] { players.add(media, from: "html") }
+        let shown = Set(players.list.flatMap(\.sources).map(\.url))
+        for request in page.watched where request.kind == .file {
+            players.add(ScannedMedia(url: request.url, kind: MediaFile.kind(of: request.url, contentType: request.contentType) ?? .video), from: "watched")
+        }
         let label = reading?.title ?? page.title ?? page.url.host() ?? page.url.absoluteString
         let candidates = players.list.map { player in
             Candidate(label: label, thumbnail: player.poster ?? reading?.image, duration: player.duration ?? reading?.duration, versions: [])
@@ -56,7 +60,9 @@ public struct PageAnalyzer: Sendable {
         }
         let kept = players.list.enumerated().compactMap { index, player -> Candidate? in
             var candidate = candidates[index]
-            candidate.versions = player.sources.compactMap { versions[$0.url] }
+            candidate.versions = player.sources.compactMap { versions[$0.url] }.filter { version in
+                shown.contains(version.source.url) || !Self.looksLikeAnAd(version, on: page.url)
+            }
             return candidate.versions.isEmpty ? nil : candidate
         }
         report(.found(kept))
@@ -81,6 +87,22 @@ public struct PageAnalyzer: Sendable {
                 list.append(Player(key: key, sources: [media]))
             }
         }
+    }
+
+    private static let smallestWatchedFileFromAnotherSite: Int64 = 1_000_000
+
+    private static func looksLikeAnAd(_ version: Version, on page: URL) -> Bool {
+        guard let size = version.totalBytes, size < smallestWatchedFileFromAnotherSite else { return false }
+        return site(of: version.source.url) != site(of: page)
+    }
+
+    private static func site(of url: URL) -> String {
+        let host = url.host(percentEncoded: false)?.lowercased() ?? ""
+        let port = url.port.map { ":\($0)" } ?? ""
+        let labels = host.split(separator: ".")
+        if labels.isEmpty || host.contains(":") || labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return host + port }
+        let countryCoded = labels.count > 2 && labels.last?.count == 2 && (labels.dropLast().last?.count ?? 0) <= 3
+        return labels.suffix(countryCoded ? 3 : 2).joined(separator: ".") + port
     }
 
     private static func kind(of inspection: LinkInspection) -> ScannedMedia.Kind? {

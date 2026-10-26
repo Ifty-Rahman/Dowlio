@@ -9,6 +9,7 @@ public struct SentPage: Equatable, Sendable {
     public var userAgent: String?
     public var scan: [ScannedMedia]
     public var embeddedJSON: [String]
+    public var watched: [WatchedRequest]
 
     public init(
         url: URL,
@@ -17,7 +18,8 @@ public struct SentPage: Equatable, Sendable {
         cookies: [Cookie] = [],
         userAgent: String? = nil,
         scan: [ScannedMedia] = [],
-        embeddedJSON: [String] = []
+        embeddedJSON: [String] = [],
+        watched: [WatchedRequest] = []
     ) {
         self.url = url
         self.title = title
@@ -26,6 +28,26 @@ public struct SentPage: Equatable, Sendable {
         self.userAgent = userAgent
         self.scan = scan
         self.embeddedJSON = embeddedJSON
+        self.watched = watched
+    }
+}
+
+public struct WatchedRequest: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case manifest
+        case file
+    }
+
+    public var url: URL
+    public var kind: Kind
+    public var contentType: String?
+    public var referrer: URL?
+
+    public init(url: URL, kind: Kind, contentType: String? = nil, referrer: URL? = nil) {
+        self.url = url
+        self.kind = kind
+        self.contentType = contentType
+        self.referrer = referrer
     }
 }
 

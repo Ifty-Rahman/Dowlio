@@ -98,7 +98,7 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
     webRequest: {
       listeners: {},
       ...Object.fromEntries(
-        ["onBeforeRequest", "onSendHeaders"].map((event) => [
+        ["onBeforeRequest", "onSendHeaders", "onHeadersReceived", "onErrorOccurred"].map((event) => [
           event,
           {
             addListener: (listener, filter, extra) => {
@@ -176,6 +176,9 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
     },
     tabs: {
       byId: {},
+      removedListeners: [],
+      onRemoved: { addListener: (listener) => chrome.tabs.removedListeners.push(listener) },
+      close: (tabId) => chrome.tabs.removedListeners.forEach((listener) => listener(tabId)),
       async get(tabId) {
         const tab = chrome.tabs.byId[tabId];
         if (!tab) throw new Error(`No tab with id: ${tabId}`);

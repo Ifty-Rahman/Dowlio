@@ -130,3 +130,20 @@ test("players in different frames stay apart", async () => {
 
   assert.deepEqual(sends(socket)[0].media.map(({ group }) => group), [1, 2]);
 });
+
+test("a sent page carries the media requests its tab made, and only that tab's", async () => {
+  const { chrome, socket } = await worker();
+  const fire = (tabId, url) => {
+    chrome.webRequest.fire("onSendHeaders", { requestId: url, tabId, url, type: "xmlhttprequest", requestHeaders: [{ name: "Referer", value: tab.url }] });
+    chrome.webRequest.fire("onHeadersReceived", { requestId: url, tabId, url, type: "xmlhttprequest", statusCode: 200, responseHeaders: [{ name: "Content-Type", value: "application/vnd.apple.mpegurl" }] });
+  };
+  fire(7, "https://video.example.net/pl/master.m3u8");
+  fire(9, "https://other.example.net/elsewhere.m3u8");
+
+  await chrome.contextMenus.click(pageClick, tab);
+  await settle();
+
+  assert.deepEqual(sends(socket)[0].requests, [
+    { url: "https://video.example.net/pl/master.m3u8", kind: "manifest", contentType: "application/vnd.apple.mpegurl", referrer: tab.url },
+  ]);
+});
