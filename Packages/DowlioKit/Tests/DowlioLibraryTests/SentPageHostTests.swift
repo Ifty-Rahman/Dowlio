@@ -133,3 +133,41 @@ struct LookAgainHostTests {
         while !condition() { try await Task.sleep(for: .milliseconds(10)) }
     }
 }
+
+@MainActor
+@Suite(.timeLimit(.minutes(1)))
+struct FeedHostTests {
+    private final class Probes {
+        var asked: [String] = []
+    }
+
+    private let page = SentPage(url: URL(string: "https://x.example/home")!)
+    private let shown = Candidate(label: "Shown", versions: [Version(source: .file(URL(string: "https://x.example/a.mp4")!))], isOnScreen: true)
+    private let waiting = Candidate(label: "Later", versions: [], unprobed: [WatchedRequest(url: URL(string: "https://x.example/b.m3u8")!, kind: .manifest)])
+
+    @Test func openingAVideoThatWasntProbedProbesItOnce() async throws {
+        let probes = Probes()
+        let found = Version(source: .file(URL(string: "https://x.example/b.mp4")!))
+        let host = SentPageHost(analyze: { [shown, waiting] _ in AsyncStream { $0.yield(.found([shown, waiting])) } }, probe: { _, candidate in
+            probes.asked.append(candidate.label)
+            var probed = candidate
+            probed.versions = [found]
+            probed.unprobed = []
+            return probed
+        })
+        host.send(page) { _ in }
+        try await waitUntil { host.current?.draft.candidates.count == 2 }
+
+        host.current?.select(1)
+        host.current?.select(1)
+        try await waitUntil { host.current?.draft.candidates[1].versions == [found] }
+
+        #expect(probes.asked == ["Later"])
+        #expect(host.current?.draft.chosenVersion == found)
+        #expect(host.current?.draft.downloads.count == 2)
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        while !condition() { try await Task.sleep(for: .milliseconds(10)) }
+    }
+}

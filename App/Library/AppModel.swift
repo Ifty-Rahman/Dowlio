@@ -187,6 +187,11 @@ final class AppModel {
         recorded(page) { $0.lookAgain(page) }
     }
 
+    func probe(_ page: SentPage, _ candidate: Candidate) async -> Candidate {
+        guard let analyzer else { return candidate }
+        return await analyzer.probe(candidate, on: page)
+    }
+
     private var analyzer: PageAnalyzer? {
         guard let library else { return nil }
         return PageAnalyzer(lookAgain: { await HiddenPlayer.play($0) }) { url, options in
@@ -253,7 +258,7 @@ final class AppModel {
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "", sentPages: SentPageHost? = nil) -> NewDownloadModel? {
         guard let library else { return nil }
-        let host = sentPages ?? SentPageHost(analyze: analyze, lookAgain: lookAgain) { AppModel.currentSettings().qualityPreference }
+        let host = sentPages ?? SentPageHost(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
         let model = NewDownloadModel(text: text, folder: downloadsFolder, sentPages: host) { url, options in
             try await library.inspect(url, options: options)
         }

@@ -79,6 +79,28 @@ public struct PageAnalyzer: Sendable {
         return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates.map { $0.withExtractedAudio(splittable: []) })
     }
 
+    public func probe(_ candidate: Candidate, on page: SentPage) async -> Candidate {
+        let files = candidate.unprobed.filter { $0.kind == .file }.map { ScannedMedia(url: $0.url, kind: MediaFile.kind(of: $0.url, contentType: $0.contentType) ?? .video) }
+        let streams = candidate.unprobed.filter { $0.kind == .manifest }.map(\.url)
+        let context = PageContext(page: page, reading: nil, label: candidate.label, shown: Set(files.map(\.url)), watchedFiles: [])
+        let probed = await probe(PageLayout.Bucket(files: files, streams: streams), in: context, refusals: Refusals())
+        var found = Self.merged(probed.candidates).first?.withExtractedAudio(splittable: probed.splittable) ?? candidate
+        found.label = candidate.label
+        found.thumbnail = candidate.thumbnail ?? found.thumbnail
+        found.isOnScreen = candidate.isOnScreen
+        found.isOther = candidate.isOther
+        found.unprobed = []
+        return found
+    }
+
+    private struct PageContext: Sendable {
+        var page: SentPage
+        var reading: HTMLReader?
+        var label: String
+        var shown: Set<URL>
+        var watchedFiles: Set<URL>
+    }
+
     private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
@@ -86,25 +108,79 @@ public struct PageAnalyzer: Sendable {
         let shown = Set(players.list.flatMap(\.sources).map(\.url))
         let watchedFiles = Set(page.watched.filter { $0.kind == .file }.map(\.url)).subtracting(shown)
         for request in page.watched where request.kind == .file {
-            players.add(ScannedMedia(url: request.url, kind: MediaFile.kind(of: request.url, contentType: request.contentType) ?? .video), from: "watched")
+            let kind = MediaFile.kind(of: request.url, contentType: request.contentType) ?? .video
+            if let group = PageLayout.matchingPlayer(for: request.url, in: page.players) {
+                players.add(ScannedMedia(url: request.url, kind: kind, group: group), from: "page")
+            } else {
+                players.add(ScannedMedia(url: request.url, kind: kind), from: "watched")
+            }
         }
+        let streams = page.watched
+            .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
+            .map(\.url)
+        let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams)
         let label = reading?.title ?? page.title ?? page.url.host() ?? page.url.absoluteString
-        let candidates = players.list.map { player in
-            Candidate(label: label, thumbnail: player.poster ?? reading?.image, duration: player.duration ?? reading?.duration, versions: [])
-        }
-        if !candidates.isEmpty { report(.looking(candidates)) }
+        let context = PageContext(page: page, reading: reading, label: label, shown: shown, watchedFiles: watchedFiles)
+        let placeholders = layout.buckets.map { placeholder(of: $0, in: context) }
+        if !placeholders.isEmpty { report(.looking(placeholders)) }
 
-        let options = mediaOptions(page)
-        let sources = players.list.flatMap(\.sources)
-        let probed = await withTaskGroup(of: (URL, Probe).self) { group in
-            for media in sources {
+        let probedCount = layout.isFeed ? PageLayout.probedAtOnce : layout.buckets.count
+        let probed = await withTaskGroup(of: (Int, ProbedBucket).self) { group in
+            for (index, bucket) in layout.buckets.enumerated().prefix(probedCount) {
+                group.addTask { (index, await self.probe(bucket, in: context, refusals: refusals)) }
+            }
+            var found: [Int: ProbedBucket] = [:]
+            for await (index, result) in group { found[index] = result }
+            return found
+        }
+        let splittable = probed.values.reduce(into: Set<URL>()) { $0.formUnion($1.splittable) }
+        var found: [Candidate]
+        if layout.isFeed {
+            found = layout.buckets.indices.flatMap { index -> [Candidate] in
+                guard let result = probed[index] else {
+                    var waiting = placeholders[index]
+                    waiting.unprobed = layout.buckets[index].unprobed
+                    return [waiting]
+                }
+                return Self.merged(result.candidates).enumerated().map { offset, candidate in
+                    var placed = candidate
+                    placed.isOther = layout.buckets[index].isOther
+                    placed.isOnScreen = index == 0 && offset == 0 && layout.onScreen != nil
+                    return placed
+                }
+            }
+        } else {
+            found = Self.merged(layout.buckets.indices.flatMap { probed[$0]?.candidates ?? [] })
+        }
+        return found.map { $0.withExtractedAudio(splittable: splittable) }
+    }
+
+    private struct ProbedBucket: Sendable {
+        var candidates: [Candidate] = []
+        var splittable: Set<URL> = []
+    }
+
+    private func placeholder(of bucket: PageLayout.Bucket, in place: PageContext) -> Candidate {
+        Candidate(
+            label: bucket.player?.label ?? place.label,
+            thumbnail: bucket.player?.poster ?? bucket.files.lazy.compactMap(\.poster).first ?? place.reading?.image,
+            duration: bucket.player?.duration ?? bucket.files.lazy.compactMap(\.duration).first ?? place.reading?.duration,
+            versions: [],
+            isOther: bucket.isOther
+        )
+    }
+
+    private func probe(_ bucket: PageLayout.Bucket, in place: PageContext, refusals: Refusals) async -> ProbedBucket {
+        let options = mediaOptions(place.page)
+        let probes = await withTaskGroup(of: (URL, Probe).self) { group in
+            for media in bucket.files {
                 group.addTask { [inspect] in
                     let url = media.url
                     let inspection: LinkInspection
                     do {
                         inspection = try await inspect(url, options)
                     } catch {
-                        if !watchedFiles.contains(url) { refusals.note(error) }
+                        if !place.watchedFiles.contains(url) { refusals.note(error) }
                         return (url, Probe())
                     }
                     guard Self.kind(of: inspection) != nil else { return (url, Probe()) }
@@ -118,20 +194,24 @@ public struct PageAnalyzer: Sendable {
             for await (url, probe) in group { found[url] = probe }
             return found
         }
-        let versions = probed.compactMapValues(\.version)
-        let splittable = Set(probed.filter(\.value.splitsIntoSegments).keys)
-        let kept = players.list.enumerated().compactMap { index, player -> Candidate? in
-            var candidate = candidates[index]
-            candidate.versions = player.sources.compactMap { versions[$0.url] }.filter { version in
-                shown.contains(version.source.url) || !Self.looksLikeAnAd(version, on: page.url)
-            }
-            return candidate.versions.isEmpty ? nil : candidate
+        let shell = placeholder(of: bucket, in: place)
+        var result = ProbedBucket(splittable: Set(probes.filter(\.value.splitsIntoSegments).keys))
+        let versions = bucket.files.compactMap { probes[$0.url]?.version }.filter { version in
+            place.shown.contains(version.source.url) || !Self.looksLikeAnAd(version, on: place.page.url)
         }
-        let streams = page.watched
-            .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
-            .map(\.url)
-        let streamed = await streamCandidates(streams, page: page, refusals: refusals, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
-        return Self.merged(kept + streamed).map { $0.withExtractedAudio(splittable: splittable) }
+        if !versions.isEmpty {
+            var files = shell
+            files.versions = versions
+            result.candidates.append(files)
+        }
+        let thumbnail = bucket.player?.poster ?? place.reading?.image ?? place.page.scan.lazy.compactMap(\.poster).first
+        let streamed = await streamCandidates(bucket.streams, page: place.page, refusals: refusals, label: shell.label, thumbnail: thumbnail)
+        result.candidates += streamed.map { candidate in
+            var placed = candidate
+            if let duration = bucket.player?.duration, placed.duration == nil { placed.duration = duration }
+            return placed
+        }
+        return result
     }
 
     private func streamCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
@@ -281,6 +361,7 @@ public struct PageAnalyzer: Sendable {
     private struct Players {
         struct Player {
             var key: String
+            var group: Int?
             var sources: [ScannedMedia]
             var poster: URL? { sources.lazy.compactMap(\.poster).first }
             var duration: Double? { sources.lazy.compactMap(\.duration).first }
@@ -299,7 +380,7 @@ public struct PageAnalyzer: Sendable {
             if let index = list.firstIndex(where: { $0.key == key }) {
                 list[index].sources.append(media)
             } else {
-                list.append(Player(key: key, sources: [media]))
+                list.append(Player(key: key, group: origin == "page" ? media.group : nil, sources: [media]))
             }
         }
     }

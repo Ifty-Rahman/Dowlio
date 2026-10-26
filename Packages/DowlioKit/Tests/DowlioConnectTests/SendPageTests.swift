@@ -20,6 +20,11 @@ struct SendPageTests {
                 ["url": "https://cdn.example.com/talk.m4a", "kind": "audio"],
             ],
             "embeddedJson": [#"{"video_versions":[]}"#],
+            "players": [
+                ["group": 1, "label": "Ada: Holiday clip from the beach", "poster": "https://cdn.example.com/p.jpg", "duration": 61.5, "playing": true, "visible": 0.75],
+                ["group": 2, "label": "", "playing": false, "visible": 3],
+                ["label": "No group"],
+            ],
             "requests": [
                 ["url": "https://video.example.net/master.m3u8", "kind": "manifest", "contentType": "application/vnd.apple.mpegurl", "referrer": "https://example.com/watch?v=1"],
                 ["url": "https://video.example.net/clip.mp4", "kind": "file", "contentType": "video/mp4"],
@@ -41,6 +46,10 @@ struct SendPageTests {
             scan: [
                 ScannedMedia(url: URL(string: "https://cdn.example.com/clip.mp4")!, kind: .video, poster: URL(string: "https://cdn.example.com/p.jpg"), duration: 61.5, group: 1),
                 ScannedMedia(url: URL(string: "https://cdn.example.com/talk.m4a")!, kind: .audio),
+            ],
+            players: [
+                ScannedPlayer(group: 1, label: "Ada: Holiday clip from the beach", poster: URL(string: "https://cdn.example.com/p.jpg"), duration: 61.5, isPlaying: true, visibility: 0.75),
+                ScannedPlayer(group: 2, visibility: 1),
             ],
             embeddedJSON: [#"{"video_versions":[]}"#],
             watched: [

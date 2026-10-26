@@ -19,7 +19,8 @@ struct MediaHeader: View {
             }
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                 Text(title).font(DowlioDesign.TypeRole.heading).lineLimit(2)
-                Text(subtitle ?? media.draft.sourceLine)
+                if media.draft.phase == .found, media.draft.selectedCandidate?.isOnScreen == true { OnScreenTag() }
+                Text(placeLine ?? subtitle ?? media.draft.sourceLine)
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -38,9 +39,24 @@ struct MediaHeader: View {
         }
     }
 
+    private var placeLine: String? {
+        media.draft.phase == .found && media.draft.selectedCandidate?.isOther == true ? "Other videos on this page" : nil
+    }
+
     private var title: String {
         if media.draft.phase == .found, let label = media.draft.selectedCandidate?.label, !label.isEmpty { return label }
         return media.draft.page.title ?? media.draft.host
+    }
+}
+
+struct OnScreenTag: View {
+    var body: some View {
+        Label("On screen", systemImage: "eye.fill")
+            .font(DowlioDesign.TypeRole.detail.weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, DowlioDesign.Spacing.sm)
+            .padding(.vertical, DowlioDesign.Spacing.xs / 2)
+            .background(Color.accentColor.opacity(0.14), in: Capsule())
     }
 }
 
@@ -104,6 +120,20 @@ struct MediaChoices: View {
     var body: some View {
         if let line = media.draft.restrictionLine {
             RestrictionNote(line: line, isLive: media.draft.selectedCandidate?.restriction == .live)
+        } else if media.draft.selectedCandidate?.needsProbe == true {
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
+                SkeletonRows()
+                HStack(spacing: DowlioDesign.Spacing.xs) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking at this video")
+                }
+                .font(DowlioDesign.TypeRole.detail)
+                .foregroundStyle(.secondary)
+            }
+        } else if media.draft.selectedCandidate?.versions.isEmpty == true {
+            Text("No video found for this one")
+                .font(DowlioDesign.TypeRole.detail)
+                .foregroundStyle(.secondary)
         } else {
             choices
         }

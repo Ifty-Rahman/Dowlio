@@ -8,6 +8,7 @@ public struct SentPage: Equatable, Sendable {
     public var cookies: [Cookie]
     public var userAgent: String?
     public var scan: [ScannedMedia]
+    public var players: [ScannedPlayer]
     public var embeddedJSON: [String]
     public var watched: [WatchedRequest]
     public var throughDowlioConnect: Bool
@@ -19,6 +20,7 @@ public struct SentPage: Equatable, Sendable {
         cookies: [Cookie] = [],
         userAgent: String? = nil,
         scan: [ScannedMedia] = [],
+        players: [ScannedPlayer] = [],
         embeddedJSON: [String] = [],
         watched: [WatchedRequest] = [],
         throughDowlioConnect: Bool = false
@@ -29,6 +31,7 @@ public struct SentPage: Equatable, Sendable {
         self.cookies = cookies
         self.userAgent = userAgent
         self.scan = scan
+        self.players = players
         self.embeddedJSON = embeddedJSON
         self.watched = watched
         self.throughDowlioConnect = throughDowlioConnect
@@ -51,6 +54,24 @@ public struct WatchedRequest: Equatable, Sendable {
         self.kind = kind
         self.contentType = contentType
         self.referrer = referrer
+    }
+}
+
+public struct ScannedPlayer: Equatable, Sendable {
+    public var group: Int
+    public var label: String?
+    public var poster: URL?
+    public var duration: Double?
+    public var isPlaying: Bool
+    public var visibility: Double
+
+    public init(group: Int, label: String? = nil, poster: URL? = nil, duration: Double? = nil, isPlaying: Bool = false, visibility: Double = 0) {
+        self.group = group
+        self.label = label
+        self.poster = poster
+        self.duration = duration
+        self.isPlaying = isPlaying
+        self.visibility = visibility
     }
 }
 
@@ -92,13 +113,26 @@ public struct Candidate: Equatable, Sendable {
     public var duration: Double?
     public var versions: [Version]
     public var restriction: Restriction?
+    public var isOnScreen: Bool
+    public var isOther: Bool
+    public var unprobed: [WatchedRequest]
 
-    public init(label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version], restriction: Restriction? = nil) {
+    public init(
+        label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version], restriction: Restriction? = nil,
+        isOnScreen: Bool = false, isOther: Bool = false, unprobed: [WatchedRequest] = []
+    ) {
         self.label = label
         self.thumbnail = thumbnail
         self.duration = duration
         self.versions = versions
         self.restriction = restriction
+        self.isOnScreen = isOnScreen
+        self.isOther = isOther
+        self.unprobed = unprobed
+    }
+
+    public var needsProbe: Bool {
+        versions.isEmpty && restriction == nil && !unprobed.isEmpty
     }
 }
 

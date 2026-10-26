@@ -43,7 +43,113 @@ export function scanPage(doc = document, base = doc.baseURI) {
     return found;
   }
 
-  for (const element of everywhere("video, audio")) {
+  const LABEL_WORDS = 8;
+  const LABEL_LENGTH = 60;
+  const POSTS = 'article, [role="article"], li, figure';
+  const POST_TEXT = '[data-testid="tweetText"], [data-testid="post-content"], [slot="text-body"], [itemprop="articleBody"], [itemprop="description"]';
+  const AUTHORS = '[data-testid="User-Name"] span, [rel="author"], [itemprop="author"], [data-testid="post_author"]';
+  const IGNORED = "video, audio, button, time, script, style, noscript, [aria-hidden=\"true\"]";
+  const described = [];
+  const elements = everywhere("video, audio");
+
+  function squash(text) {
+    return (text || "").replace(/\s+/g, " ").trim();
+  }
+
+  function shorten(text) {
+    return text.length > LABEL_LENGTH ? text.slice(0, LABEL_LENGTH - 1).trimEnd() + "…" : text;
+  }
+
+  function parentOf(element) {
+    if (element.parentElement) return element.parentElement;
+    const root = element.getRootNode?.();
+    return root && root.host ? root.host : null;
+  }
+
+  function ancestors(element) {
+    const found = [];
+    for (let next = parentOf(element); next && next.tagName && next.tagName.toLowerCase() !== "html"; next = parentOf(next)) {
+      found.push(next);
+      if (next.tagName.toLowerCase() === "body") break;
+    }
+    return found;
+  }
+
+  function ownText(box) {
+    const copy = box.cloneNode(true);
+    copy.querySelectorAll(IGNORED).forEach((element) => element.remove());
+    return squash(copy.textContent);
+  }
+
+  function holdsOnlyThis(box) {
+    return box.tagName.toLowerCase() !== "body" && box.querySelectorAll("video, audio").length === 1;
+  }
+
+  function post(element) {
+    const chain = ancestors(element);
+    const marked = chain.find((box) => box.matches?.(POSTS) && box.tagName.toLowerCase() !== "body");
+    if (marked) return marked;
+    return chain.find((box) => holdsOnlyThis(box) && ownText(box).split(" ").length >= 2);
+  }
+
+  function postLabel(box) {
+    if (!box) return null;
+    const text = squash(box.querySelector(POST_TEXT)?.textContent) || ownText(box);
+    if (!text) return null;
+    const author = squash(box.querySelector(AUTHORS)?.textContent);
+    const start = text.split(" ").slice(0, LABEL_WORDS).join(" ");
+    return author && !start.startsWith(author) ? `${author}: ${start}` : start;
+  }
+
+  function titleLabel() {
+    const title = squash(doc.querySelector("title")?.textContent);
+    if (!title) return null;
+    const site = squash(doc.querySelector('meta[property="og:site_name"]')?.getAttribute("content")).toLowerCase();
+    const host = (new URL(base).hostname.split(".").slice(-2, -1)[0] || "").toLowerCase();
+    const parts = title.split(/\s+[|\-–—·•]\s+/);
+    const kept = parts.filter((part) => {
+      const lowered = part.toLowerCase();
+      return lowered !== site && !(host && lowered.replace(/\s+/g, "").includes(host));
+    });
+    return kept.length ? kept.join(" - ") : title;
+  }
+
+  function headingLabel(element, box) {
+    const own = squash(element.getAttribute("aria-label") || element.getAttribute("title"));
+    if (own) return own;
+    for (const scope of [box, ...ancestors(element)].filter(Boolean)) {
+      const label = squash(scope.getAttribute?.("aria-label"));
+      if (label && scope.tagName.toLowerCase() !== "body") return label;
+      const heading = squash(scope.querySelector?.("h1, h2, h3, h4, h5, h6")?.textContent);
+      if (heading && holdsOnlyThis(scope)) return heading;
+    }
+    return null;
+  }
+
+  function visibleShare(element) {
+    const box = element.getBoundingClientRect?.();
+    const view = doc.defaultView;
+    const width = view?.innerWidth || 0;
+    const height = view?.innerHeight || 0;
+    if (!box || !box.width || !box.height || !width || !height) return 0;
+    const across = Math.max(0, Math.min(box.right, width) - Math.max(box.left, 0));
+    const down = Math.max(0, Math.min(box.bottom, height) - Math.max(box.top, 0));
+    return Math.round(((across * down) / (box.width * box.height)) * 100) / 100;
+  }
+
+  function describe(element, index) {
+    const box = post(element);
+    const label = postLabel(box) || (elements.length === 1 ? titleLabel() : null) || headingLabel(element, box) || `Video ${index + 1} of ${elements.length}`;
+    const entry = { group: index + 1, label: shorten(label), playing: element.paused === false && !element.ended, visible: visibleShare(element) };
+    const poster = resolve(element.getAttribute("poster"));
+    if (poster) entry.poster = poster;
+    if (Number.isFinite(element.duration) && element.duration > 0) entry.duration = element.duration;
+    return entry;
+  }
+
+  elements.forEach((element, index) => described.push(describe(element, index)));
+
+  for (const element of elements) {
     const kind = element.tagName.toLowerCase();
     players += 1;
     const extra = { poster: element.getAttribute("poster"), duration: element.duration, group: players };
@@ -98,5 +204,5 @@ export function scanPage(doc = document, base = doc.baseURI) {
   }
 
   const title = (doc.querySelector("title")?.textContent || "").trim();
-  return { title, media, embeddedJson };
+  return { title, media, players: described, embeddedJson };
 }

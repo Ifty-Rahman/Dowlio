@@ -34,6 +34,7 @@ export function startSending({ chrome, navigator, link, watching }) {
     const media = [];
     const seen = new Set();
     const embeddedJson = [];
+    const players = [];
     let title = "";
     let groups = 0;
     for (const { result } of frames ?? []) {
@@ -46,9 +47,15 @@ export function startSending({ chrome, navigator, link, watching }) {
         seen.add(entry.url);
         media.push(entry.group ? { ...entry, group: offset + entry.group } : entry);
       }
+      for (const player of result.players ?? []) {
+        groups = Math.max(groups, offset + player.group);
+        players.push({ ...player, group: offset + player.group });
+      }
       embeddedJson.push(...(result.embeddedJson ?? []));
     }
-    return { title, media, embeddedJson };
+    const placed = /^Video \d+ of \d+$/;
+    const numbered = players.map((player, index) => (placed.test(player.label) ? { ...player, label: `Video ${index + 1} of ${players.length}` } : player));
+    return { title, media, players: numbered, embeddedJson };
   }
 
   async function sendPage(tab) {
@@ -64,6 +71,7 @@ export function startSending({ chrome, navigator, link, watching }) {
         userAgent: navigator?.userAgent,
         cookies: await link.cookiesFor?.(tab.url),
         media: found.media,
+        players: found.players,
         requests: watching?.requestsFor(tab.id) ?? [],
         embeddedJson: found.embeddedJson,
       },

@@ -104,6 +104,17 @@ struct Envelope {
                 let group = (entry["group"] as? Int).flatMap { $0 > 0 ? $0 : nil }
                 return ScannedMedia(url: address, kind: kind, poster: poster, duration: duration, group: group)
             }
+            let players = ((object["players"] as? [[String: Any]]) ?? []).prefix(Self.maximumScannedMedia).compactMap { entry -> ScannedPlayer? in
+                guard let group = entry["group"] as? Int, group > 0 else { return nil }
+                return ScannedPlayer(
+                    group: group,
+                    label: (entry["label"] as? String).flatMap { !$0.isEmpty && $0.count <= 200 ? $0 : nil },
+                    poster: (entry["poster"] as? String).flatMap(URL.init(string:)).flatMap { Self.isWebLink($0) ? $0 : nil },
+                    duration: (entry["duration"] as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
+                    isPlaying: entry["playing"] as? Bool ?? false,
+                    visibility: (entry["visible"] as? Double).map { min(max($0, 0), 1) } ?? 0
+                )
+            }
             let embedded = ((object["embeddedJson"] as? [Any]) ?? []).prefix(Self.maximumEmbeddedJSON).compactMap { $0 as? String }
             let watched = ((object["requests"] as? [[String: Any]]) ?? []).prefix(Self.maximumScannedMedia).compactMap { entry -> WatchedRequest? in
                 guard let value = entry["url"] as? String, value.count <= 8192, let address = URL(string: value), Self.isWebLink(address),
@@ -114,7 +125,7 @@ struct Envelope {
             }
             message = .pageSend(SentPage(
                 url: url, title: text("title", limit: 1000), browser: text("browser"), cookies: cookies,
-                userAgent: text("userAgent", limit: Self.maximumHeaderValue), scan: Array(media), embeddedJSON: Array(embedded),
+                userAgent: text("userAgent", limit: Self.maximumHeaderValue), scan: Array(media), players: Array(players), embeddedJSON: Array(embedded),
                 watched: Array(watched), throughDowlioConnect: true
             ))
         case "settings.change":

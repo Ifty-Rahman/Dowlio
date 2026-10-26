@@ -58,6 +58,21 @@ test("sending a page scans every frame and hands Dowlio the page and what was fo
   assert.deepEqual(chrome.notifications.shown, []);
 });
 
+test("each frame's players are sent with their Labels, numbered after the frames before them", async () => {
+  const { chrome, socket } = await worker();
+  const player = (group, label) => ({ group, label, playing: false, visible: 0 });
+  chrome.scripting.frames = [
+    { frameId: 0, result: { title: "Feed", media: [{ url: "https://cdn.example.com/a.mp4", kind: "video", group: 1 }], players: [player(1, "First"), player(2, "Second")], embeddedJson: [] } },
+    { frameId: 4, result: { title: "", media: [], players: [player(1, "Embedded"), player(2, "Video 2 of 2")], embeddedJson: [] } },
+  ];
+
+  await chrome.contextMenus.click(pageClick, tab);
+  await settle();
+
+  const [sent] = sends(socket);
+  assert.deepEqual(sent.players.map(({ group, label }) => [group, label]), [[1, "First"], [2, "Second"], [3, "Embedded"], [4, "Video 4 of 4"]]);
+});
+
 test("a page that can't be scanned is still sent, with nothing found in it", async () => {
   const { chrome, socket } = await worker();
   chrome.scripting.fails = true;

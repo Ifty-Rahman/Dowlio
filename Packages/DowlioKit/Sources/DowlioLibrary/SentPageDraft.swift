@@ -132,6 +132,12 @@ public struct SentPageDraft: Equatable, Sendable {
         candidates.indices.contains(selected) ? candidates[selected] : nil
     }
 
+    public mutating func replace(_ waiting: Candidate, with found: Candidate) {
+        guard let index = candidates.firstIndex(of: waiting) else { return }
+        candidates[index] = found
+        picks[index] = nil
+    }
+
     public mutating func select(_ index: Int) {
         guard candidates.indices.contains(index) else { return }
         selected = index

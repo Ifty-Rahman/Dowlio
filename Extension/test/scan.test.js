@@ -84,7 +84,7 @@ test("embedded JSON that mentions video is passed on, and nothing else of the pa
 
   assert.deepEqual(found.embeddedJson, [`{"video_versions":[{"url":"https://cdn.example.com/v.mp4"}]}`]);
   assert.equal(found.title, "Holiday clip");
-  assert.deepEqual(Object.keys(found).sort(), ["embeddedJson", "media", "title"]);
+  assert.deepEqual(Object.keys(found).sort(), ["embeddedJson", "media", "players", "title"]);
   assert.ok(!JSON.stringify(found).includes("Private page text"));
   assert.ok(!JSON.stringify(found).includes("secret"));
 });
