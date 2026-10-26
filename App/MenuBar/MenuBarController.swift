@@ -1,4 +1,5 @@
 import AppKit
+import DowlioConnect
 import DowlioLibrary
 import Observation
 import SwiftUI
@@ -13,17 +14,31 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
-    private var outsideClicks: Any?
+    private lazy var dismissal = PopoverDismissal(hooks: .init(
+        popoverWindow: { [weak self] in self?.popover.contentViewController?.view.window },
+        isPointerOnIcon: { [weak self] in self?.isPointerOnIcon ?? false },
+        isPopoverShown: { [weak self] in self?.popover.isShown ?? false },
+        isMoreShown: { [weak self] in self?.moreMenu.isShown ?? false },
+        hideMore: { [weak self] in self?.moreMenu.hide() },
+        close: { [weak self] in self?.close() }
+    ))
+    private lazy var catchToast = CatchToast(model: model)
+    private lazy var moreMenu = MoreMenu(
+        settings: { [weak self] in self?.runFromMore { $0.showSettings() } },
+        reportProblem: { [weak self] in self?.runFromMore { $0.reportProblem() } },
+        quit: { NSApp.terminate(nil) }
+    )
 
     init(model: AppModel) {
         self.model = model
         super.init()
-        popover.behavior = .transient
+        popover.behavior = .applicationDefined
+        popover.animates = false
         popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
             model: model, panel: panel,
-            close: { [weak self] in self?.popover.performClose(nil) },
-            showMore: { [weak self] in self?.showMoreMenu() }
+            close: { [weak self] in self?.close() },
+            toggleMore: { [weak self] in self?.toggleMore() }
         ))
         item.button?.target = self
         item.button?.action = #selector(toggle)
@@ -42,55 +57,75 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     var isVisible: Bool {
         get { item.isVisible }
         set {
-            if !newValue { popover.performClose(nil) }
+            if !newValue {
+                close()
+                catchToast.hide()
+            }
             item.isVisible = newValue
         }
     }
 
-    @objc private func toggle() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else if let button = item.button {
-            panel.showsQuickAdd = false
-            NSApp.activate()
-            popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-            watchOutsideClicks()
+    func showCatch(_ notice: CatchNotice) {
+        guard let button = item.button else { return }
+        catchToast.show(notice, under: button)
+    }
+
+    func showSent(_ link: SentLink) {
+        if !popover.isShown { open() }
+        moreMenu.hide()
+        if !panel.showsQuickAdd || panel.quickAdd == nil {
+            panel.quickAdd = model.makeNewDownload()
+            panel.showsQuickAdd = true
         }
+        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+    }
+
+    @objc private func toggle() {
+        if popover.isShown { close() } else { open() }
+    }
+
+    private func toggleMore() {
+        if moreMenu.isShown {
+            moreMenu.hide()
+        } else if let anchor = panel.moreAnchor {
+            moreMenu.show(under: anchor)
+        }
+    }
+
+    private func runFromMore(_ action: (AppModel) -> Void) {
+        close()
+        action(model)
+    }
+
+    private func close() {
+        moreMenu.hide()
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
+    private func open() {
+        guard let button = item.button else { return }
+        catchToast.hide()
+        panel.showsQuickAdd = false
+        panel.quickAdd = nil
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        let window = popover.contentViewController?.view.window
+        window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
+        NSApp.activate()
+        window?.makeKey()
+        dismissal.start()
     }
 
     func popoverDidClose(_ notification: Notification) {
+        moreMenu.hide()
         panel.showsQuickAdd = false
-        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
-        outsideClicks = nil
+        panel.quickAdd = nil
+        dismissal.stop()
     }
 
-    /// A click anywhere outside Dowlio closes the popover, even after a menu inside it was used.
-    private func watchOutsideClicks() {
-        guard outsideClicks == nil else { return }
-        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated { self?.popover.performClose(nil) }
-        }
-    }
-
-    private func showMoreMenu() {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "Report a Problem", action: #selector(reportProblem), keyEquivalent: "").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Dowlio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-
-    @objc private func openSettings() {
-        popover.performClose(nil)
-        model.showSettings()
-    }
-
-    @objc private func reportProblem() {
-        popover.performClose(nil)
-        model.reportProblem()
+    private var isPointerOnIcon: Bool {
+        guard let button = item.button, let window = button.window else { return false }
+        return window.convertToScreen(button.convert(button.bounds, to: nil)).contains(NSEvent.mouseLocation)
     }
 
     private func follow() {
@@ -116,6 +151,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 @Observable
 final class MenuBarPanel {
     var showsQuickAdd = false
+    var quickAdd: NewDownloadModel?
+    @ObservationIgnored weak var moreAnchor: NSView?
 }
 
 /// The menu bar icon: an arrow over a four-piece bar. While something downloads, the four

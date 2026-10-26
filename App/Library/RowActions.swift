@@ -81,6 +81,7 @@ struct RowActions {
     func retry(_ row: DownloadRow) { retry([row]) }
     func showInFinder(_ row: DownloadRow) { showInFinder([row]) }
     func copyLink(_ row: DownloadRow) { copyLinks([row]) }
+    func cancel(_ row: DownloadRow) { cancel([row]) }
 
     func carryOut(_ confirmation: Confirmation) {
         switch confirmation {

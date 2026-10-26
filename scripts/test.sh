@@ -4,7 +4,13 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 log "Running DowlioKit tests"
-(cd "$ROOT/Packages/DowlioKit" && swift test)
+(cd "$ROOT/Packages/DowlioKit" && swift test --skip DowlioConnectTests)
+
+log "Running Dowlio Connect server tests"
+(cd "$ROOT/Packages/DowlioKit" && swift test --filter DowlioConnectTests)
+
+log "Running Dowlio Connect tests"
+(cd "$ROOT/Extension" && node --test "test/*.test.js")
 
 "$ROOT/scripts/bootstrap.sh"
 

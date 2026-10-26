@@ -22,6 +22,18 @@ struct RowTextTests {
     }
 
     @Test(arguments: [
+        (DownloadOrigin(kind: .caught, browser: "Arc") as DownloadOrigin?, "Caught from Arc" as String?),
+        (DownloadOrigin(kind: .sent, browser: "Brave"), "Sent from Brave"),
+        (DownloadOrigin(kind: .caught, browser: nil), "Caught from your browser"),
+        (nil, nil),
+    ])
+    func aRowSaysHowItGotIntoDowlio(origin: DownloadOrigin?, text: String?) {
+        var row = Self.row(state: .completed)
+        row.origin = origin
+        #expect(row.originText == text)
+    }
+
+    @Test(arguments: [
         (Int64(0), "0 bytes"),
         (1, "1 byte"),
         (999, "999 bytes"),

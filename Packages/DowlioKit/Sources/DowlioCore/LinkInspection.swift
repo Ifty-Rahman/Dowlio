@@ -34,6 +34,15 @@ public struct LinkInspection: Equatable, Sendable {
     }
 }
 
+extension LinkInspection {
+    public static func isWebPage(mimeType: String?) -> Bool {
+        let type = mimeType?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased()
+        return type == "text/html" || type == "application/xhtml+xml"
+    }
+
+    public var isWebPage: Bool { Self.isWebPage(mimeType: contentType) }
+}
+
 public enum CannotResumeReason: Equatable, Sendable {
     /// The server sends the whole file for every request.
     case noRangeSupport

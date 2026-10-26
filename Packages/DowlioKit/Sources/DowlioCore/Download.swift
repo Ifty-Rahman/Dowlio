@@ -113,6 +113,7 @@ public struct RequestOptions: Equatable, Sendable {
     /// signed-in visitor. Held in memory only: they never go into the partial file, so a restored
     /// download has none.
     public var cookies: [Cookie] = []
+    public var browserRequest: BrowserRequest?
     /// How many failed attempts in a row one segment may have before the download is Failed, up
     /// to 11, which is ten retries. `nil` uses the engine's own default of 5.
     public var maximumFailures: Int?
@@ -124,8 +125,47 @@ public struct RequestOptions: Equatable, Sendable {
     public var fileName: String?
 }
 
+public struct DownloadOrigin: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case caught
+        case sent
+    }
+
+    public var kind: Kind
+    public var browser: String?
+
+    public init(kind: Kind, browser: String?) {
+        self.kind = kind
+        self.browser = browser
+    }
+}
+
 /// One cookie a download sends, as the browser had it for the download's link.
 public struct Cookie: Equatable, Sendable {
+    public var name: String
+    public var value: String
+
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
+}
+
+public struct BrowserRequest: Equatable, Sendable {
+    public var method: String
+    public var body: Data?
+    public var headers: [Header]
+
+    public init(method: String = "GET", body: Data? = nil, headers: [Header] = []) {
+        self.method = method
+        self.body = body
+        self.headers = headers
+    }
+
+    public var isEmpty: Bool { method == "GET" && body == nil && headers.isEmpty }
+}
+
+public struct Header: Equatable, Sendable {
     public var name: String
     public var value: String
 

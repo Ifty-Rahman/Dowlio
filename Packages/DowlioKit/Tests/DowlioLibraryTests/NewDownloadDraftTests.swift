@@ -10,6 +10,70 @@ struct NewDownloadDraftTests {
     private let zip = URL(string: "https://a.com/one.zip")!
     private let iso = URL(string: "https://b.com/two.iso")!
 
+    @Test func aSentLinkFillsTheDraftWithItsPageAsTheReferrer() {
+        var draft = NewDownloadDraft(text: "", folder: folder)
+
+        draft.addSent(zip, referrer: URL(string: "https://a.com/downloads"))
+
+        #expect(draft.links == [zip])
+        #expect(draft.referrer == "https://a.com/downloads")
+    }
+
+    @Test func aLinkSentWhileTheDraftIsOpenJoinsAsAnotherLineAndARepeatMerges() {
+        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
+
+        draft.addSent(iso, referrer: URL(string: "https://b.com/page"))
+        draft.addSent(zip, referrer: URL(string: "https://a.com/other"))
+
+        #expect(draft.links == [zip, iso])
+        #expect(draft.text == "https://a.com/one.zip\nhttps://b.com/two.iso")
+        #expect(draft.referrer == "https://b.com/page")
+    }
+
+    @Test func aSentLinksCookiesGoOnlyWithThatLink() {
+        var draft = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
+        let cookies = [Cookie(name: "session", value: "abc")]
+
+        draft.addSent(zip, referrer: nil, cookies: cookies)
+
+        #expect(draft.inspectionOptions(for: zip).cookies == cookies)
+        #expect(draft.options(for: zip).cookies == cookies)
+        #expect(draft.options(for: iso).cookies.isEmpty)
+    }
+
+    @Test func aSentLinkRemembersWhichBrowserSentItAndATypedOneDoesnt() {
+        var draft = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
+
+        draft.addSent(zip, referrer: nil, browser: "Brave")
+
+        #expect(draft.origin(for: zip) == DownloadOrigin(kind: .sent, browser: "Brave"))
+        #expect(draft.origin(for: iso) == nil)
+    }
+
+    @Test func aSentLinkBringsTheBrowsersUserAgentUnlessOneWasTyped() {
+        var draft = NewDownloadDraft(text: "", folder: folder)
+        draft.addSent(zip, referrer: nil, userAgent: "Mozilla/5.0 Dia")
+        var typed = NewDownloadDraft(text: "", folder: folder)
+        typed.userAgent = "Mine/1.0"
+        typed.addSent(zip, referrer: nil, userAgent: "Mozilla/5.0 Dia")
+
+        #expect(draft.options(for: zip).userAgent == "Mozilla/5.0 Dia")
+        #expect(typed.options(for: zip).userAgent == "Mine/1.0")
+    }
+
+    @Test func aQuickAddDraftMergedIntoAnOpenSheetKeepsWhatEachSentLinkCarried() {
+        var sheet = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
+        var quickAdd = NewDownloadDraft(text: "", folder: folder)
+        quickAdd.addSent(zip, referrer: URL(string: "https://a.com/page"), cookies: [Cookie(name: "s", value: "1")], browser: "Arc")
+
+        sheet.merge(quickAdd)
+
+        #expect(sheet.links == [iso, zip])
+        #expect(sheet.origin(for: zip) == DownloadOrigin(kind: .sent, browser: "Arc"))
+        #expect(sheet.options(for: zip).cookies == [Cookie(name: "s", value: "1")])
+        #expect(sheet.referrer == "https://a.com/page")
+    }
+
     @Test func typedLinksCountAtOnce() {
         var draft = NewDownloadDraft(text: "", folder: folder)
         draft.text = "https://a.com/one.zip"

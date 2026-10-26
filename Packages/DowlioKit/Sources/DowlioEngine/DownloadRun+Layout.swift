@@ -6,23 +6,22 @@ extension DownloadRun {
 
         let plan: DownloadPlan
         switch probed.body {
-        case .whole(let connection):
+        case .whole:
             let segments = probed.totalBytes.flatMap { $0 > 0 ? [ByteRange(start: 0, end: $0 - 1)] : nil } ?? []
             plan = DownloadPlan(
                 fileName: fileName, finalURL: probed.finalURL, totalBytes: probed.totalBytes,
                 layout: .whole, segments: segments, partial: partial, board: ProgressBoard(segments: segments)
             )
-            planStore.store(plan, probeConnection: connection)
-        case .ranges(let total, let validator):
-            let hostLimit = applyHostLimit(of: probed.finalURL)
-            let segments = SegmentPlanner.plan(size: total, connections: options.connections, hostLimit: hostLimit)
+        case .ranges(let total, let validator, _):
+            applyHostLimit(of: probed.finalURL)
+            let segments = SegmentPlanner.firstSegment(size: total)
             plan = DownloadPlan(
                 fileName: fileName, finalURL: probed.finalURL, totalBytes: total,
                 layout: .ranges(validator: validator), segments: segments, partial: partial,
                 board: ProgressBoard(segments: segments)
             )
-            planStore.store(plan, probeConnection: nil)
         }
+        planStore.store(plan, holding: probed.body.openConnection.map { HeldConnection(connection: $0, start: 0) })
         return plan
     }
 

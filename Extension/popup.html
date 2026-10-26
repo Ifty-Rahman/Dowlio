@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/32.png" alt="" width="20" height="20">
+    <h1>Dowlio Connect</h1>
+  </header>
+  <p id="headline"></p>
+  <p id="code" hidden></p>
+  <p id="detail"></p>
+  <p id="last-decline" hidden></p>
+  <button id="retry" hidden>Ask Again</button>
+  <section id="catching" hidden>
+    <label class="switch">
+      <span>Catch downloads</span>
+      <input id="catches" type="checkbox" role="switch">
+    </label>
+    <button id="never-catch" hidden></button>
+    <p id="never-caught" hidden></p>
+  </section>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

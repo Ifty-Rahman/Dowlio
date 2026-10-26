@@ -7,14 +7,12 @@ struct MenuBarPopover: View {
     let model: AppModel
     @Bindable var panel: MenuBarPanel
     let close: () -> Void
-    /// Settings, Report a Problem and Quit, as a native menu. A SwiftUI menu inside the popover
-    /// closed again on its first click while Dowlio was still becoming the active app.
-    let showMore: () -> Void
+    let toggleMore: () -> Void
 
     var body: some View {
         Group {
             if panel.showsQuickAdd {
-                QuickAddView(model: model, close: close)
+                QuickAddView(model: model, panel: panel, close: close)
             } else {
                 summary
             }
@@ -51,24 +49,42 @@ struct MenuBarPopover: View {
                 }
             }
             HStack {
-                Button("Pause All") { model.pauseAll() }
-                    .disabled(!summary.canPauseAll)
-                Button("Add Link…") { panel.showsQuickAdd = true }
+                Text("Catch browser downloads")
+                    .accessibilityHidden(true)
                 Spacer()
-                Button("Open Dowlio") {
+                Toggle("Catch browser downloads", isOn: catches)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .accessibilityLabel("Catch browser downloads")
+            }
+            HStack(spacing: DowlioDesign.Spacing.sm) {
+                Button { model.pauseAll() } label: { fullWidth("Pause All") }
+                    .disabled(!summary.canPauseAll)
+                Button { panel.showsQuickAdd = true } label: { fullWidth("Add Link…") }
+                Button {
                     close()
                     model.showLibraryWindow()
-                }
+                } label: { fullWidth("Open Dowlio") }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             }
         }
     }
 
+    private func fullWidth(_ title: String) -> some View {
+        Text(title).lineLimit(1).frame(maxWidth: .infinity)
+    }
+
+    private var catches: Binding<Bool> {
+        Binding(get: { model.catchPreferences.catches }, set: { model.catchPreferences.catches = $0 })
+    }
+
     private var moreMenu: some View {
-        Button(action: showMore) {
+        Button(action: toggleMore) {
             Image(systemName: "ellipsis.circle")
         }
+        .background(MoreMenuAnchor { panel.moreAnchor = $0 })
         .buttonStyle(.borderless)
         .help("More")
         .accessibilityLabel("More")
@@ -78,6 +94,28 @@ struct MenuBarPopover: View {
 private struct PopoverRow: View {
     let row: DownloadRow
     let model: AppModel
+    @State private var confirmsCancel = false
+
+    @ViewBuilder private var cancelButton: some View {
+        if confirmsCancel {
+            Button("Delete", role: .destructive) { model.cancel(row) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+                .font(DowlioDesign.TypeRole.caption)
+                .help("Cancel and delete what's downloaded so far")
+                .task {
+                    try? await Task.sleep(for: .seconds(3))
+                    confirmsCancel = false
+                }
+        } else {
+            Button("Cancel and delete", systemImage: "xmark") {
+                if row.hasBytesAtStake { confirmsCancel = true } else { model.cancel(row) }
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Cancel and delete")
+        }
+    }
 
     var body: some View {
         HStack(spacing: DowlioDesign.Spacing.sm) {
@@ -98,12 +136,13 @@ private struct PopoverRow: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help("Pause")
-            } else if row.state == .paused {
+            } else if row.state == .paused, !row.lostCookies {
                 Button("Resume", systemImage: "play.fill") { model.resume(row) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help("Resume")
             }
+            cancelButton
         }
         .accessibilityElement(children: .contain)
     }

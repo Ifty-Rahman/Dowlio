@@ -86,7 +86,7 @@ extension RetryTests {
         // starts at or after the previous one and runs to the end of the file. An engine that
         // restarted the segment would ask for byte 0 again.
         #expect(received == received.sorted())
-        let starts = server.requests.compactMap { $0.headers["range"] }.dropFirst(2).map { range -> Int in
+        let starts = server.requests.compactMap { $0.headers["range"] }.dropFirst().map { range -> Int in
             #expect(range.hasSuffix("-\(data.count - 1)"))
             return Int(range.dropFirst("bytes=".count).prefix { $0 != "-" }) ?? -1
         }
@@ -127,11 +127,10 @@ extension RetryTests {
 
         #expect(finished.receivedBytes == Int64(data.count))
         #expect(try TestFiles.sha256(of: folder.appending(path: "stubborn.iso")) == TestFiles.sha256(data))
-        // Retry probed the link again, then asked for only the bytes the download didn't have
-        // when it failed.
         let afterFailure = server.requests.filter { $0.path == "/stubborn.iso" }.dropFirst(requestsWhenFailed)
         #expect(failed.receivedBytes > 0)
-        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=0-0", "bytes=\(failed.receivedBytes)-\(data.count - 1)"])
+        #expect(afterFailure.map { $0.headers["range"] } == ["bytes=\(failed.receivedBytes)-\(data.count - 1)"])
+        #expect(afterFailure.first?.headers["if-range"] != nil)
     }
 }
 
@@ -163,12 +162,15 @@ extension RetryTests {
         #expect(try TestFiles.sha256(of: folder.appending(path: "signed.bin")) == TestFiles.sha256(data))
         let afterFailure = server.requests[requestsWhenFailed...]
         #expect(afterFailure.first?.path == "/once")
-        #expect(!afterFailure.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true && $0.headers["range"] != "bytes=0-0" })
+        #expect(!afterFailure.contains { $0.headers["range"]?.hasPrefix("bytes=0-") == true })
     }
 
     @Test func retryAfterTheFileChangedStartsOver() async throws {
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: Self.size, seed: 28), newETagEveryRequest: true), at: "/live.log")
+        server.serve(
+            .init(data: TestServer.makeData(size: Self.size, seed: 28), newETagEveryRequest: true, throttle: .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)),
+            at: "/live.log"
+        )
         let folder = try TestFiles.makeFolder()
         var options = RequestOptions()
         options.connections = 2
@@ -184,13 +186,10 @@ extension RetryTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "live.log")) == TestFiles.sha256(settled))
-        // Retry probed first, then asked for the new version from byte 0 and never with the
-        // validator of the version that kept changing.
         let afterFailure = server.requests[requestsWhenFailed...]
-        #expect(afterFailure.first?.headers["range"] == "bytes=0-0")
-        let segmentRequests = afterFailure.dropFirst()
-        #expect(segmentRequests.contains { $0.headers["range"] == "bytes=0-\(Self.size / 2 - 1)" })
-        #expect(segmentRequests.allSatisfy { $0.headers["if-range"] == "\"settled\"" })
+        #expect(afterFailure.first?.headers["if-range"] != "\"settled\"")
+        #expect(!afterFailure.contains { $0.headers["range"] == "bytes=0-0" || $0.headers["range"] == "bytes=0-" })
+        #expect(afterFailure.dropFirst().allSatisfy { $0.headers["if-range"] == "\"settled\"" })
     }
 }
 

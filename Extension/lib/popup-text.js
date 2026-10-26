@@ -1,0 +1,49 @@
+import { hostOf, matchesSite } from "./catching.js";
+
+export function popupText(status) {
+  switch (status) {
+    case "connected":
+      return { headline: "Connected to Dowlio", detail: "Downloads from this browser can finish in Dowlio." };
+    case "pairing":
+      return {
+        headline: "Allow this browser in Dowlio",
+        detail: "Dowlio is asking whether to connect. Allow it only if Dowlio shows this code.",
+        showsCode: true,
+      };
+    case "denied":
+      return { headline: "Dowlio didn't allow this browser", detail: "Ask again to show the request in Dowlio.", showsRetry: true };
+    default:
+      return { headline: "Dowlio isn't running", detail: "Open Dowlio, and Dowlio Connect connects on its own." };
+  }
+}
+
+export function catchControls({ status, catching, tabUrl }) {
+  if (status !== "connected") return { shown: false };
+  const catches = catching?.catches !== false;
+  const neverCatch = catching?.neverCatch ?? [];
+  const site = /^https?:/i.test(tabUrl ?? "") ? hostOf(tabUrl) : "";
+  if (!site) return { shown: true, catches, site: null };
+  const neverCaught = matchesSite(site, neverCatch);
+  return {
+    shown: true,
+    catches,
+    site,
+    neverCaught,
+    siteText: neverCaught ? `Downloads from ${site} stay in this browser.` : `Never catch on ${site}`,
+  };
+}
+
+const DECLINE_MEMORY = 60 * 60 * 1000;
+
+export function lastDeclineText(decline, now = Date.now()) {
+  if (!decline || now - decline.at > DECLINE_MEMORY) return null;
+  const why = {
+    needsSignIn: decline.hadCookies
+      ? "the site refused Dowlio, even with your cookies."
+      : "the site refused Dowlio, and the browser had no cookies for it.",
+    unsupported: "Dowlio can't download this kind of link.",
+    error: "Dowlio couldn't reach the file.",
+    noAnswer: "Dowlio didn't answer in time.",
+  }[decline.reason];
+  return why ? `${decline.host} stayed in the browser: ${why}` : null;
+}

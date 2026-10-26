@@ -81,6 +81,16 @@ struct InspectTests {
         #expect(inspection.category == .documents)
     }
 
+    @Test(arguments: [("/article", "article.html"), ("/news/story.php", "story.php.html"), ("/index.html", "index.html")])
+    func aWebPageIsNamedAsAnHTMLFile(path: String, name: String) async throws {
+        let server = try await TestServer()
+        server.serve(.init(data: Data("<html></html>".utf8), headers: ["Content-Type": "text/html; charset=utf-8"]), at: path)
+
+        let inspection = try await DownloadEngine().inspect(server.url(for: path))
+
+        #expect(inspection.fileName == name)
+    }
+
     @Test func aMissingFileThrowsNotFound() async throws {
         let server = try await TestServer()
 

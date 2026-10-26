@@ -51,6 +51,20 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var allowsWorkStealing: Bool?
     /// When the download first started fetching, for how long it took.
     public var startedAt: Date?
+    public var usedCookies: Bool?
+    public var originKind: String?
+    public var originBrowser: String?
+
+    public var origin: DownloadOrigin? {
+        get {
+            guard let kind = originKind.flatMap(DownloadOrigin.Kind.init(rawValue:)) else { return nil }
+            return DownloadOrigin(kind: kind, browser: originBrowser)
+        }
+        set {
+            originKind = newValue?.kind.rawValue
+            originBrowser = newValue?.browser
+        }
+    }
 
     public init(
         id: UUID,
@@ -82,6 +96,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         referrer = options.referrer
         userAgent = options.userAgent
         maximumFailures = options.maximumFailures
+        usedCookies = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
     }
 
     public var destination: Destination {
@@ -125,6 +140,14 @@ public final class DownloadStore: Sendable {
 
     public func save(_ download: StoredDownload) throws {
         try database.write { try download.save($0) }
+    }
+
+    func read<T>(_ work: (Database) throws -> T) throws -> T {
+        try database.read(work)
+    }
+
+    func write<T>(_ work: (Database) throws -> T) throws -> T {
+        try database.write(work)
     }
 
     public func delete(_ id: UUID) throws {
@@ -173,6 +196,32 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("planned segments") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "plannedSegments", .text)
+            }
+        }
+        migrator.registerMigration("browser pairings") { db in
+            try db.create(table: BrowserPairing.databaseTableName) { table in
+                table.primaryKey("id", .blob)
+                table.column("browserName", .text).notNull()
+                table.column("extensionID", .text).notNull()
+                table.column("extensionVersion", .text).notNull()
+                table.column("pairedAt", .datetime).notNull()
+                table.column("lastSeenAt", .datetime).notNull()
+            }
+        }
+        migrator.registerMigration("used sign-in") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "usedSignIn", .boolean)
+            }
+        }
+        migrator.registerMigration("origin") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "originKind", .text)
+                table.add(column: "originBrowser", .text)
+            }
+        }
+        migrator.registerMigration("used cookies") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.rename(column: "usedSignIn", to: "usedCookies")
             }
         }
         return migrator

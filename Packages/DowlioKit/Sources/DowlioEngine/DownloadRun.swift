@@ -78,6 +78,7 @@ struct DownloadRun: Sendable {
             }
             try await finish(plan)
         } catch where Task.isCancelled {
+            planStore.closeHeldConnection()
             if let current {
                 saveManifest(current)
                 let reading = current.board.reading
@@ -97,7 +98,7 @@ struct DownloadRun: Sendable {
 
     func adopt(_ plan: DownloadPlan) {
         partialFile.url = plan.partial.packageURL
-        planStore.store(plan, probeConnection: nil)
+        planStore.store(plan, holding: nil)
     }
 
     /// Lets go of everything the download holds, for a download that's cancelled.
@@ -155,23 +156,7 @@ struct DownloadRun: Sendable {
         return plan
     }
 
-    private func revalidate(_ plan: DownloadPlan) async throws -> DownloadPlan {
-        let probed = try await probeForResume(plan)
-        if case .ranges(let total, let validator?) = probed.body,
-           case .ranges(let saved?) = plan.layout,
-           total == plan.totalBytes, validator == saved {
-            var kept = plan
-            kept.finalURL = probed.finalURL
-            applyHostLimit(of: kept.finalURL)
-            planStore.store(kept, probeConnection: nil)
-            await changeSnapshot { $0.state = .downloading }
-            return kept
-        }
-
-        return try await startOver(plan, with: probed)
-    }
-
-    private func startOver(_ plan: DownloadPlan, with probed: Probed) async throws -> DownloadPlan {
+    func startOver(_ plan: DownloadPlan, with probed: Probed) async throws -> DownloadPlan {
         let restarted: DownloadPlan
         do {
             try plan.partial.discardData()
@@ -193,6 +178,7 @@ struct DownloadRun: Sendable {
     }
 
     private func fail(with error: DownloadError, _ plan: DownloadPlan?) async {
+        planStore.closeHeldConnection()
         if let plan { saveManifest(plan) }
         let reading = plan?.board.reading
         await changeSnapshot {

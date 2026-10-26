@@ -14,8 +14,6 @@ struct RefusalTests {
         "127.0.0.1:\(server.port)"
     }
 
-    /// 8 MiB plans 8 segments of 1 MiB, too small to split, so no connection is cut short by a
-    /// steal and opens a new one before the server sees the old one close.
     @Test func aServerThatAllowsThreeConnectionsEndsWithTheDownloadUsingThree() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 51)
@@ -46,8 +44,6 @@ struct RefusalTests {
     }
 
     /// The first download learns that the host allows two connections. The second, from the same
-    /// host, plans two segments from the start and is never refused. Its 3 MiB would otherwise
-    /// plan three, and 1.5 MiB segments are too small to split.
     @Test func laterDownloadsFromTheSameHostStartWithItsLearnedLimit() async throws {
         let server = try await TestServer()
         let first = TestServer.makeData(size: 8 * 1024 * 1024, seed: 52)
@@ -70,9 +66,67 @@ struct RefusalTests {
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: "second.bin")) == TestFiles.sha256(second))
         #expect(server.refusals(at: "/second.bin") == 0)
-        let segmentRequests = server.requests.filter { $0.path == "/second.bin" && $0.headers["range"] != "bytes=0-0" }
-        #expect(Set(segmentRequests.compactMap { $0.headers["range"] }) == ["bytes=0-1572863", "bytes=1572864-3145727"])
-        #expect(segmentRequests.count == 2)
+        #expect(server.requests.first { $0.path == "/second.bin" }?.headers["range"] == "bytes=0-")
+        #expect(server.peakParallel(at: "/second.bin") <= 2)
+    }
+
+    @Test func aHostThatAllowsOneConnectionShowsOneSegment() async throws {
+        let server = try await TestServer()
+        let first = TestServer.makeData(size: 8 * 1024 * 1024, seed: 60)
+        let second = TestServer.makeData(size: 8 * 1024 * 1024, seed: 61)
+        server.serve(.init(data: first, holdAfterBytes: Self.held, maxParallel: 1), at: "/one.iso")
+        server.serve(.init(data: second, maxParallel: 1), at: "/again.iso")
+        let folder = try TestFiles.makeFolder()
+        let limits = InMemoryHostLimitStore()
+        var configuration = EngineConfiguration.fast
+        configuration.hostLimits = limits
+        var options = RequestOptions()
+        options.connections = 8
+
+        let engine = DownloadEngine(configuration: configuration)
+        let firstID = await engine.add(url: server.url(for: "/one.iso"), to: folder, options: options)
+        try await waitUntil { server.refusals(at: "/one.iso") == 7 }
+        server.releaseHeldResponses()
+        let firstDone = try await engine.completedOrFailed(firstID)
+
+        #expect(firstDone.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "one.iso")) == TestFiles.sha256(first))
+        #expect(firstDone.segments.count == 1)
+        #expect(firstDone.plannedSegments.count == 1)
+        #expect(limits.limit(for: Self.host(of: server)) == 1)
+
+        let secondID = await engine.add(url: server.url(for: "/again.iso"), to: folder, options: options)
+        let secondDone = try await engine.completedOrFailed(secondID)
+
+        #expect(secondDone.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "again.iso")) == TestFiles.sha256(second))
+        #expect(secondDone.segments.count == 1)
+        #expect(server.refusals(at: "/again.iso") == 0)
+    }
+
+    @Test func openingAllConnectionsAtOnceCountsTheFirstReply() async throws {
+        let server = try await TestServer()
+        let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 63)
+        server.serve(.init(data: data, holdAfterBytes: Self.held, maxParallel: 2), at: "/two.iso")
+        let folder = try TestFiles.makeFolder()
+        let limits = InMemoryHostLimitStore()
+        limits.updateLimit(for: Self.host(of: server)) { _ in 2 }
+        var configuration = EngineConfiguration.fast
+        configuration.hostLimits = limits
+        var options = RequestOptions()
+        options.connections = 8
+        options.openExtraConnections = .allAtOnce
+
+        let engine = DownloadEngine(configuration: configuration)
+        let id = await engine.add(url: server.url(for: "/two.iso"), to: folder, options: options)
+        try await waitUntil { server.requests.count >= 2 }
+        server.releaseHeldResponses()
+        let finished = try await engine.completedOrFailed(id)
+
+        #expect(finished.state == .completed)
+        #expect(try TestFiles.sha256(of: folder.appending(path: "two.iso")) == TestFiles.sha256(data))
+        #expect(server.refusals(at: "/two.iso") == 0)
+        #expect(server.peakParallel(at: "/two.iso") == 2)
     }
 
     enum Failure: Sendable, CustomTestStringConvertible {
@@ -120,8 +174,6 @@ struct RefusalTests {
         #expect(limits.limit(for: Self.host(of: server)) == learned)
     }
 
-    /// 3 MiB plans three segments, so a download set to 8 connections uses three, and a reset
-    /// lowers the host's limit from those three.
     @Test func aRefusalLowersTheLimitFromTheConnectionsTheDownloadUses() async throws {
         let server = try await TestServer()
         let data = TestServer.makeData(size: 3 * 1024 * 1024, seed: 54)
@@ -138,13 +190,14 @@ struct RefusalTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(limits.limit(for: Self.host(of: server)) == 2)
+        #expect(limits.limit(for: Self.host(of: server)) == 7)
     }
 
     /// Downloads a file whose server behaves as `file` describes, and checks that it completes
-    /// with the served bytes, the last request asking for the whole file without a range.
     private func downloadFallsBackToOneConnection(_ file: TestServer.File, name: String) async throws -> TestServer {
         let server = try await TestServer()
+        var file = file
+        file.throttle = .init(rangeStart: 0, bytesPerSecond: 4 * 1024 * 1024)
         server.serve(file, at: "/\(name)")
         let folder = try TestFiles.makeFolder()
 
@@ -154,8 +207,7 @@ struct RefusalTests {
 
         #expect(finished.state == .completed)
         #expect(try TestFiles.sha256(of: folder.appending(path: name)) == TestFiles.sha256(file.data))
-        let last = try #require(server.requests.last)
-        #expect(last.headers["range"] == nil)
+        #expect(server.requests.last?.headers["range"] == nil)
         return server
     }
 
@@ -173,7 +225,15 @@ struct RefusalTests {
             .init(data: data, rangeReplyHeaders: ["Content-Encoding": "gzip"], rangeReplyHeadersOnProbe: onProbe),
             name: "packed.bin"
         )
-        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-0", nil]) }
+        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-", nil]) }
+    }
+
+    @Test func aFirstReplyThatStopsShortOfTheEndFallsBackToOneConnection() async throws {
+        let data = TestServer.makeData(size: 8 * 1024 * 1024, seed: 62)
+        let server = try await downloadFallsBackToOneConnection(
+            .init(data: data, maxRangeReplyBytes: 1024 * 1024), name: "capped.bin"
+        )
+        #expect(Self.ranges(asked: server) == ["bytes=0-", nil])
     }
 
     /// The `Range` header of every request, in order, `nil` for a request without one.
@@ -201,7 +261,7 @@ struct RefusalTests {
         server.serve(
             .init(
                 data: data, holdAfterBytes: Self.held, misreportRangeStartBy: 1, eTag: "\"v1\"",
-                misreportOnlyRangeStartingAt: size / 2
+                misreportOnlyRangesFrom: 1
             ),
             at: "/mixed.iso"
         )
@@ -251,6 +311,6 @@ struct RefusalTests {
             ),
             name: "parts.bin"
         )
-        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-0", nil]) }
+        if onProbe { #expect(Self.ranges(asked: server) == ["bytes=0-", nil]) }
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import DowlioConnect
 import DowlioCore
 import DowlioEngine
 import DowlioLibrary
@@ -18,7 +19,9 @@ final class AppModel {
     /// that arrives while it's closed can open it again.
     var openLibraryWindow: (() -> Void)?
 
-    var settings: DownloadSettings {
+    var settings: DownloadSettings { Self.currentSettings() }
+
+    nonisolated static func currentSettings() -> DownloadSettings {
         var settings = UserDefaults.standard.downloadSettings
         if let folder = DebugLaunch.downloadsFolder { settings.folder = folder }
         return settings
@@ -31,17 +34,32 @@ final class AppModel {
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
     private let notifier = FinishNotifier()
+    private let catchNotifier = CatchNotifier()
+    private var catchGrouper = CatchGrouper()
+    var revealing: [DownloadID]?
+    var catchPreferences = UserDefaults.standard.catchPreferences {
+        didSet {
+            guard catchPreferences != oldValue else { return }
+            UserDefaults.standard.catchPreferences = catchPreferences
+            preferenceUpdates.continuation.yield(catchPreferences)
+        }
+    }
+    private let preferenceUpdates = AsyncStream<CatchPreferences>.makeStream()
     private(set) var freeSpace: Int64?
 
     private let library: Library?
+    private var connectServer: ConnectServer?
 
     init() {
+        UserDefaults.standard.removeRetiredSettings()
         do {
             let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            library = Library(engine: DownloadEngine(), store: store)
+            let library = Library(engine: DownloadEngine(), store: store)
+            self.library = library
+            startConnectServer(store: store, library: library, support: support)
         } catch {
             library = nil
             problem = "Dowlio can't open its history: \(error.localizedDescription)"
@@ -77,6 +95,89 @@ final class AppModel {
         }
     }
 
+    private(set) var browserSetup: BrowserSetup?
+
+    private func startConnectServer(store: DownloadStore, library: Library, support: URL) {
+        let added = AddedBrowser()
+        let catcher = Catcher(library: library, settings: { AppModel.currentSettings() })
+        let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
+        let server = ConnectServer(
+            store: store, vault: vault, catcher: catcher, preferences: catchPreferences,
+            nameBrowser: { added.name(for: $0) }, extensionVersion: BrowserSetup.bundledVersion
+        ) { request in
+            await MainActor.run { PairingAlert.ask(request) }
+        }
+        connectServer = server
+        browserSetup = BrowserSetup(server: server, added: added, supportFolder: support)
+        Task { _ = try? await server.start() }
+        Task { [weak self] in
+            for await caught in server.catches {
+                self?.announce(caught)
+            }
+        }
+        Task { [weak self] in
+            for await change in server.preferenceChanges {
+                guard let self else { return }
+                catchPreferences = change.applied(to: catchPreferences)
+            }
+        }
+        Task { [weak self] in
+            for await link in server.sentLinks {
+                self?.receive(link)
+            }
+        }
+        let updates = preferenceUpdates.stream
+        Task {
+            for await preferences in updates {
+                await server.publish(preferences)
+            }
+        }
+    }
+
+    private func announce(_ caught: CaughtDownload) {
+        notifier.askPermissionIfNeeded()
+        let notice = catchGrouper.add(caught, at: Date())
+        if let menuBar, menuBar.isVisible {
+            menuBar.showCatch(notice)
+        } else {
+            catchNotifier.post(notice)
+        }
+    }
+
+    private func receive(_ link: SentLink) {
+        let menuBarShown = menuBar?.isVisible ?? false
+        switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
+        case .quickAdd:
+            menuBar?.showSent(link)
+        case .sheet, .openWindowThenSheet:
+            showLibraryWindow()
+            if newDownload == nil { newDownload = makeNewDownload() }
+            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+        }
+    }
+
+    func downloadInBrowser(_ notice: CatchNotice) {
+        guard let caught = notice.single, let connectServer else { return }
+        Task {
+            guard await !connectServer.downloadInBrowser(caught) else { return }
+            actionFailure = "Dowlio kept “\(caught.fileName)”, because no browser with Dowlio Connect is connected."
+            showLibraryWindow()
+        }
+    }
+
+    func show(_ notice: CatchNotice) {
+        revealing = notice.downloads.map(\.id)
+        showLibraryWindow()
+    }
+
+    func answerCatchNotification(_ identifier: String, action: CatchNotifier.Action) {
+        guard let notice = catchNotifier.notice(identifier) else { return showLibraryWindow() }
+        switch action {
+        case .downloadInBrowser: downloadInBrowser(notice)
+        case .show: show(notice)
+        }
+    }
+
     func row(_ id: DownloadID) -> DownloadRow? {
         rows.first { $0.id == id }
     }
@@ -89,6 +190,15 @@ final class AppModel {
             newDownload.append(text)
         } else {
             newDownload = makeNewDownload(text)
+        }
+    }
+
+    func continueInWindow(_ quickAdd: NewDownloadModel) {
+        showLibraryWindow()
+        if let newDownload {
+            newDownload.draft.merge(quickAdd.draft)
+        } else {
+            newDownload = quickAdd
         }
     }
 
@@ -152,15 +262,19 @@ final class AppModel {
     func add(_ draft: NewDownloadDraft) {
         notifier.askPermissionIfNeeded()
         let settings = settings
-        let chosen = draft.options
-        var options = settings.options(connections: chosen.connections)
-        options.referrer = chosen.referrer
-        options.userAgent = chosen.userAgent
-        options.fileName = chosen.fileName
         let destination = settings.destination(in: draft.folder)
+        let added = draft.links.map { url in
+            let chosen = draft.options(for: url)
+            var options = settings.options(connections: chosen.connections)
+            options.referrer = chosen.referrer
+            options.userAgent = chosen.userAgent
+            options.fileName = chosen.fileName
+            options.cookies = chosen.cookies
+            return (url, options, draft.origin(for: url))
+        }
         perform { library in
-            for url in draft.links {
-                await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately)
+            for (url, options, origin) in added {
+                await library.add(url, destination: destination, options: options, startImmediately: draft.startImmediately, origin: origin)
             }
         }
     }

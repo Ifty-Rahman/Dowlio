@@ -47,6 +47,13 @@ extension HTTPURLResponse {
     }
 }
 
+extension URLError {
+    /// URLSession fails to decode an encoded reply before it hands over the response.
+    var isUndecodableBody: Bool {
+        code == .cannotDecodeRawData || code == .cannotDecodeContentData
+    }
+}
+
 struct FileChangedOnServer: Error {}
 
 struct RangesUnusable: Error {}

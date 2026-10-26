@@ -2,6 +2,7 @@ import DowlioCore
 import DowlioLibrary
 import DowlioTestSupport
 import Foundation
+import SQLite3
 import Testing
 
 @Suite(.timeLimit(.minutes(1)))
@@ -259,6 +260,92 @@ struct RelaunchTests {
         #expect(try TestFiles.sha256(of: fixture.folder.appending(path: "long.iso")) == TestFiles.sha256(data))
     }
 
+    @Test func whereADownloadCameFromSurvivesARelaunchAndOthersHaveNone() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 218), eTag: "\"o1\""), at: "/caught.zip")
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 219), eTag: "\"o2\""), at: "/typed.zip")
+
+        let caught = await fixture.library.add(
+            server.url(for: "/caught.zip"), destination: .folder(fixture.folder), origin: DownloadOrigin(kind: .caught, browser: "Arc")
+        )
+        let typed = await fixture.add(server.url(for: "/typed.zip"))
+        _ = try await fixture.library.row(caught) { $0.state == .completed }
+        _ = try await fixture.library.row(typed) { $0.state == .completed }
+        let relaunched = try await fixture.relaunched()
+
+        #expect(try await relaunched.library.row(caught) { _ in true }.origin == DownloadOrigin(kind: .caught, browser: "Arc"))
+        #expect(try await relaunched.library.row(typed) { _ in true }.origin == nil)
+    }
+
+    @Test func historyFromBeforeOriginsWereRecordedOpensWithNoOrigin() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 220), eTag: "\"o3\""), at: "/old.zip")
+        let id = await fixture.add(server.url(for: "/old.zip"))
+        _ = try await fixture.library.row(id) { $0.state == .completed }
+        try Self.dropOriginColumns(fixture.databaseURL)
+
+        let relaunched = try await fixture.relaunched()
+
+        #expect(try await relaunched.library.row(id) { _ in true }.origin == nil)
+        #expect(try await relaunched.library.row(id) { _ in true }.fileName == "old.zip")
+    }
+
+    private static func dropOriginColumns(_ database: URL) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open(database.path, &handle) == SQLITE_OK else { throw LibraryTestError.rowsEnded }
+        defer { sqlite3_close(handle) }
+        for statement in [
+            "ALTER TABLE download DROP COLUMN originKind",
+            "ALTER TABLE download DROP COLUMN originBrowser",
+            "DELETE FROM grdb_migrations WHERE identifier = 'origin'",
+        ] {
+            guard sqlite3_exec(handle, statement, nil, nil, nil) == SQLITE_OK else { throw LibraryTestError.rowsEnded }
+        }
+    }
+
+    @Test func aDownloadThatUsedTheBrowsersCookiesWaitsToBeSentAgainAfterARelaunch() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        let held = 256 * 1024
+        server.serve(.init(data: TestServer.makeData(size: 4 * 1024 * 1024, seed: 215), holdAfterBytes: held, eTag: "\"s1\""), at: "/private.iso")
+        var options = RequestOptions()
+        options.connections = 1
+        options.cookies = [Cookie(name: "session", value: "abc")]
+
+        let id = await fixture.add(server.url(for: "/private.iso"), options: options)
+        _ = try await fixture.library.row(id) { $0.receivedBytes == Int64(held) }
+        await fixture.library.pause(id)
+        _ = try await fixture.library.row(id) { $0.state == .paused }
+
+        let relaunched = try await fixture.relaunched()
+        let restored = try await relaunched.library.row(id) { _ in true }
+        server.releaseHeldResponses()
+        let requestsBefore = server.requests.count
+        await relaunched.library.resume(id)
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(restored.state == .paused)
+        #expect(restored.lostCookies)
+        #expect(restored.detailLine.hasSuffix("Send it again from the browser"))
+        #expect(try await relaunched.library.row(id) { _ in true }.state == .paused)
+        #expect(server.requests.count == requestsBefore)
+    }
+
+    @Test func aDownloadWithoutCookiesHasNoCookiesToLose() async throws {
+        let fixture = try await LibraryFixture()
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 1024 * 1024, seed: 216), holdAfterBytes: 0, eTag: "\"s2\""), at: "/public.iso")
+
+        let id = await fixture.add(server.url(for: "/public.iso"))
+        await fixture.library.pause(id)
+        let restored = try await fixture.relaunched().library.row(id) { _ in true }
+
+        #expect(!restored.lostCookies)
+        server.releaseHeldResponses()
+    }
+
     @Test func aFailedDownloadComesBackPausedAndResumeRetriesIt() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
@@ -303,7 +390,7 @@ struct RelaunchTests {
         await relaunched.library.resume(id)
         _ = try await relaunched.library.row(id) { $0.state == .completed }
         #expect(try TestFiles.sha256(of: fixture.folder.appending(path: "gone.bin")) == TestFiles.sha256(data))
-        #expect(server.requests.dropFirst(requestsBefore).last?.headers["range"] == "bytes=0-\(data.count - 1)")
+        #expect(server.requests.dropFirst(requestsBefore).last?.headers["range"] == "bytes=0-")
     }
 
     @Test func aCompletedDownloadStaysInHistoryAndSaysWhenItsFileIsGone() async throws {
@@ -332,20 +419,23 @@ struct RelaunchTests {
     @Test func aDownloadThatNeverStartedKeepsItsReferrerButNotItsCookies() async throws {
         let fixture = try await LibraryFixture()
         let server = try await TestServer()
-        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 216), eTag: "\"r6\""), at: "/private.pdf")
-        var options = RequestOptions()
-        options.referrer = URL(string: "https://example.com/page")
-        options.cookies = [Cookie(name: "session", value: "secret")]
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 216), eTag: "\"r6\""), at: "/public.pdf")
+        server.serve(.init(data: TestServer.makeData(size: 1024, seed: 217), eTag: "\"r7\""), at: "/private.pdf")
+        var plain = RequestOptions()
+        plain.referrer = URL(string: "https://example.com/page")
+        var signedIn = plain
+        signedIn.cookies = [Cookie(name: "session", value: "secret")]
 
-        let id = await fixture.add(server.url(for: "/private.pdf"), options: options, startImmediately: false)
-        _ = try await fixture.library.row(id) { _ in true }
+        let publicID = await fixture.add(server.url(for: "/public.pdf"), options: plain, startImmediately: false)
+        let privateID = await fixture.add(server.url(for: "/private.pdf"), options: signedIn, startImmediately: false)
+        _ = try await fixture.library.row(privateID) { _ in true }
 
         let relaunched = try await fixture.relaunched()
-        await relaunched.library.resume(id)
-        _ = try await relaunched.library.row(id) { $0.state == .completed }
+        await relaunched.library.resume(publicID)
+        _ = try await relaunched.library.row(publicID) { $0.state == .completed }
 
         #expect(server.requests.allSatisfy { $0.headers["referer"] == "https://example.com/page" })
-        #expect(server.requests.allSatisfy { $0.headers["cookie"] == nil })
+        #expect(try await relaunched.library.row(privateID) { _ in true }.lostCookies)
         let database = try String(decoding: Data(contentsOf: fixture.databaseURL), as: UTF8.self)
         #expect(!database.contains("secret"))
     }

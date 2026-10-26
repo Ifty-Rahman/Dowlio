@@ -4,20 +4,20 @@ import SwiftUI
 
 struct QuickAddView: View {
     let model: AppModel
+    let panel: MenuBarPanel
     let close: () -> Void
-    @State private var sheet: NewDownloadModel?
     @FocusState private var linkFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
             Text("Add Link").font(DowlioDesign.TypeRole.title).accessibilityAddTraits(.isHeader)
-            if let sheet {
+            if let sheet = panel.quickAdd {
                 content(sheet)
             }
         }
         .onAppear {
-            sheet = model.makeNewDownload(DebugLaunch.quickAddLink ?? "")
-            sheet?.checkLinks()
+            if panel.quickAdd == nil { panel.quickAdd = model.makeNewDownload(DebugLaunch.quickAddLink ?? "") }
+            panel.quickAdd?.checkLinks()
             linkFocused = true
         }
     }
@@ -41,11 +41,15 @@ struct QuickAddView: View {
         }
         HStack {
             Button("Open Dowlio") {
+                panel.quickAdd = nil
                 close()
-                model.requestNewDownload(sheet.draft.text)
+                model.continueInWindow(sheet)
             }
             Spacer()
-            Button("Cancel", role: .cancel) { close() }
+            Button("Cancel", role: .cancel) {
+                panel.quickAdd = nil
+                close()
+            }
                 .keyboardShortcut(.cancelAction)
             Button(downloadTitle(sheet)) { download(sheet) }
                 .buttonStyle(.borderedProminent)
@@ -61,6 +65,7 @@ struct QuickAddView: View {
 
     private func download(_ sheet: NewDownloadModel) {
         model.add(sheet.draft)
+        panel.quickAdd = nil
         close()
     }
 }
@@ -77,8 +82,7 @@ private struct QuickAddCard: View {
                 if let status = check?.status {
                     HStack(spacing: DowlioDesign.Spacing.xs) {
                         if status.tone == .neutral { ProgressView().controlSize(.small) }
-                        Text(status.line).foregroundStyle(status.tone.color)
-                        if let size = inspection?.totalBytes { Text("· \(ByteText.string(size))").foregroundStyle(.secondary).monospacedDigit() }
+                        LinkStatusLine(status: status, size: inspection?.totalBytes)
                     }
                     .font(DowlioDesign.TypeRole.detail)
                     if inspection?.isNotSecure ?? (url.scheme?.lowercased() == "http") {

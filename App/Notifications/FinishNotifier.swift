@@ -18,14 +18,14 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
         super.init()
         UserDefaults.standard.register(defaults: [SettingsKey.notifiesWhenFinished: true])
         center.delegate = self
-        center.setNotificationCategories([UNNotificationCategory(
+        center.setNotificationCategories(CatchNotifier.categories.union([UNNotificationCategory(
             identifier: Self.category,
             actions: [
                 UNNotificationAction(identifier: ThenAction.showInFinder.rawValue, title: "Show in Finder"),
                 UNNotificationAction(identifier: ThenAction.open.rawValue, title: "Open"),
             ],
             intentIdentifiers: []
-        )])
+        )]))
     }
 
     /// The question comes when the first download is added, so it has a reason.
@@ -97,6 +97,14 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if CatchNotifier.isCatch(response.notification.request.content.categoryIdentifier) {
+            let identifier = response.notification.request.identifier
+            let action = CatchNotifier.Action(rawValue: response.actionIdentifier) ?? .show
+            await MainActor.run {
+                AppDelegate.model?.answerCatchNotification(identifier, action: action)
+            }
+            return
+        }
         let action = ThenAction(rawValue: response.actionIdentifier)
         let path = response.notification.request.content.userInfo["file"] as? String
         await MainActor.run {

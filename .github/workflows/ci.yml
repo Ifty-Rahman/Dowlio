@@ -15,5 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Test and build
         run: ./scripts/test.sh

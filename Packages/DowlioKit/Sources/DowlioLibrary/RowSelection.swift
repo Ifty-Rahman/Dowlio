@@ -74,6 +74,12 @@ public struct RowSelection: Equatable, Sendable {
         focus = ids.last ?? focus
     }
 
+    public mutating func select(_ ids: [DownloadID]) {
+        selected = Set(ids)
+        anchor = ids.last
+        focus = ids.last
+    }
+
     /// Drops rows that are no longer shown, after a filter, a search or a removal.
     public mutating func keepOnly(_ rows: [DownloadID]) {
         selected.formIntersection(rows)

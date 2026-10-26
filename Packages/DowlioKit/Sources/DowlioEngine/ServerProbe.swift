@@ -4,7 +4,14 @@ import Foundation
 struct Probed {
     enum Body {
         case whole(Connection)
-        case ranges(total: Int64, validator: String?)
+        case ranges(total: Int64, validator: String?, firstReply: Connection?)
+
+        var openConnection: Connection? {
+            switch self {
+            case .whole(let connection): connection
+            case .ranges(_, _, let firstReply): firstReply
+            }
+        }
     }
 
     let body: Body
@@ -21,9 +28,21 @@ extension Probed {
         )
     }
 
+    init(changedFile response: HTTPURLResponse, over connection: Connection, requested target: URL) {
+        let ranges = response.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") == true
+        guard ranges, response.isUsableRangeReply, let total = response.knownLength, total > 0 else {
+            self.init(wholeFile: response, over: connection, requested: target)
+            return
+        }
+        self.init(
+            body: .ranges(total: total, validator: response.validator, firstReply: connection),
+            finalURL: response.url ?? target, totalBytes: total, probeResponse: response
+        )
+    }
+
     /// Closes the probe's own connection, for a probe whose reply the download won't read.
     func cancelConnection() {
-        if case .whole(let connection) = body { connection.cancel() }
+        body.openConnection?.cancel()
     }
 }
 
@@ -31,19 +50,34 @@ struct ServerProbe: Sendable {
     let connections: ConnectionOpener
 
     func probe(_ target: URL) async throws -> Probed {
-        let connection = connections.open(target, range: ByteRange(start: 0, end: 0))
-        let response = try await connection.firstResponse()
+        try await probe(target, asking: .toEnd(from: 0))
+    }
+
+    func check(_ target: URL) async throws -> Probed {
+        try await probe(target, asking: .closed(ByteRange(start: 0, end: 0)))
+    }
+
+    private func probe(_ target: URL, asking range: RangeRequest) async throws -> Probed {
+        let connection = connections.open(target, range: range)
+        let response: HTTPURLResponse
+        do {
+            response = try await connection.firstResponse()
+        } catch let error as URLError where error.isUndecodableBody {
+            return try await openWholeFile(at: target)
+        }
         switch response.statusCode {
         case 200:
             return Probed(wholeFile: response, over: connection, requested: target)
         case 206:
-            connection.cancel()
             let finalURL = response.url ?? target
-            guard response.isUsableRangeReply, let reply = ContentRange(response), reply.start == 0, reply.end == 0 else {
+            guard response.isUsableRangeReply, let reply = ContentRange(response), range.isAnswered(by: reply) else {
+                connection.cancel()
                 return try await openWholeFile(at: finalURL)
             }
+            let kept = range.readsToEnd ? connection : nil
+            if kept == nil { connection.cancel() }
             return Probed(
-                body: .ranges(total: reply.total, validator: response.validator),
+                body: .ranges(total: reply.total, validator: response.validator, firstReply: kept),
                 finalURL: finalURL,
                 totalBytes: reply.total,
                 probeResponse: response
@@ -52,7 +86,7 @@ struct ServerProbe: Sendable {
             // An empty file has no byte 0 to send.
             connection.cancel()
             return Probed(
-                body: .ranges(total: 0, validator: response.validator),
+                body: .ranges(total: 0, validator: response.validator, firstReply: nil),
                 finalURL: response.url ?? target,
                 totalBytes: 0,
                 probeResponse: response
@@ -72,22 +106,5 @@ struct ServerProbe: Sendable {
 extension DownloadRun {
     func probeWithRetries(_ target: URL) async throws -> Probed {
         try await withRetries(.probe, host: target) { try await probe.probe(target) }
-    }
-
-    /// Signed final links expire, so Resume probes the original link first, then the last final link.
-    func probeForResume(_ plan: DownloadPlan) async throws -> Probed {
-        do {
-            return try await probeWithRetries(url)
-        } catch let error as DownloadError where Self.meansLinkGone(error) {
-            do {
-                return try await probeWithRetries(plan.finalURL)
-            } catch let error as DownloadError where Self.meansLinkGone(error) {
-                throw DownloadError.linkExpired
-            }
-        }
-    }
-
-    private static func meansLinkGone(_ error: DownloadError) -> Bool {
-        error == .forbidden || error == .notFound
     }
 }

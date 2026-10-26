@@ -64,6 +64,26 @@ struct NewDownloadTests {
         #expect(LinkStatus(inspection) == status)
     }
 
+    @Test(arguments: ["text/html", "application/xhtml+xml"])
+    func aLinkToAWebPageSaysSoAndStillOffersDownload(contentType: String) {
+        let inspection = LinkInspection(
+            fileName: "article.html", totalBytes: nil, contentType: contentType, category: nil,
+            splitsIntoSegments: false, cannotResumeBecause: .sizeUnknown, isNotSecure: false
+        )
+        #expect(LinkStatus(inspection) == LinkStatus(
+            line: "This link is a web page", reason: "Download saves the page as an .html file.", tone: .caution
+        ))
+    }
+
+    @Test(arguments: [DownloadError.needsSignIn, .forbidden])
+    func aLinkThatNeedsSignInSaysToSignInAndSendItAgain(error: DownloadError) {
+        #expect(LinkStatus(failure: error) == LinkStatus(
+            line: "Needs your sign-in",
+            reason: "This site only gives the file to signed-in visitors. Sign in to it in your browser, then use Send to Dowlio on the link, so Dowlio gets the site's cookies.",
+            tone: .problem
+        ))
+    }
+
     @Test func aLinkThatCantBeInspectedSaysWhyAndWhatToDo() {
         #expect(LinkStatus(failure: .notFound) == LinkStatus(line: "Not found", reason: "The link may have been removed", tone: .problem))
     }

@@ -9,7 +9,6 @@ public final class TestServer: @unchecked Sendable {
         public var supportsRanges: Bool
         /// When set, every response for this file stops after this many body bytes until
         /// `releaseHeldResponses()` is called. Zero holds the whole body. One-byte bodies, such as
-        /// the probe reply, are never held.
         public var holdAfterBytes: Int?
         /// A broken server: range replies keep their `Content-Range` but carry this many fewer
         /// bytes, with a matching `Content-Length`.
@@ -45,18 +44,16 @@ public final class TestServer: @unchecked Sendable {
         /// Extra headers sent with every 206 reply only, such as a `Content-Encoding` that a range
         /// reply must not have.
         public var rangeReplyHeaders: [String: String]
-        /// Whether `rangeReplyHeaders` also go on the one-byte probe reply, or only on the replies
-        /// to segment requests.
         public var rangeReplyHeadersOnProbe: Bool
-        /// A broken server: it answers the one-byte probe range, but ignores every longer range
-        /// and sends the whole file with 200.
         public var ignoresSegmentRanges: Bool
-        /// Limits `misreportRangeStartBy` to replies for the range that starts at this offset.
-        public var misreportOnlyRangeStartingAt: Int?
+        public var misreportOnlyRangesFrom: Int?
+        public var maxRangeReplyBytes: Int?
         /// A streamed or generated file: every reply is a 200 with the whole file, no
         /// `Content-Length`, and a body that ends when the server closes the connection. Ranges
         /// are ignored.
         public var omitsLength: Bool
+        public var requiredCookie: String?
+        public var requiredForm: Data?
 
         public init(
             data: Data,
@@ -77,11 +74,17 @@ public final class TestServer: @unchecked Sendable {
             rangeReplyHeaders: [String: String] = [:],
             rangeReplyHeadersOnProbe: Bool = true,
             ignoresSegmentRanges: Bool = false,
-            misreportOnlyRangeStartingAt: Int? = nil,
-            omitsLength: Bool = false
+            misreportOnlyRangesFrom: Int? = nil,
+            maxRangeReplyBytes: Int? = nil,
+            omitsLength: Bool = false,
+            requiredCookie: String? = nil,
+            requiredForm: Data? = nil
         ) {
+            self.requiredCookie = requiredCookie
+            self.requiredForm = requiredForm
             self.omitsLength = omitsLength
-            self.misreportOnlyRangeStartingAt = misreportOnlyRangeStartingAt
+            self.misreportOnlyRangesFrom = misreportOnlyRangesFrom
+            self.maxRangeReplyBytes = maxRangeReplyBytes
             self.ignoresSegmentRanges = ignoresSegmentRanges
             self.maxParallel = maxParallel
             self.rangeReplyHeaders = rangeReplyHeaders
@@ -153,10 +156,16 @@ public final class TestServer: @unchecked Sendable {
     public struct RangeThrottle: Sendable {
         public var rangeStart: Int
         public var bytesPerSecond: Int
+        public var andLater: Bool
 
-        public init(rangeStart: Int, bytesPerSecond: Int) {
+        public init(rangeStart: Int, bytesPerSecond: Int, andLater: Bool = false) {
             self.rangeStart = rangeStart
             self.bytesPerSecond = bytesPerSecond
+            self.andLater = andLater
+        }
+
+        func slows(rangeStartingAt start: Int) -> Bool {
+            andLater ? start >= rangeStart : start == rangeStart
         }
     }
 
@@ -178,6 +187,7 @@ public final class TestServer: @unchecked Sendable {
         public let path: String
         /// Header names are lowercased.
         public let headers: [String: String]
+        public let body: Data
     }
 
     private let listener: NWListener
@@ -285,9 +295,18 @@ public final class TestServer: @unchecked Sendable {
     public static func makeData(size: Int, seed: UInt64 = 1) -> Data {
         var state = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
         var bytes = [UInt8](repeating: 0, count: size)
-        for index in bytes.indices {
-            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-            bytes[index] = UInt8(truncatingIfNeeded: state >> 33)
+        bytes.withUnsafeMutableBytes { buffer in
+            var offset = 0
+            while offset + 8 <= size {
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                buffer.storeBytes(of: state ^ (state >> 29), toByteOffset: offset, as: UInt64.self)
+                offset += 8
+            }
+            while offset < size {
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                buffer[offset] = UInt8(truncatingIfNeeded: state >> 33)
+                offset += 1
+            }
         }
         return Data(bytes)
     }
@@ -306,7 +325,15 @@ public final class TestServer: @unchecked Sendable {
             if let data { buffer.append(data) }
             if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
                 let head = String(decoding: buffer[..<end.lowerBound], as: UTF8.self)
-                self.respond(to: head, on: connection)
+                let length = Self.contentLength(in: head)
+                let body = buffer[end.upperBound...]
+                if body.count >= length {
+                    self.respond(to: head, body: Data(body.prefix(length)), on: connection)
+                } else if isComplete || error != nil {
+                    connection.cancel()
+                } else {
+                    self.readHeaders(on: connection, buffer: buffer)
+                }
             } else if isComplete || error != nil {
                 connection.cancel()
             } else {
@@ -315,7 +342,17 @@ public final class TestServer: @unchecked Sendable {
         }
     }
 
-    private func respond(to head: String, on connection: NWConnection) {
+    private static func contentLength(in head: String) -> Int {
+        for line in head.components(separatedBy: "\r\n").dropFirst() {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            if parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
+            }
+        }
+        return 0
+    }
+
+    private func respond(to head: String, body: Data, on connection: NWConnection) {
         let lines = head.components(separatedBy: "\r\n")
         let parts = lines.first?.split(separator: " ") ?? []
         guard parts.count >= 2 else { return connection.cancel() }
@@ -325,7 +362,7 @@ public final class TestServer: @unchecked Sendable {
             let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
             headers[name] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
-        let request = Request(method: String(parts[0]), path: String(parts[1]), headers: headers)
+        let request = Request(method: String(parts[0]), path: String(parts[1]), headers: headers, body: body)
         let (file, redirect): (File?, String?) = lock.withLock {
             recorded.append(request)
             return (files[request.path], redirects[request.path])
@@ -340,6 +377,14 @@ public final class TestServer: @unchecked Sendable {
             return send(status: "404 Not Found", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
+        if let cookie = file.requiredCookie, !(headers["cookie"] ?? "").split(separator: ";").contains(where: { $0.trimmingCharacters(in: .whitespaces) == cookie }) {
+            return send(status: "401 Unauthorized", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
+        if let form = file.requiredForm, request.method != "POST" || request.body != form {
+            return send(status: "405 Method Not Allowed", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
         if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {
             return send(status: "\(fault.status) Fault", headers: fault.headers, body: Data(), hold: nil, on: connection)
         }
@@ -347,8 +392,6 @@ public final class TestServer: @unchecked Sendable {
         // A reply stays in flight until the server closes its connection. The count goes down
         // before the close, so a client never sees the close before the server allows a new reply.
         var leave: @Sendable () -> Void = {}
-        // The one-byte probe doesn't count: its reply ends at once, but the client may already
-        // open its segment connections before this server sees the probe's connection close.
         if let cap = file.maxParallel, headers["range"] != "bytes=0-0" {
             let path = request.path
             let admitted: Bool = lock.withLock {
@@ -390,8 +433,11 @@ public final class TestServer: @unchecked Sendable {
         }()
 
         let total = file.data.count
+        let isProbe = rangeHeader == "bytes=0-" || rangeHeader == "bytes=0-0"
         let honoured = rangeHeader.flatMap { Self.parseRange($0, total: total) }.flatMap { range in
-            file.ignoresSegmentRanges && range.count > 1 ? nil : range
+            file.ignoresSegmentRanges && !isProbe ? nil : range
+        }.map { range in
+            file.maxRangeReplyBytes.map { range.prefix($0) } ?? range
         }
         if file.supportsRanges, !file.omitsLength, let range = honoured {
             guard range.lowerBound < total else {
@@ -400,8 +446,8 @@ public final class TestServer: @unchecked Sendable {
             var body = file.data.subdata(in: range)
             if body.count > file.shortRangeBodiesBy { body.removeLast(file.shortRangeBodiesBy) }
             let cut = cut(for: file, at: request.path, bodyCount: body.count)
-            let slow = file.throttle.flatMap { $0.rangeStart == range.lowerBound ? $0.bytesPerSecond : nil }
-            let misreported = range.count > 1 && (file.misreportOnlyRangeStartingAt ?? range.lowerBound) == range.lowerBound
+            let slow = file.throttle.flatMap { $0.slows(rangeStartingAt: range.lowerBound) ? $0.bytesPerSecond : nil }
+            let misreported = range.count > 1 && range.lowerBound >= (file.misreportOnlyRangesFrom ?? range.lowerBound)
             let shift = misreported ? file.misreportRangeStartBy : 0
             send(
                 status: "206 Partial Content",
@@ -409,9 +455,9 @@ public final class TestServer: @unchecked Sendable {
                     "Content-Range": "bytes \(range.lowerBound + shift)-\(range.upperBound - 1)/\(total)",
                     "Accept-Ranges": "bytes",
                 ].merging(file.headers) { current, _ in current }) { $1 }
-                    .merging(range.count > 1 || file.rangeReplyHeadersOnProbe ? file.rangeReplyHeaders : [:]) { $1 },
+                    .merging(!isProbe || file.rangeReplyHeadersOnProbe ? file.rangeReplyHeaders : [:]) { $1 },
                 body: body,
-                hold: file.holdAfterBytes,
+                hold: rangeHeader == "bytes=0-" ? file.holdAfterBytes.map { max($0, 512) } : file.holdAfterBytes,
                 cut: cut,
                 bytesPerSecond: slow,
                 onClose: leave,
@@ -500,12 +546,6 @@ public final class TestServer: @unchecked Sendable {
         for (name, value) in headers { head += "\(name): \(value)\r\n" }
         head += "\r\n"
 
-        if let bytesPerSecond {
-            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
-            trickle(body, at: bytesPerSecond, on: connection, onClose: onClose)
-            return
-        }
-
         let close: @Sendable (NWError?) -> Void = { _ in
             onClose()
             connection.cancel()
@@ -523,7 +563,11 @@ public final class TestServer: @unchecked Sendable {
         case nil:
             break
         }
-        // One-byte bodies, such as the probe reply, are never held.
+        if let bytesPerSecond {
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
+            trickle(body, at: bytesPerSecond, on: connection, onClose: onClose)
+            return
+        }
         guard let hold, hold < body.count, body.count > 1 else {
             connection.send(content: Data(head.utf8) + body, completion: .contentProcessed(close))
             return

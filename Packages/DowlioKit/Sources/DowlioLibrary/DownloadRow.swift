@@ -38,6 +38,17 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     public var completedAt: Date?
     /// A Completed download whose file is no longer where Dowlio put it.
     public var isFileMissing: Bool
+    public var lostCookies = false
+    public var origin: DownloadOrigin?
+
+    public var originText: String? {
+        guard let origin else { return nil }
+        let browser = origin.browser ?? "your browser"
+        switch origin.kind {
+        case .caught: return "Caught from \(browser)"
+        case .sent: return "Sent from \(browser)"
+        }
+    }
     /// Completed without moving the file in, because a file with its name existed and the policy
     /// was Skip.
     public var wasSkipped: Bool
@@ -157,6 +168,8 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         case .downloading:
             let connections = activeConnections == 1 ? "1 connection" : "\(activeConnections) connections"
             return activeConnections > 0 ? "\(progressText) · \(connections)" : progressText
+        case .paused where lostCookies:
+            return "\(progressText) · Send it again from the browser"
         case .queued, .paused, .retrying:
             return progressText
         }

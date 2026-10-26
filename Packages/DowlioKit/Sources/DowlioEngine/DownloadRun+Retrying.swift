@@ -17,7 +17,7 @@ extension DownloadRun {
             } catch {
                 if Task.isCancelled { throw CancellationError() }
                 guard let retryable = RetryableFailure(classifying: error) else { throw error }
-                if retryable.isRefusal { lowerLimit(of: host) }
+                if retryable.isRefusal { lowerLimit(of: host, for: key) }
                 failures += 1
                 guard failures < maximumFailures else { throw DownloadError.tooManyRetries }
 
@@ -41,11 +41,15 @@ extension DownloadRun {
         options.maximumFailures.map { min(max($0, 0), 11) } ?? configuration.retry.maximumFailures
     }
 
-    private func lowerLimit(of host: URL) {
-        guard let key = host.hostLimitKey else { return }
-        let setting = connectionSetting
-        let used = planStore.plan.map { min(max($0.segments.count, 1), setting) } ?? setting
-        configuration.hostLimits.updateLimit(for: key) { SegmentPlanner.lowered($0 ?? used) }
+    func lowerLimit(of host: URL, for key: RetryKey) {
+        guard let hostKey = host.hostLimitKey else { return }
+        if case .segment = key {
+            let limit = min(gate.currentLimit, connectionSetting)
+            configuration.hostLimits.updateLimit(for: hostKey) { min($0 ?? .max, limit) }
+        } else {
+            let setting = connectionSetting
+            configuration.hostLimits.updateLimit(for: hostKey) { SegmentPlanner.lowered($0 ?? setting) }
+        }
     }
 
     private func publishRetryState() async {

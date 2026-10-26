@@ -25,36 +25,44 @@ final class PlanStore: @unchecked Sendable {
     // @unchecked: both stored properties are only read or written under `lock`.
     private let lock = NSLock()
     private var stored: DownloadPlan?
-    private var probeConnection: Connection?
+    private var held: HeldConnection?
 
     var plan: DownloadPlan? { lock.withLock { stored } }
 
-    func store(_ plan: DownloadPlan, probeConnection: Connection?) {
+    func store(_ plan: DownloadPlan, holding connection: HeldConnection?) {
         let dropped: Connection? = lock.withLock {
             defer {
                 stored = plan
-                self.probeConnection = probeConnection
+                held = connection
             }
-            return self.probeConnection === probeConnection ? nil : self.probeConnection
+            return held?.connection === connection?.connection ? nil : held?.connection
         }
         dropped?.cancel()
     }
 
-    func takeProbeConnection() -> Connection? {
+    func takeConnection(startingAt start: Int64) -> Connection? {
         lock.withLock {
-            defer { probeConnection = nil }
-            return probeConnection
+            guard let held, held.start == start else { return nil }
+            self.held = nil
+            return held.connection
         }
+    }
+
+    func closeHeldConnection() {
+        let dropped: Connection? = lock.withLock {
+            defer { held = nil }
+            return held?.connection
+        }
+        dropped?.cancel()
     }
 
     func forget() {
-        let dropped: Connection? = lock.withLock {
-            defer {
-                stored = nil
-                probeConnection = nil
-            }
-            return probeConnection
-        }
-        dropped?.cancel()
+        lock.withLock { stored = nil }
+        closeHeldConnection()
     }
+}
+
+struct HeldConnection {
+    let connection: Connection
+    let start: Int64
 }

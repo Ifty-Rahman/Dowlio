@@ -1,11 +1,14 @@
 import AppKit
 import SwiftUI
 
-private struct WindowGlass: NSViewRepresentable {
+private struct Glass: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blending: NSVisualEffectView.BlendingMode
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .behindWindow
+        view.material = material
+        view.blendingMode = blending
         view.state = .followsWindowActiveState
         return view
     }
@@ -15,6 +18,16 @@ private struct WindowGlass: NSViewRepresentable {
 
 extension View {
     func windowGlass() -> some View {
-        background(WindowGlass().ignoresSafeArea())
+        background(Glass(material: .sidebar, blending: .behindWindow).ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    func panelGlass(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(.regularMaterial, in: shape)
+        }
     }
 }

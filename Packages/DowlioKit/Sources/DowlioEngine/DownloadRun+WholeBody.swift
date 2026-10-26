@@ -7,8 +7,8 @@ extension DownloadRun {
         let segmented = !plan.segments.isEmpty
         try await withRetries(.whole, host: plan.finalURL) {
             let connection: Connection
-            if let probeConnection = planStore.takeProbeConnection() {
-                connection = probeConnection
+            if let held = planStore.takeConnection(startingAt: 0) {
+                connection = held
             } else {
                 try plan.partial.discardData()
                 board.reset()

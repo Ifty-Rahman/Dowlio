@@ -69,6 +69,10 @@ public struct LinkStatus: Equatable, Sendable {
     public static let checking = LinkStatus(line: "Checking link…", reason: nil, tone: .neutral)
 
     public init(_ inspection: LinkInspection) {
+        if inspection.isWebPage {
+            self.init(line: "This link is a web page", reason: "Download saves the page as an .html file.", tone: .caution)
+            return
+        }
         switch (inspection.splitsIntoSegments, inspection.cannotResumeBecause) {
         case (true, nil):
             self.init(line: "Resumable, splits into segments", reason: nil, tone: .good)
@@ -95,6 +99,12 @@ public struct LinkStatus: Equatable, Sendable {
     public init(failure: DownloadError) {
         let text = FailureText(failure)
         switch failure {
+        case .needsSignIn, .forbidden:
+            self.init(
+                line: "Needs your sign-in",
+                reason: "This site only gives the file to signed-in visitors. Sign in to it in your browser, then use Send to Dowlio on the link, so Dowlio gets the site's cookies.",
+                tone: .problem
+            )
         case .network, .tooManyRetries:
             self.init(line: text.reason, reason: "Download Anyway still adds it, and Dowlio tries again when it starts.", tone: .problem)
         default:
@@ -132,6 +142,8 @@ public struct NewDownloadDraft: Equatable, Sendable {
 
     private var checks: [URL: (check: Check, headers: RequestOptions)] = [:]
     private var renamed: (url: URL, name: String)?
+    private var cookiesByLink: [URL: [Cookie]] = [:]
+    private var originByLink: [URL: DownloadOrigin] = [:]
 
     public init(text: String, folder: URL) {
         self.text = text
@@ -140,6 +152,44 @@ public struct NewDownloadDraft: Equatable, Sendable {
     }
 
     public var links: [URL] { lines.compactMap(\.url) }
+
+    public mutating func append(_ more: String) {
+        guard !more.isEmpty else { return }
+        let current = text.trimmingCharacters(in: .newlines)
+        text = current.isEmpty ? more : "\(current)\n\(more)"
+    }
+
+    public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = [], browser: String? = nil, userAgent agent: String? = nil) {
+        if referrer.trimmingCharacters(in: .whitespaces).isEmpty, let page { referrer = page.absoluteString }
+        if userAgent.trimmingCharacters(in: .whitespaces).isEmpty, let agent { userAgent = agent }
+        if !cookies.isEmpty { cookiesByLink[link] = cookies }
+        originByLink[link] = DownloadOrigin(kind: .sent, browser: browser)
+        guard !links.contains(link) else { return }
+        append(link.absoluteString)
+    }
+
+    public mutating func merge(_ other: NewDownloadDraft) {
+        if referrer.trimmingCharacters(in: .whitespaces).isEmpty { referrer = other.referrer }
+        cookiesByLink.merge(other.cookiesByLink) { _, new in new }
+        originByLink.merge(other.originByLink) { _, new in new }
+        append(other.text)
+    }
+
+    public func origin(for url: URL) -> DownloadOrigin? {
+        originByLink[url]
+    }
+
+    public func inspectionOptions(for url: URL) -> RequestOptions {
+        var options = inspectionOptions
+        options.cookies = cookiesByLink[url] ?? []
+        return options
+    }
+
+    public func options(for url: URL) -> RequestOptions {
+        var options = options
+        options.cookies = cookiesByLink[url] ?? []
+        return options
+    }
 
     public var isSingleLink: Bool { links.count == 1 }
 
@@ -199,12 +249,13 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public mutating func linksToCheck() -> [URL] {
         let current = links
         checks = checks.filter { current.contains($0.key) }
-        let headers = inspectionOptions
+        cookiesByLink = cookiesByLink.filter { current.contains($0.key) }
+        originByLink = originByLink.filter { current.contains($0.key) }
         let due = current.filter { url in
             guard let existing = checks[url] else { return true }
-            return existing.headers != headers
+            return existing.headers != inspectionOptions(for: url)
         }
-        for url in due { checks[url] = (.checking, headers) }
+        for url in due { checks[url] = (.checking, inspectionOptions(for: url)) }
         return due
     }
 
@@ -219,5 +270,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
             && lhs.referrer == rhs.referrer && lhs.userAgent == rhs.userAgent && lhs.startImmediately == rhs.startImmediately
             && lhs.renamed?.url == rhs.renamed?.url && lhs.renamed?.name == rhs.renamed?.name
             && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check)
+            && lhs.cookiesByLink == rhs.cookiesByLink && lhs.originByLink == rhs.originByLink
     }
 }

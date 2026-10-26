@@ -16,8 +16,9 @@ public actor Library {
     private var inEngine: Set<DownloadID> = []
     /// Cookies never reach the store, so a download that hasn't started keeps them here until it
     /// does.
-    private var waitingCookies: [DownloadID: [Cookie]] = [:]
+    private var waitingHandoffs: [DownloadID: BrowserHandoff] = [:]
     private var missingFiles: Set<DownloadID> = []
+    private var lostCookies: Set<DownloadID> = []
     private var observers: [UUID: AsyncStream<[DownloadRow]>.Continuation] = [:]
     private var published: [DownloadRow]?
     private var following: Task<Void, Never>?
@@ -55,6 +56,7 @@ public actor Library {
             case .queued:
                 save(record)
             case .paused, .downloading, .failed:
+                if record.usedCookies == true { lostCookies.insert(id) }
                 if await restore(record) {
                     inEngine.insert(id)
                 } else {
@@ -91,16 +93,18 @@ public actor Library {
         _ url: URL,
         destination: Destination,
         options: RequestOptions = RequestOptions(),
-        startImmediately: Bool = true
+        startImmediately: Bool = true,
+        origin: DownloadOrigin? = nil
     ) async -> DownloadID {
         let id = DownloadID()
         let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
-        let record = StoredDownload(
+        var record = StoredDownload(
             id: id.rawValue, sourceURL: url, destination: destination, options: options, state: state, addedAt: now()
         )
+        record.origin = origin
         records[id] = record
         save(record)
-        if !options.cookies.isEmpty { waitingCookies[id] = options.cookies }
+        if let handoff = BrowserHandoff(options) { waitingHandoffs[id] = handoff }
         publish()
         if state == .downloading { await startInEngine(id) }
         return id
@@ -126,7 +130,7 @@ public actor Library {
     /// Continues a Paused or Queued download, or queues it when the limit is reached. One that
     /// never reached the engine, or whose partial file is gone, starts from its link.
     public func resume(_ id: DownloadID) async {
-        guard let state = records[id]?.state, state == .paused || state == .queued else { return }
+        guard let state = records[id]?.state, state == .paused || state == .queued, !lostCookies.contains(id) else { return }
         await runOrQueue(id)
     }
 
@@ -195,12 +199,18 @@ public actor Library {
         snapshots[id] = nil
         inEngine.remove(id)
         starting.remove(id)
-        waitingCookies[id] = nil
+        waitingHandoffs[id] = nil
         try? store.delete(id.rawValue)
         publish()
         await engine.cancel(id)
         if let package = record.partialFile { try? FileManager.default.removeItem(at: package) }
         await fillSlots()
+    }
+
+    public func discard(_ id: DownloadID) async {
+        guard let record = records[id] else { return }
+        guard record.state == .completed else { return await cancel(id) }
+        try? moveToTrash(id)
     }
 
     /// Takes the row off the list. A Completed download's file stays. Anything with a partial
@@ -251,7 +261,10 @@ public actor Library {
     private func startInEngine(_ id: DownloadID) async {
         guard var record = records[id] else { return }
         var options = record.options
-        options.cookies = waitingCookies.removeValue(forKey: id) ?? []
+        if let handoff = waitingHandoffs.removeValue(forKey: id) {
+            options.cookies = handoff.cookies
+            options.browserRequest = handoff.browserRequest
+        }
         record.state = .downloading
         if record.startedAt == nil { record.startedAt = now() }
         records[id] = record
@@ -300,7 +313,9 @@ public actor Library {
             || record.wasSkipped != snapshot.wasSkipped || (record.partialFile == nil && state == .downloading)
             || (snapshot.category != nil && snapshot.category != record.category)
         let layoutStarted = !snapshot.segments.isEmpty
-            && !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
+            && (snapshot.plannedSegments.isEmpty
+                ? !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
+                : snapshot.plannedSegments != record.plannedSegments)
         if changed || layoutStarted {
             if layoutStarted {
                 record.plannedSegments = snapshot.plannedSegments.isEmpty ? SegmentLayout.bounds(of: snapshot.segments) : snapshot.plannedSegments
@@ -360,7 +375,7 @@ public actor Library {
     private func row(for record: StoredDownload) -> DownloadRow {
         let id = DownloadID(rawValue: record.id)
         let live = snapshots[id]
-        return DownloadRow(
+        var row = DownloadRow(
             id: id,
             state: record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state),
             fileName: live?.fileName ?? record.fileName,
@@ -383,6 +398,9 @@ public actor Library {
             isFileMissing: missingFiles.contains(id),
             wasSkipped: live?.wasSkipped ?? record.wasSkipped
         )
+        row.lostCookies = lostCookies.contains(id)
+        row.origin = record.origin
+        return row
     }
 
     private static func rowState(for state: DownloadState) -> DownloadRow.State {
@@ -402,5 +420,16 @@ public actor Library {
         case .paused, .failed: .paused
         case .completed: .completed
         }
+    }
+}
+
+private struct BrowserHandoff {
+    let cookies: [Cookie]
+    let browserRequest: BrowserRequest?
+
+    init?(_ options: RequestOptions) {
+        guard !options.cookies.isEmpty || options.browserRequest != nil else { return nil }
+        cookies = options.cookies
+        browserRequest = options.browserRequest
     }
 }

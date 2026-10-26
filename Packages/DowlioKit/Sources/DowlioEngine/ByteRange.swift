@@ -10,6 +10,29 @@ struct ByteRange: Equatable, Sendable {
     var headerValue: String { "bytes=\(start)-\(end)" }
 }
 
+enum RangeRequest: Equatable, Sendable {
+    case closed(ByteRange)
+    case toEnd(from: Int64)
+
+    var headerValue: String {
+        switch self {
+        case .closed(let range): range.headerValue
+        case .toEnd(let start): "bytes=\(start)-"
+        }
+    }
+
+    var readsToEnd: Bool {
+        if case .toEnd = self { true } else { false }
+    }
+
+    func isAnswered(by reply: ContentRange) -> Bool {
+        switch self {
+        case .closed(let range): reply.range == range
+        case .toEnd(let start): reply.start == start && reply.end == reply.total - 1
+        }
+    }
+}
+
 struct ContentRange: Equatable {
     let range: ByteRange
     let total: Int64

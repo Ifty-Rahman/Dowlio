@@ -1,66 +1,68 @@
 @testable import DowlioEngine
 import Testing
 
-/// The segment planner as pure logic. Expected segments are worked out by hand: at most the
-/// connection setting (1 to 16), and never a segment under 1 MiB.
-struct SegmentPlannerTests {
-    struct Case: Sendable, CustomTestStringConvertible {
-        let size: Int64
-        let connections: Int
-        let expected: [ClosedRange<Int64>]
-
-        var testDescription: String { "\(size) bytes, \(connections) connections" }
+struct SegmentRampTests {
+    static func segments(size: Int64, connections: Int) -> [ByteRange] {
+        var remaining: [ByteRange?] = SegmentPlanner.firstSegment(size: size)
+        for _ in 1..<max(connections, 1) {
+            guard let split = SegmentPlanner.steal(from: remaining) else { break }
+            remaining[split.victim] = split.kept
+            remaining.append(split.taken)
+        }
+        return remaining.compactMap { $0 }.sorted { $0.start < $1.start }
     }
 
-    static let mebibyte: Int64 = 1_048_576
-
-    static let cases: [Case] = [
-        // 8 MiB over 8 connections: eight 1 MiB segments.
-        Case(size: 8_388_608, connections: 8, expected: [
-            0...1_048_575, 1_048_576...2_097_151, 2_097_152...3_145_727, 3_145_728...4_194_303,
-            4_194_304...5_242_879, 5_242_880...6_291_455, 6_291_456...7_340_031, 7_340_032...8_388_607,
-        ]),
-        // 3.5 MiB allows only 3 segments of at least 1 MiB, even with 8 connections.
-        Case(size: 3_670_016, connections: 8, expected: [
-            0...1_223_337, 1_223_338...2_446_676, 2_446_677...3_670_015,
-        ]),
-        // Under 2 MiB: one segment.
-        Case(size: 1_572_864, connections: 8, expected: [0...1_572_863]),
-        Case(size: 100, connections: 8, expected: [0...99]),
-        // One connection asked for: one segment.
-        Case(size: 8_388_608, connections: 1, expected: [0...8_388_607]),
-        // Zero or negative connections count as one.
-        Case(size: 8_388_608, connections: 0, expected: [0...8_388_607]),
-    ]
-
-    @Test(arguments: cases)
-    func planSplitsTheFileIntoTheExpectedSegments(_ testCase: Case) {
-        let segments = SegmentPlanner.plan(size: testCase.size, connections: testCase.connections)
-        #expect(segments.map { $0.start...$0.end } == testCase.expected)
+    @Test(arguments: [
+        (Int64(131_072), 1),
+        (245_759, 1),
+        (245_760, 2),
+        (393_216, 2),
+        (524_288, 4),
+        (1_048_576, 8),
+        (104_857_600, 8),
+    ])
+    func eightConnectionsSplitAFileIntoHalvesOfAtLeast120KiB(size: Int64, count: Int) {
+        #expect(Self.segments(size: size, connections: 8).count == count)
     }
 
-    @Test(arguments: [1, 2, 4, 8, 16, 20, 64])
-    func planCoversEveryFileExactlyWithinTheLimits(connections: Int) {
-        let sizes: [Int64] = [1, 1_048_575, 1_048_576, 2_097_151, 2_097_152, 5_000_000, 67_108_864, 4_700_000_123]
-        for size in sizes {
-            let segments = SegmentPlanner.plan(size: size, connections: connections)
+    @Test func splitsGoInHalvesThenQuartersThenEighths() {
+        let size: Int64 = 104_857_600
+        let starts = Self.segments(size: size, connections: 8).map(\.start)
+        #expect(starts == (0..<8).map { size * Int64($0) / 8 })
+    }
+
+    @Test(arguments: [1, 2, 4, 8, 16])
+    func theSegmentsCoverTheFileExactly(connections: Int) {
+        for size: Int64 in [1, 122_880, 245_760, 5_000_000, 4_700_000_123] {
+            let segments = Self.segments(size: size, connections: connections)
             #expect(segments.first?.start == 0)
             #expect(segments.last?.end == size - 1)
             #expect(zip(segments, segments.dropFirst()).allSatisfy { $0.end + 1 == $1.start })
-            #expect(segments.count <= min(connections, 16))
-            if segments.count > 1 {
-                #expect(segments.allSatisfy { $0.end - $0.start + 1 >= Self.mebibyte })
-            }
+            #expect(segments.count <= connections)
         }
     }
 
-    @Test func moreThanSixteenConnectionsAreCappedAtSixteen() {
-        #expect(SegmentPlanner.plan(size: 67_108_864, connections: 20).count == 16)
+    static let rampUpCounts: [(missing: Int64, wanted: Int, opened: Int)] = [
+        (131_072 - 16_384, 7, 0),
+        (262_144 - 16_384, 7, 1),
+        (524_288 - 32_768, 6, 2),
+        (1_048_576 - 49_152, 6, 4),
+        (2_097_152 - 49_152, 6, 6),
+        (104_857_600, 6, 6),
+        (104_857_600, 0, 0),
+    ]
+
+    @Test(arguments: rampUpCounts)
+    func theRampUpOpensOneConnectionPer240KiBStillMissing(missing: Int64, wanted: Int, opened: Int) {
+        #expect(SegmentPlanner.connectionsWorthOpening(missing: missing, wanted: wanted) == opened)
+    }
+
+    @Test func anEmptyFileHasNoSegment() {
+        #expect(SegmentPlanner.firstSegment(size: 0).isEmpty)
     }
 }
 
 /// Stealing. Expected splits are worked out by hand: a free connection takes the second
-/// half of the largest remaining range, and only when both halves stay at 1 MiB or more.
 struct SegmentStealTests {
     static let mebibyte: Int64 = 1_048_576
 
@@ -92,11 +94,11 @@ struct SegmentStealTests {
             expected: Expected(victim: 0, kept: 0...1_048_576, taken: 1_048_577...2_097_152)
         ),
         Case(
-            name: "exactly 2 MiB splits into two 1 MiB halves",
-            remaining: [nil, 3_145_728...5_242_879],
-            expected: Expected(victim: 1, kept: 3_145_728...4_194_303, taken: 4_194_304...5_242_879)
+            name: "exactly 240 KiB splits into two 120 KiB halves",
+            remaining: [nil, 1_000_000...1_245_759],
+            expected: Expected(victim: 1, kept: 1_000_000...1_122_879, taken: 1_122_880...1_245_759)
         ),
-        Case(name: "just under 2 MiB can't be split", remaining: [0...2_097_150, nil], expected: nil),
+        Case(name: "just under 240 KiB can't be split", remaining: [0...245_758, nil], expected: nil),
         Case(name: "every segment finished", remaining: [nil, nil, nil], expected: nil),
         Case(
             name: "31 segments can still split one more",
@@ -156,18 +158,5 @@ struct HostLimitRuleTests {
     @Test(arguments: [(8, 7), (16, 15), (2, 1), (1, 1)])
     func aRefusalLowersTheLimitByOneNeverBelowOne(limit: Int, lowered: Int) {
         #expect(SegmentPlanner.lowered(limit) == lowered)
-    }
-
-    @Test(arguments: [
-        // A learned limit below the setting wins.
-        (8, 3 as Int?, 3),
-        // A learned limit above the setting doesn't raise it.
-        (4, 10 as Int?, 4),
-        // No learned limit: the setting alone.
-        (8, nil as Int?, 8),
-    ])
-    func theSegmentCountRespectsTheHostsLearnedLimit(connections: Int, hostLimit: Int?, segments: Int) {
-        let plan = SegmentPlanner.plan(size: 64 * 1_048_576, connections: connections, hostLimit: hostLimit)
-        #expect(plan.count == segments)
     }
 }

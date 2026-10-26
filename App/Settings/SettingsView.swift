@@ -1,3 +1,4 @@
+import DowlioConnect
 import DowlioCore
 import DowlioLibrary
 import ServiceManagement
@@ -7,22 +8,21 @@ import UserNotifications
 struct SettingsView: View {
     let model: AppModel
     @AppStorage("settingsTab") private var tab = "general"
+    private static let tabs: Set<String> = ["general", "downloads", "connections", "browsers"]
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: Binding(get: { Self.tabs.contains(tab) ? tab : "general" }, set: { tab = $0 })) {
             GeneralSettings(model: model).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
             DownloadsSettings(model: model).tabItem { Label("Downloads", systemImage: "arrow.down.circle") }.tag("downloads")
             ConnectionsSettings(model: model).tabItem { Label("Connections", systemImage: "point.3.connected.trianglepath.dotted") }
                 .tag("connections")
-            ComingSoon(text: "Dowlio uses your Mac's network and proxy settings. More network options come in a later release.")
-                .tabItem { Label("Network", systemImage: "network") }
-                .tag("network")
-            ComingSoon(text: "The Dowlio browser extension, which catches downloads you click in Chrome, Arc, Brave and Edge, comes in a later release.")
+            BrowsersSettings(model: model)
                 .tabItem { Label("Browsers", systemImage: "globe") }
                 .tag("browsers")
         }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
+        .hidingToolbarBackground()
     }
 }
 
@@ -30,7 +30,6 @@ private struct GeneralSettings: View {
     let model: AppModel
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
-    @AppStorage(SettingsKey.hasSeenWelcome) private var hasSeenWelcome = false
     @State private var notificationsDenied = false
 
     var body: some View {
@@ -52,18 +51,10 @@ private struct GeneralSettings: View {
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-            }
-            Section {
-                LabeledContent("Welcome") {
-                    Button("Show Welcome Again") {
-                        hasSeenWelcome = false
-                        model.showLibraryWindow()
-                    }
-                }
+                .pickerStyle(.segmented)
             }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
         .task { await checkNotifications() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await checkNotifications() }
@@ -98,11 +89,14 @@ struct PresenceToggles: View {
         if let loginProblem {
             Text(loginProblem).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }
-        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
-            Toggle("Start in the menu bar", isOn: Binding(get: { startsInMenuBar }, set: { set(.startsInMenuBar, $0) }))
-            Text("Dowlio opens with no window. Open Dowlio in the menu bar brings it up.")
-                .font(DowlioDesign.TypeRole.detail)
-                .foregroundStyle(.secondary)
+        Toggle(isOn: Binding(get: { startsInMenuBar }, set: { set(.startsInMenuBar, $0) })) {
+            HStack(spacing: DowlioDesign.Spacing.xs) {
+                Text("Start in the menu bar")
+                InfoButton(
+                    topic: "Start in the menu bar",
+                    text: "Dowlio opens with no window. Open Dowlio in the menu bar brings it up."
+                )
+            }
         }
         Toggle("Show in menu bar", isOn: Binding(get: { menuBar }, set: { set(.menuBar, $0) }))
             .disabled(!presence.canChangeMenuBar)
@@ -162,18 +156,11 @@ private struct DownloadsSettings: View {
                 Text("Replace").tag(NameConflictPolicy.replace.rawValue)
                 Text("Skip").tag(NameConflictPolicy.skip.rawValue)
             }
-            Section {
-                LabeledContent("History") {
-                    Button("Clear History…") { confirmingClear = true }
-                }
-            } footer: {
-                Text("Removes completed downloads from the list. The files stay where they are.")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
+            LabeledContent("History") {
+                Button("Clear History…") { confirmingClear = true }
             }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { folderPath = folder.path }
         }
@@ -211,17 +198,22 @@ private struct ConnectionsSettings: View {
 
     var body: some View {
         Form {
-            Section {
-                LabeledContent("Connections per download") {
-                    Text("\(connections)").monospacedDigit()
+            LabeledContent {
+                HStack(spacing: DowlioDesign.Spacing.sm) {
+                    Slider(value: Binding(get: { Double(connections) }, set: { connections = Int($0.rounded()) }), in: 1...16, step: 1)
+                        .frame(width: 160)
+                        .accessibilityLabel("Connections per download")
+                        .accessibilityValue("\(connections)")
+                    Text("\(connections)").monospacedDigit().frame(minWidth: 18, alignment: .trailing)
                 }
-                Slider(value: Binding(get: { Double(connections) }, set: { connections = Int($0.rounded()) }), in: 1...16, step: 1)
-                    .accessibilityLabel("Connections per download")
-                    .accessibilityValue("\(connections)")
-            } footer: {
-                Text("8 to 16 is fastest. Servers that allow fewer are detected automatically.")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
+            } label: {
+                HStack(spacing: DowlioDesign.Spacing.xs) {
+                    Text("Connections per download")
+                    InfoButton(
+                        topic: "Connections per download",
+                        text: "8 to 16 is fastest. Servers that allow fewer are detected automatically."
+                    )
+                }
             }
             LabeledContent("Downloads at once") {
                 HStack {
@@ -260,21 +252,70 @@ private struct ConnectionsSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .scrollIndicators(.never)
+        .settingsForm()
     }
 }
 
-private struct ComingSoon: View {
-    let text: String
+private struct BrowsersSettings: View {
+    @Bindable var model: AppModel
 
     var body: some View {
-        Text(text)
-            .font(DowlioDesign.TypeRole.body)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(DowlioDesign.Spacing.xxl)
-            .frame(maxWidth: .infinity, minHeight: 160)
+        Form {
+            if let setup = model.browserSetup {
+                Section {
+                    BrowsersList(setup: setup)
+                }
+            }
+            Section {
+                Toggle(isOn: $model.catchPreferences.catches) {
+                    HStack(spacing: DowlioDesign.Spacing.xs) {
+                        Text("Catch downloads")
+                        InfoButton(
+                            topic: "Catch downloads",
+                            text: "Downloads you start in a browser with Dowlio Connect finish in Dowlio. When Dowlio can't take one, the browser keeps it."
+                        )
+                    }
+                }
+            }
+            Section {
+                if model.catchPreferences.neverCatch.isEmpty {
+                    Text("No sites yet. Add one from Dowlio Connect's popup.")
+                        .font(DowlioDesign.TypeRole.detail)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.catchPreferences.neverCatch, id: \.self) { site in
+                        LabeledContent(site) {
+                            Button("Remove") { model.catchPreferences.catchAgain(site) }
+                                .accessibilityLabel("Remove \(site)")
+                        }
+                    }
+                }
+            } header: {
+                Text("Never catch downloads on")
+            }
+        }
+        .settingsForm()
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func hidingToolbarBackground() -> some View {
+        if #available(macOS 15, *) {
+            toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func settingsForm() -> some View {
+        let form = formStyle(.grouped).scrollIndicators(.never)
+        if #available(macOS 26, *) {
+            form.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            form
+        }
     }
 }
 
@@ -290,5 +331,28 @@ private struct TakingOverExplanation: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: 300, alignment: .leading)
         .padding(DowlioDesign.Spacing.lg)
+    }
+}
+
+struct InfoButton: View {
+    let topic: String
+    let text: String
+    @State private var isShown = false
+
+    var body: some View {
+        Button {
+            isShown.toggle()
+        } label: {
+            Image(systemName: "info.circle").foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("About \(topic)")
+        .popover(isPresented: $isShown, arrowEdge: .bottom) {
+            Text(text)
+                .font(DowlioDesign.TypeRole.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 260, alignment: .leading)
+                .padding(DowlioDesign.Spacing.lg)
+        }
     }
 }

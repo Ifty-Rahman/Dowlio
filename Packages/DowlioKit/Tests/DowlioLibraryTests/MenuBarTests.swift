@@ -64,6 +64,16 @@ struct MenuBarTests {
         #expect(NewLinkRoute(entry: entry, windowIsOpen: windowIsOpen) == route)
     }
 
+    @Test(arguments: [
+        (true, true, NewLinkRoute.quickAdd),
+        (true, false, .quickAdd),
+        (false, true, .sheet),
+        (false, false, .openWindowThenSheet),
+    ])
+    func aLinkSentFromABrowserOpensWhereShowInMenuBarSays(menuBarShown: Bool, windowIsOpen: Bool, route: NewLinkRoute) {
+        #expect(NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: windowIsOpen, menuBarShown: menuBarShown) == route)
+    }
+
     @Test func aProblemReportCarriesOnlyTheVersions() throws {
         let url = ProblemReport.url(appVersion: "0.1.0 (1)", macOSVersion: "27.0.1")
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
