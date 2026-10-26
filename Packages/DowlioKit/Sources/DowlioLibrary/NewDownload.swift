@@ -193,6 +193,11 @@ public struct NewDownloadDraft: Equatable, Sendable {
 
     public var isSingleLink: Bool { links.count == 1 }
 
+    public var webPageToAnalyse: URL? {
+        guard isSingleLink, let url = links.first, case .inspected(let inspection) = check(for: url), inspection.isWebPage else { return nil }
+        return url
+    }
+
     public var canDownload: Bool { !links.isEmpty }
 
     /// Some link couldn't be checked, so Download adds it anyway.

@@ -4,22 +4,31 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NewDownloadSheet: View {
+    let model: AppModel
     @Bindable var sheet: NewDownloadModel
-    let onDownload: (NewDownloadDraft) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let close: () -> Void
     @State private var choosingFolder = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
-            Text("New Download").font(DowlioDesign.TypeRole.title)
+            HStack(alignment: .firstTextBaseline) {
+                Text("New Download").font(DowlioDesign.TypeRole.title)
+                Spacer()
+                if let sentFrom {
+                    Text(sentFrom).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                }
+            }
             linkField
-            if !sheet.draft.lines.isEmpty { cards }
+            if let media = sheet.media {
+                mediaBlock(media)
+            }
+            if !sheet.draft.lines.isEmpty, sheet.media.map({ $0.draft.phase == .nothingFound }) ?? true { cards }
             if let explanation = sheet.draft.explanation {
                 Text(explanation).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
             }
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.md) {
-                GridRow {
-                    Text("Save to")
+            HStack(alignment: .top, spacing: DowlioDesign.Spacing.lg) {
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                    Text("Save to").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     HStack {
                         Label(sheet.draft.folder.lastPathComponent, systemImage: "folder")
                             .lineLimit(1)
@@ -29,8 +38,9 @@ struct NewDownloadSheet: View {
                         Button("Choose…") { choosingFolder = true }
                     }
                 }
-                GridRow {
-                    Text("Connections")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                    Text("Connections").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     HStack {
                         Stepper(value: $sheet.draft.connections, in: 1...16) {
                             Text("\(sheet.draft.connections)").monospacedDigit()
@@ -38,8 +48,12 @@ struct NewDownloadSheet: View {
                         Text("8 to 16 is fastest").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            DisclosureGroup("Advanced") {
+            Toggle("Start immediately", isOn: $sheet.draft.startImmediately)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            DisclosureGroup("Advanced: referrer and user agent") {
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.sm) {
                     GridRow {
                         Text("Referrer")
@@ -53,26 +67,96 @@ struct NewDownloadSheet: View {
                 .padding(.top, DowlioDesign.Spacing.sm)
             }
             HStack {
-                Toggle("Start immediately", isOn: $sheet.draft.startImmediately)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
                 Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel, action: close)
                     .keyboardShortcut(.cancelAction)
-                Button(sheet.draft.downloadsAnyway ? "Download Anyway" : "Download") {
-                    onDownload(sheet.draft)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!sheet.draft.canDownload)
+                Button(downloadTitle, action: download)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!sheet.canDownload)
             }
         }
         .padding(DowlioDesign.Spacing.xl)
-        .frame(width: 520)
+        .frame(width: 560)
         .task { sheet.checkLinks() }
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { sheet.draft.folder = folder }
         }
+    }
+
+    @ViewBuilder private func mediaBlock(_ media: SentPageModel) -> some View {
+        switch media.draft.phase {
+        case .looking:
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
+                MediaHeader(media: media)
+                SkeletonRows()
+                HStack(spacing: DowlioDesign.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking for video and audio on this page…")
+                        .font(DowlioDesign.TypeRole.detail)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case .found:
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
+                MediaHeader(media: media, subtitle: versionsLine(media))
+                if media.draft.candidates.count > 1 { VideoStrip(media: media) }
+                if media.draft.hasVideoAndAudio {
+                    Picker("Show", selection: $sheet.showing) {
+                        Text("Video").tag(SentPageDraft.Showing.video)
+                        Text("Audio").tag(SentPageDraft.Showing.audio)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                VersionRows(media: media, showing: sheet.showing)
+                    .padding(DowlioDesign.Spacing.xs)
+                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.container))
+                    .overlay(RoundedRectangle(cornerRadius: DowlioDesign.Radius.container).strokeBorder(Color(nsColor: .separatorColor)))
+                if media.draft.downloads.count == 1 {
+                    VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                        Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                        TextField("File name", text: $sheet.mediaFileName).textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+        case .nothingFound:
+            HStack(alignment: .top, spacing: DowlioDesign.Spacing.md) {
+                MediaHeader(media: media)
+            }
+            NothingFoundBody()
+        }
+    }
+
+    private func versionsLine(_ media: SentPageModel) -> String {
+        let count = media.draft.selectedCandidate?.versions.count ?? 0
+        return "\(media.draft.host) · \(count) \(count == 1 ? "version" : "versions")"
+    }
+
+    private var sentFrom: String? {
+        guard let url = sheet.draft.links.first, let origin = sheet.draft.origin(for: url), origin.kind == .sent else { return nil }
+        let signedIn = !sheet.draft.options(for: url).cookies.isEmpty
+        return "Sent from \(origin.browser ?? "your browser")" + (signedIn ? ", signed in" : "")
+    }
+
+    private var downloadTitle: String {
+        if let media = sheet.media, media.draft.phase != .nothingFound {
+            let count = media.draft.downloads.count
+            return count > 1 ? "Download \(count)" : "Download"
+        }
+        return sheet.draft.downloadsAnyway ? "Download Anyway" : "Download"
+    }
+
+    private func download() {
+        if let media = sheet.media, media.draft.phase == .found {
+            let draft = sheet.draft
+            let fileName = sheet.chosenFileName
+            Task { await model.addMedia(draft, media: media, fileName: fileName) }
+        } else {
+            model.add(sheet.draft)
+        }
+        close()
     }
 
     private var linkField: some View {

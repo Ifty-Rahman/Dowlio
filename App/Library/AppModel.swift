@@ -34,7 +34,6 @@ final class AppModel {
     /// as after a quiet start at login.
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
-    @ObservationIgnored private lazy var sentPagePanel = SentPagePanel(model: self)
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
     private var catchGrouper = CatchGrouper()
@@ -152,49 +151,37 @@ final class AppModel {
     }
 
     private func receive(_ link: SentLink) {
-        let page = SentPage(url: link.url, browser: link.browser, cookies: link.cookies, userAgent: link.userAgent)
-        receive(page, referrer: link.referrer)
+        switch sentRoute {
+        case .quickAdd:
+            menuBar?.showSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+        case .sheet, .openWindowThenSheet:
+            sentSheet()?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+        }
     }
 
-    private func receive(_ page: SentPage, referrer: URL? = nil) {
-        let file: (URL) -> Void = { [weak self] url in
-            self?.receiveFile(url, referrer: referrer ?? page.url, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)
-        }
-        let menuBarShown = menuBar?.isVisible ?? false
-        switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
+    private func receive(_ page: SentPage) {
+        switch sentRoute {
         case .quickAdd:
-            menuBar?.showSentPage(page, handBack: file)
+            menuBar?.showSentPage(page)
         case .sheet, .openWindowThenSheet:
-            sentPagePanel.show(page, handBack: file)
+            sentSheet()?.analyse(page)
         }
+    }
+
+    private func sentSheet() -> NewDownloadModel? {
+        if let newDownload { return newDownload }
+        showLibraryWindow()
+        newDownload = makeNewDownload()
+        return newDownload
+    }
+
+    private var sentRoute: NewLinkRoute {
+        NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBar?.isVisible ?? false)
     }
 
     func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
         guard let library else { return AsyncStream { $0.yield(.found([])); $0.finish() } }
         return PageAnalyzer { url, options in try await library.inspect(url, options: options) }.analyze(page)
-    }
-
-    private func receiveFile(_ url: URL, referrer: URL?, cookies: [Cookie], browser: String?, userAgent: String?) {
-        let menuBarShown = menuBar?.isVisible ?? false
-        switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
-        case .quickAdd:
-            menuBar?.showSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
-        case .sheet, .openWindowThenSheet:
-            showLibraryWindow()
-            if newDownload == nil { newDownload = makeNewDownload() }
-            newDownload?.draft.addSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
-        }
-    }
-
-    func addSent(_ download: SentPageDraft.Download) async -> DownloadID? {
-        guard let library else { return nil }
-        notifier.askPermissionIfNeeded()
-        let settings = settings
-        var options = settings.options(connections: nil)
-        options.referrer = download.options.referrer
-        options.userAgent = download.options.userAgent
-        options.cookies = download.options.cookies
-        return await library.add(download.source, destination: settings.destination(in: settings.folder), options: options, origin: download.origin)
     }
 
     func downloadInBrowser(_ notice: CatchNotice) {
@@ -244,9 +231,9 @@ final class AppModel {
     }
 
     /// A draft for the New Download sheet or Quick add, checking links through the library.
-    func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
+    func makeNewDownload(_ text: String = "", sentPages: SentPageHost? = nil) -> NewDownloadModel? {
         guard let library else { return nil }
-        let model = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
+        let model = NewDownloadModel(text: text, folder: downloadsFolder, sentPages: sentPages ?? SentPageHost(analyze: analyze)) { url, options in
             try await library.inspect(url, options: options)
         }
         model.draft.connections = settings.connections
@@ -306,6 +293,33 @@ final class AppModel {
         let app = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
         let os = ProcessInfo.processInfo.operatingSystemVersion
         NSWorkspace.shared.open(ProblemReport.url(appVersion: app, macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
+    }
+
+    @discardableResult
+    func addMedia(_ draft: NewDownloadDraft, media: SentPageModel, fileName: String? = nil) async -> [DownloadID] {
+        guard let library else { return [] }
+        notifier.askPermissionIfNeeded()
+        let settings = settings
+        let destination = settings.destination(in: draft.folder)
+        let page = media.draft.page.url
+        let chosen = draft.options(for: page)
+        let origin = draft.origin(for: page)
+        let downloads = media.draft.downloads
+        var ids: [DownloadID] = []
+        for download in downloads {
+            var options = settings.options(connections: chosen.connections)
+            options.referrer = chosen.referrer ?? page
+            options.userAgent = chosen.userAgent
+            options.cookies = chosen.cookies
+            let named = downloads.count == 1 ? fileName : nil
+            options.fileName = named ?? SentPageDraft.fileName(for: download.candidate, version: download.version)
+            let id = await library.add(
+                download.version.source, destination: destination, options: options,
+                startImmediately: draft.startImmediately, origin: origin
+            )
+            ids.append(id)
+        }
+        return ids
     }
 
     func add(_ draft: NewDownloadDraft) {

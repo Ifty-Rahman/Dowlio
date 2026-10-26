@@ -5,22 +5,26 @@ import Foundation
 public struct SentPageDraft: Equatable, Sendable {
     public enum Phase: Equatable, Sendable {
         case looking
-        case oneVideo(Candidate)
-        case several([Candidate])
+        case found
         case nothingFound
-        case started(DownloadID)
+    }
+
+    public enum Showing: Equatable, Sendable {
+        case video
+        case audio
     }
 
     public struct Download: Equatable, Sendable {
-        public var source: DownloadSource
-        public var options: RequestOptions
-        public var origin: DownloadOrigin
+        public var candidate: Candidate
+        public var version: Version
     }
 
     public let page: SentPage
     public private(set) var phase = Phase.looking
-    private var found: [Candidate] = []
-    private var picked: Version?
+    public private(set) var candidates: [Candidate] = []
+    public private(set) var selected = 0
+    private var excluded: Set<Int> = []
+    private var picks: [Int: Version] = [:]
 
     public init(page: SentPage) {
         self.page = page
@@ -31,65 +35,93 @@ public struct SentPageDraft: Equatable, Sendable {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
+    public var sourceLine: String {
+        guard let browser = page.browser else { return host }
+        return "\(host) · from \(browser)" + (page.cookies.isEmpty ? "" : ", signed in")
+    }
+
     public mutating func update(_ analysis: PageAnalysis) -> URL? {
         switch analysis {
         case .looking:
             return nil
         case .plainFile(let url):
             return url
-        case .found(let candidates):
-            found = candidates
-            phase = switch candidates.count {
-            case 0: .nothingFound
-            case 1: .oneVideo(candidates[0])
-            default: .several(candidates)
-            }
+        case .found(let found):
+            candidates = found
+            selected = 0
+            excluded = []
+            picks = [:]
+            phase = found.isEmpty ? .nothingFound : .found
             return nil
         }
     }
 
-    public mutating func choose(_ candidate: Candidate) {
-        phase = .oneVideo(candidate)
-        picked = nil
+    public var selectedCandidate: Candidate? {
+        candidates.indices.contains(selected) ? candidates[selected] : nil
     }
 
-    public var chosenVersion: Version? {
-        guard case .oneVideo(let candidate) = phase else { return nil }
-        if let picked, candidate.versions.contains(picked) { return picked }
-        return candidate.versions.first
+    public mutating func select(_ index: Int) {
+        guard candidates.indices.contains(index) else { return }
+        selected = index
     }
+
+    public func chosenVersion(of index: Int) -> Version? {
+        guard candidates.indices.contains(index) else { return nil }
+        if let pick = picks[index], candidates[index].versions.contains(pick) { return pick }
+        return candidates[index].versions.first
+    }
+
+    public var chosenVersion: Version? { chosenVersion(of: selected) }
 
     public mutating func pick(_ version: Version) {
-        picked = version
+        picks[selected] = version
     }
 
-    public mutating func backToList() {
-        guard found.count > 1 else { return }
-        phase = .several(found)
+    public func isIncluded(_ index: Int) -> Bool { !excluded.contains(index) }
+
+    public mutating func include(_ index: Int, _ included: Bool) {
+        if included { excluded.remove(index) } else { excluded.insert(index) }
     }
 
-    public var canGoBack: Bool {
-        if case .oneVideo = phase { found.count > 1 } else { false }
+    public var downloads: [Download] {
+        candidates.indices.compactMap { index in
+            guard isIncluded(index), let version = chosenVersion(of: index) else { return nil }
+            return Download(candidate: candidates[index], version: version)
+        }
     }
 
-    public mutating func started(_ id: DownloadID) {
-        phase = .started(id)
+    public var hasVideoAndAudio: Bool {
+        let versions = selectedCandidate?.versions ?? []
+        return versions.contains(where: Self.isAudio) && versions.contains { !Self.isAudio($0) }
     }
 
-    public func download(_ version: Version) -> Download {
-        var options = RequestOptions()
-        options.cookies = page.cookies
-        options.userAgent = page.userAgent
-        options.referrer = page.url
-        return Download(source: version.source, options: options, origin: DownloadOrigin(kind: .sent, browser: page.browser))
+    public func versions(showing: Showing) -> [Version] {
+        (selectedCandidate?.versions ?? []).filter { Self.isAudio($0) == (showing == .audio) }
     }
 
-    public static func summary(of version: Version) -> String {
+    public static func isAudio(_ version: Version) -> Bool {
+        if let type = version.contentType?.lowercased() { return type.hasPrefix("audio/") }
+        return ["m4a", "mp3", "aac", "oga", "opus", "wav", "flac"].contains(version.source.url.pathExtension.lowercased())
+    }
+
+    public static func title(of version: Version) -> String {
         let ext = version.source.url.pathExtension.uppercased()
-        let subtype = version.contentType?.split(separator: "/").last.map { $0.uppercased() }
-        var parts = [ext.isEmpty ? subtype : ext].compactMap { $0 }
-        if let size = version.totalBytes { parts.append(ByteText.string(size)) }
-        return parts.joined(separator: " · ")
+        if !ext.isEmpty { return ext }
+        return version.contentType?.split(separator: "/").last.map { $0.uppercased() } ?? "File"
+    }
+
+    public static func size(of version: Version) -> String? {
+        version.totalBytes.map(ByteText.string)
+    }
+
+    public static func fileName(for candidate: Candidate, version: Version) -> String {
+        let ext = version.source.url.pathExtension
+        let cleaned = candidate.label
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = cleaned.isEmpty ? version.source.url.deletingPathExtension().lastPathComponent : String(cleaned.prefix(120))
+        return ext.isEmpty ? base : "\(base).\(ext)"
     }
 
     public static func durationText(_ seconds: Double) -> String {

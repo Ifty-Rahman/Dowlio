@@ -10,23 +10,13 @@ struct MenuBarPopover: View {
     let toggleMore: () -> Void
 
     var body: some View {
-        Group {
-            if let sentPage = panel.sentPages.current {
-                SentPageView(
-                    model: model,
-                    sentPage: sentPage,
-                    backTitle: SentPageHost.backTitle(links: panel.pendingLinks),
-                    back: { panel.sentPages.backToLinks() },
-                    close: { if panel.pendingLinks > 0 { panel.sentPages.backToLinks() } else { close() } }
-                )
-            } else if panel.showsQuickAdd {
-                QuickAddView(model: model, panel: panel, close: close)
-            } else {
-                summary
-            }
+        if panel.showsQuickAdd {
+            QuickAddView(model: model, panel: panel, close: close)
+        } else {
+            summary
+                .padding(DowlioDesign.Spacing.lg)
+                .frame(width: 340, alignment: .leading)
         }
-        .padding(DowlioDesign.Spacing.lg)
-        .frame(width: 320, alignment: .leading)
     }
 
     private var summary: some View {

@@ -26,10 +26,9 @@ public final class SentPageModel {
         analysis?.cancel()
     }
 
-    public func choose(_ candidate: Candidate) { draft.choose(candidate) }
-    public func backToList() { draft.backToList() }
+    public func select(_ index: Int) { draft.select(index) }
     public func pick(_ version: Version) { draft.pick(version) }
-    public func started(_ id: DownloadID) { draft.started(id) }
+    public func include(_ index: Int, _ included: Bool) { draft.include(index, included) }
 }
 
 @MainActor
@@ -52,16 +51,8 @@ public final class SentPageHost {
         }
     }
 
-    public func backToLinks() {
+    public func clear() {
         current?.stop()
         current = nil
-    }
-
-    public static func backTitle(links: Int) -> String? {
-        switch links {
-        case 0: nil
-        case 1: "Back to 1 link"
-        default: "Back to \(links) links"
-        }
     }
 }

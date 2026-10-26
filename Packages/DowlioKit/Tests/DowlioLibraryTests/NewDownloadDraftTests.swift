@@ -183,6 +183,35 @@ struct NewDownloadDraftTests {
         #expect(LinkStatus(failure: .tooManyRetries).reason == "Download Anyway still adds it, and Dowlio tries again when it starts.")
     }
 
+    @Test func aSingleLinkThatIsAWebPageIsThePageToLookAtForMedia() {
+        let page = URL(string: "https://www.w3schools.com/html/html5_video.asp")!
+        var draft = NewDownloadDraft(text: page.absoluteString, folder: folder)
+        _ = draft.linksToCheck()
+        #expect(draft.webPageToAnalyse == nil)
+
+        draft.record(.inspected(Self.webPage), for: page, checkedWith: draft.inspectionOptions)
+
+        #expect(draft.webPageToAnalyse == page)
+    }
+
+    @Test func aWebPageAmongSeveralLinksOrAFileIsntLookedAtForMedia() {
+        let page = URL(string: "https://example.com/watch")!
+        var several = NewDownloadDraft(text: "\(page.absoluteString)\n\(zip.absoluteString)", folder: folder)
+        _ = several.linksToCheck()
+        several.record(.inspected(Self.webPage), for: page, checkedWith: several.inspectionOptions)
+        var file = NewDownloadDraft(text: zip.absoluteString, folder: folder)
+        _ = file.linksToCheck()
+        file.record(.inspected(Self.inspection("one.zip")), for: zip, checkedWith: file.inspectionOptions)
+
+        #expect(several.webPageToAnalyse == nil)
+        #expect(file.webPageToAnalyse == nil)
+    }
+
+    private static let webPage = LinkInspection(
+        fileName: "html5_video.asp.html", totalBytes: nil, contentType: "text/html", category: .documents,
+        splitsIntoSegments: false, cannotResumeBecause: .sizeUnknown, isNotSecure: false
+    )
+
     private static func inspection(_ name: String) -> LinkInspection {
         LinkInspection(
             fileName: name, totalBytes: 10, contentType: nil, category: .archives,

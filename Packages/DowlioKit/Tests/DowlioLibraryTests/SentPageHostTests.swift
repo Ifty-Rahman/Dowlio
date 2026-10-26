@@ -29,7 +29,7 @@ struct SentPageHostTests {
         #expect(host.current?.draft.phase == .looking)
 
         analyses.streams[first.url]?.yield(.found([clip]))
-        try await waitUntil { host.current?.draft.phase == .oneVideo(clip) }
+        try await waitUntil { host.current?.draft.phase == .found && host.current?.draft.candidates == [clip] }
     }
 
     @Test func aSecondPageReplacesTheFirstAndTheFirstStopsListening() async throws {
@@ -48,11 +48,11 @@ struct SentPageHostTests {
         #expect(replaced.draft.phase == .looking)
     }
 
-    @Test func goingBackToLinksDropsThePage() {
+    @Test func clearingDropsThePage() {
         let host = SentPageHost(analyze: Analyses().analyze)
         host.send(first) { _ in }
 
-        host.backToLinks()
+        host.clear()
 
         #expect(host.current == nil)
     }
@@ -66,11 +66,6 @@ struct SentPageHostTests {
         analyses.streams[first.url]?.yield(.plainFile(first.url))
 
         try await waitUntil { handedBack.url == first.url && host.current == nil }
-    }
-
-    @Test(arguments: [(0, nil), (1, "Back to 1 link"), (3, "Back to 3 links")] as [(Int, String?)])
-    func theWayBackNamesHowManyLinksWait(links: Int, title: String?) {
-        #expect(SentPageHost.backTitle(links: links) == title)
     }
 
     private final class HandedBack {
