@@ -8,20 +8,40 @@ public struct PageAnalyzer: Sendable {
 
     private let inspect: Inspect
     private let session: URLSession
+    private let play: LookAgain?
 
-    public init(session: URLSession = .shared, inspect: @escaping Inspect) {
+    public init(session: URLSession = .shared, lookAgain: LookAgain? = nil, inspect: @escaping Inspect) {
         self.session = session
+        self.play = lookAgain
         self.inspect = inspect
     }
 
     public func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+        stream { await run(page, report: $0) }
+    }
+
+    public func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+        stream { await playAndRead(page, report: $0) }
+    }
+
+    private func stream(_ work: @escaping @Sendable (@escaping @Sendable (PageAnalysis) -> Void) async -> Void) -> AsyncStream<PageAnalysis> {
         AsyncStream { continuation in
             let task = Task {
-                await run(page) { continuation.yield($0) }
+                await work { continuation.yield($0) }
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    private func playAndRead(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+        guard let play else { return report(.found([])) }
+        report(.playing)
+        let played = await play(page)
+        guard !Task.isCancelled else { return }
+        let found = await candidates(on: page.played(played), reading: nil) { _ in }
+        guard !Task.isCancelled else { return }
+        report(.found(found))
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
@@ -39,7 +59,12 @@ public struct PageAnalyzer: Sendable {
             return report(.found([Candidate(label: linked.fileName, versions: [version])]))
         }
 
-        let reading = await read(page)
+        let found = await candidates(on: page, reading: await read(page), report: report)
+        if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
+        report(.found(found))
+    }
+
+    private func candidates(on page: SentPage, reading: HTMLReader?, report: (PageAnalysis) -> Void) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
         for media in reading?.media ?? [] { players.add(media, from: "html") }
@@ -79,7 +104,7 @@ public struct PageAnalyzer: Sendable {
         }
         let playlists = page.watched.filter { HLSVersions.isPlaylist($0.url, contentType: $0.contentType) }.map(\.url)
         let streamed = await playlistCandidates(playlists, page: page, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
-        report(.found(Self.merged(kept + streamed)))
+        return Self.merged(kept + streamed)
     }
 
     private func playlistCandidates(_ urls: [URL], page: SentPage, label: String, thumbnail: URL?) async -> [Candidate] {
@@ -202,7 +227,7 @@ public struct PageAnalyzer: Sendable {
         return site(of: version.source.url) != site(of: page)
     }
 
-    private static func site(of url: URL) -> String {
+    public static func site(of url: URL) -> String {
         let host = url.host(percentEncoded: false)?.lowercased() ?? ""
         let port = url.port.map { ":\($0)" } ?? ""
         let labels = host.split(separator: ".")

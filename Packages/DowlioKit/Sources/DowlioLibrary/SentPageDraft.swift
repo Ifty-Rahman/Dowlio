@@ -5,6 +5,7 @@ import Foundation
 public struct SentPageDraft: Equatable, Sendable {
     public enum Phase: Equatable, Sendable {
         case looking
+        case playing
         case found
         case nothingFound
     }
@@ -27,6 +28,13 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var selected = 0
     private var excluded: Set<Int> = []
     private var picks: [Int: Version] = [:]
+    private var play: PlayRun?
+    private var emptyResults = 0
+
+    private enum PlayRun {
+        case byItself
+        case asked
+    }
 
     public init(page: SentPage, preference: QualityPreference = QualityPreference()) {
         self.page = page
@@ -47,6 +55,10 @@ public struct SentPageDraft: Equatable, Sendable {
         switch analysis {
         case .looking:
             return nil
+        case .playing:
+            phase = .playing
+            if play == nil { play = .byItself }
+            return nil
         case .plainFile(let url):
             return url
         case .found(let found):
@@ -56,8 +68,38 @@ public struct SentPageDraft: Equatable, Sendable {
             picks = [:]
             showing = .video
             phase = found.isEmpty ? .nothingFound : .found
+            if found.isEmpty { emptyResults += 1 }
             return nil
         }
+    }
+
+    public mutating func lookAgain() {
+        play = .asked
+        phase = .playing
+    }
+
+    public mutating func cancelPlaying() {
+        guard phase == .playing else { return }
+        phase = .nothingFound
+        play = nil
+    }
+
+    public var lookingLine: String {
+        phase == .playing ? "Playing the page to find the video" : "Looking at the page"
+    }
+
+    public var nothingFound: NothingFoundText {
+        let explanation = switch play {
+        case .byItself: "Dowlio played the page in a hidden window by itself, and no video loaded. Try Again plays it once more, for up to 10 seconds."
+        case .asked: "Dowlio played the page in a hidden window, and no video loaded. Try Again plays it once more, for up to 10 seconds."
+        case nil: "Look Again opens the page in a hidden window for up to 10 seconds to catch its video."
+        }
+        return NothingFoundText(
+            title: "No video or audio found on this page",
+            explanation: explanation,
+            action: play == nil ? "Look Again" : "Try Again",
+            note: emptyResults >= 2 ? "This page may not have a video, or its video is protected." : nil
+        )
     }
 
     public var selectedCandidate: Candidate? {
@@ -115,6 +157,20 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public func versions(showing: Showing) -> [Version] {
         (selectedCandidate?.versions ?? []).filter { MediaText.isAudio($0) == (showing == .audio) }
+    }
+}
+
+public struct NothingFoundText: Equatable, Sendable {
+    public var title: String
+    public var explanation: String
+    public var action: String
+    public var note: String?
+
+    public init(title: String, explanation: String, action: String, note: String?) {
+        self.title = title
+        self.explanation = explanation
+        self.action = action
+        self.note = note
     }
 }
 

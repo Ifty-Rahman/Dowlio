@@ -180,12 +180,26 @@ final class AppModel {
     }
 
     func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
-        guard let library else { return AsyncStream { $0.yield(.found([])); $0.finish() } }
-        let analysis = PageAnalyzer { url, options in try await library.inspect(url, options: options) }.analyze(page)
+        recorded(page) { $0.analyze(page) }
+    }
+
+    func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+        recorded(page) { $0.lookAgain(page) }
+    }
+
+    private var analyzer: PageAnalyzer? {
+        guard let library else { return nil }
+        return PageAnalyzer(lookAgain: { await HiddenPlayer.play($0) }) { url, options in
+            try await library.inspect(url, options: options)
+        }
+    }
+
+    private func recorded(_ page: SentPage, _ run: (PageAnalyzer) -> AsyncStream<PageAnalysis>) -> AsyncStream<PageAnalysis> {
+        guard let analyzer else { return .nothingFound }
         #if DEBUG
-        return SentPageRecord.recording(page, analysis)
+        return SentPageRecord.recording(page, run(analyzer))
         #else
-        return analysis
+        return run(analyzer)
         #endif
     }
 
@@ -239,7 +253,7 @@ final class AppModel {
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "", sentPages: SentPageHost? = nil) -> NewDownloadModel? {
         guard let library else { return nil }
-        let host = sentPages ?? SentPageHost(analyze: analyze) { AppModel.currentSettings().qualityPreference }
+        let host = sentPages ?? SentPageHost(analyze: analyze, lookAgain: lookAgain) { AppModel.currentSettings().qualityPreference }
         let model = NewDownloadModel(text: text, folder: downloadsFolder, sentPages: host) { url, options in
             try await library.inspect(url, options: options)
         }

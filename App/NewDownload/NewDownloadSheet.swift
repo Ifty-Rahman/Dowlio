@@ -86,16 +86,11 @@ struct NewDownloadSheet: View {
 
     @ViewBuilder private func mediaBlock(_ media: SentPageModel) -> some View {
         switch media.draft.phase {
-        case .looking:
+        case .looking, .playing:
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
                 MediaHeader(media: media)
                 SkeletonRows()
-                HStack(spacing: DowlioDesign.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text("Looking for video and audio on this page…")
-                        .font(DowlioDesign.TypeRole.detail)
-                        .foregroundStyle(.secondary)
-                }
+                LookingLine(media: media)
             }
         case .found:
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
@@ -113,7 +108,7 @@ struct NewDownloadSheet: View {
             HStack(alignment: .top, spacing: DowlioDesign.Spacing.md) {
                 MediaHeader(media: media)
             }
-            NothingFoundBody()
+            NothingFoundBody(media: media)
         }
     }
 

@@ -119,6 +119,7 @@ public struct Version: Equatable, Sendable {
 
 public enum PageAnalysis: Equatable, Sendable {
     case looking([Candidate])
+    case playing
     case plainFile(URL)
     case found([Candidate])
 }

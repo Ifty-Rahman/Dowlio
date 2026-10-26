@@ -67,7 +67,7 @@ final class NewDownloadModel: Identifiable {
     var canDownload: Bool {
         guard let media else { return draft.canDownload }
         switch media.draft.phase {
-        case .looking: return false
+        case .looking, .playing: return false
         case .found: return !media.draft.downloads.isEmpty
         case .nothingFound: return draft.canDownload
         }

@@ -419,18 +419,43 @@ private struct SelectionMark: View {
     }
 }
 
-struct NothingFoundBody: View {
+struct LookingLine: View {
+    let media: SentPageModel
+
     var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.xs) {
+            ProgressView().controlSize(.small)
+            Text(media.draft.lookingLine)
+            if media.draft.phase == .playing {
+                Spacer(minLength: DowlioDesign.Spacing.sm)
+                Button("Cancel") { media.cancelPlaying() }
+                    .controlSize(.small)
+            }
+        }
+        .font(DowlioDesign.TypeRole.detail)
+        .foregroundStyle(.secondary)
+    }
+}
+
+struct NothingFoundBody: View {
+    let media: SentPageModel
+
+    var body: some View {
+        let text = media.draft.nothingFound
         VStack(spacing: DowlioDesign.Spacing.sm) {
             Image(systemName: "video.slash")
                 .font(.system(size: 26))
                 .foregroundStyle(.secondary)
-            Text("No video or audio on this page").font(DowlioDesign.TypeRole.heading)
-            Text("Dowlio couldn't find anything to download here. You can open Dowlio and paste a different link.")
-                .font(DowlioDesign.TypeRole.detail)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(text.title).font(DowlioDesign.TypeRole.heading)
+            Group {
+                Text(text.explanation)
+                if let note = text.note { Text(note) }
+            }
+            .font(DowlioDesign.TypeRole.detail)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            Button(text.action) { media.lookAgain() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, DowlioDesign.Spacing.sm)

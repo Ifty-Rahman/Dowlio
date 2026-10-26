@@ -34,9 +34,9 @@ struct QuickAddView: View {
             MediaCard(media: media, makesDefaultQuality: Bindable(sheet).makesDefaultQuality)
         } else {
             if let media = sheet.media, media.draft.phase == .nothingFound {
-                Label("No video or audio on this page", systemImage: "video.slash")
-                    .font(DowlioDesign.TypeRole.detail)
-                    .foregroundStyle(.secondary)
+                NothingFoundBody(media: media)
+                    .padding(.horizontal, DowlioDesign.Spacing.md)
+                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
             }
             if links.count == 1, let url = links.first {
                 QuickAddCard(url: url, check: sheet.draft.check(for: url))
@@ -101,17 +101,12 @@ private struct MediaCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
             switch media.draft.phase {
-            case .looking:
+            case .looking, .playing:
                 HStack(spacing: DowlioDesign.Spacing.md) {
                     InitialTile(host: media.draft.host).frame(width: 44, height: 44)
                     VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                         Text(media.draft.page.title ?? media.draft.host).font(DowlioDesign.TypeRole.heading).lineLimit(2)
-                        HStack(spacing: DowlioDesign.Spacing.xs) {
-                            ProgressView().controlSize(.small)
-                            Text("Looking for video and audio…")
-                        }
-                        .font(DowlioDesign.TypeRole.detail)
-                        .foregroundStyle(.secondary)
+                        LookingLine(media: media)
                     }
                 }
             default:

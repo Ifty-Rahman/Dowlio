@@ -76,3 +76,60 @@ struct SentPageHostTests {
         while !condition() { try await Task.sleep(for: .milliseconds(10)) }
     }
 }
+
+@MainActor
+@Suite(.timeLimit(.minutes(1)))
+struct LookAgainHostTests {
+    private final class Plays {
+        var count = 0
+        var stream: AsyncStream<PageAnalysis>.Continuation?
+
+        func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+            count += 1
+            let (stream, continuation) = AsyncStream.makeStream(of: PageAnalysis.self)
+            self.stream = continuation
+            return stream
+        }
+    }
+
+    private let page = SentPage(url: URL(string: "https://a.example/watch")!)
+    private let clip = Candidate(label: "Clip", versions: [Version(source: .file(URL(string: "https://a.example/clip.mp4")!))])
+
+    private func host(_ plays: Plays) -> SentPageHost {
+        SentPageHost(analyze: { _ in AsyncStream { $0.yield(.found([])) } }, lookAgain: plays.lookAgain)
+    }
+
+    @Test func lookAgainPlaysThePageAndShowsWhatItFinds() async throws {
+        let plays = Plays()
+        let host = host(plays)
+        host.send(page) { _ in }
+        try await waitUntil { host.current?.draft.phase == .nothingFound }
+
+        host.current?.lookAgain()
+        #expect(host.current?.draft.phase == .playing)
+        plays.stream?.yield(.playing)
+        plays.stream?.yield(.found([clip]))
+
+        try await waitUntil { host.current?.draft.phase == .found }
+        #expect(plays.count == 1)
+        #expect(host.current?.draft.candidates == [clip])
+    }
+
+    @Test func cancellingPlayingStopsIt() async throws {
+        let plays = Plays()
+        let host = host(plays)
+        host.send(page) { _ in }
+        try await waitUntil { host.current?.draft.phase == .nothingFound }
+        host.current?.lookAgain()
+
+        host.current?.cancelPlaying()
+        plays.stream?.yield(.found([clip]))
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(host.current?.draft.phase == .nothingFound)
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        while !condition() { try await Task.sleep(for: .milliseconds(10)) }
+    }
+}
