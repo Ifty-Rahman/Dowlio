@@ -92,16 +92,27 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public var hasVideoAndAudio: Bool {
         let versions = selectedCandidate?.versions ?? []
-        return versions.contains(where: Self.isAudio) && versions.contains { !Self.isAudio($0) }
+        return versions.contains(where: MediaText.isAudio) && versions.contains { !MediaText.isAudio($0) }
     }
 
     public func versions(showing: Showing) -> [Version] {
-        (selectedCandidate?.versions ?? []).filter { Self.isAudio($0) == (showing == .audio) }
+        (selectedCandidate?.versions ?? []).filter { MediaText.isAudio($0) == (showing == .audio) }
     }
 
+    public static func fileName(for candidate: Candidate, version: Version) -> String {
+        let ext = version.source.url.pathExtension
+        let cleaned = candidate.label
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = cleaned.isEmpty ? version.source.url.deletingPathExtension().lastPathComponent : String(cleaned.prefix(120))
+        return ext.isEmpty ? base : "\(base).\(ext)"
+    }
+}
+
+public enum MediaText {
     public static func isAudio(_ version: Version) -> Bool {
-        if let type = version.contentType?.lowercased() { return type.hasPrefix("audio/") }
-        return ["m4a", "mp3", "aac", "oga", "opus", "wav", "flac"].contains(version.source.url.pathExtension.lowercased())
+        MediaFile.kind(of: version.source.url, contentType: version.contentType) == .audio
     }
 
     public static func title(of version: Version) -> String {
@@ -114,17 +125,7 @@ public struct SentPageDraft: Equatable, Sendable {
         version.totalBytes.map(ByteText.string)
     }
 
-    public static func fileName(for candidate: Candidate, version: Version) -> String {
-        let ext = version.source.url.pathExtension
-        let cleaned = candidate.label
-            .replacingOccurrences(of: ":", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = cleaned.isEmpty ? version.source.url.deletingPathExtension().lastPathComponent : String(cleaned.prefix(120))
-        return ext.isEmpty ? base : "\(base).\(ext)"
-    }
-
-    public static func durationText(_ seconds: Double) -> String {
+    public static func duration(_ seconds: Double) -> String {
         let total = Int(seconds.rounded())
         let (hours, minutes, rest) = (total / 3600, total % 3600 / 60, total % 60)
         return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)

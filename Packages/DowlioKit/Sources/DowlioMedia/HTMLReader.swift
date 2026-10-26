@@ -6,9 +6,6 @@ struct HTMLReader {
     private(set) var image: URL?
     private(set) var duration: Double?
 
-    static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "mkv"]
-    static let audioExtensions: Set<String> = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac"]
-
     init(_ html: String, base: URL) {
         var pageTitle: String?
         var openMedia = ScannedMedia.Kind.video
@@ -33,7 +30,7 @@ struct HTMLReader {
             case "/video", "/audio":
                 player = nil
             case "a":
-                guard let url = link("href"), let kind = Self.kind(ofFileAt: url) else { continue }
+                guard let url = link("href"), let kind = MediaFile.kind(of: url) else { continue }
                 add(ScannedMedia(url: url, kind: kind))
             case "meta":
                 readMeta(attributes, base: base)
@@ -49,13 +46,6 @@ struct HTMLReader {
         if title == nil, let pageTitle, !pageTitle.isEmpty { title = pageTitle }
     }
 
-    static func kind(ofFileAt url: URL) -> ScannedMedia.Kind? {
-        let ext = url.pathExtension.lowercased()
-        if videoExtensions.contains(ext) { return .video }
-        if audioExtensions.contains(ext) { return .audio }
-        return nil
-    }
-
     private mutating func add(_ found: ScannedMedia) {
         guard !media.contains(where: { $0.url == found.url }) else { return }
         media.append(found)
@@ -66,7 +56,7 @@ struct HTMLReader {
               let content = attributes["content"] else { return }
         switch key {
         case "og:video", "og:video:url", "og:video:secure_url", "twitter:player:stream":
-            if let url = Self.resolve(content, against: base), Self.kind(ofFileAt: url) != .audio || key.hasPrefix("og:video") {
+            if let url = Self.resolve(content, against: base), MediaFile.kind(of: url) != .audio || key.hasPrefix("og:video") {
                 add(ScannedMedia(url: url, kind: .video))
             }
         case "og:audio", "og:audio:url", "og:audio:secure_url":

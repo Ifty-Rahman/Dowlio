@@ -1,3 +1,4 @@
+import DowlioConnect
 import DowlioCore
 import DowlioLibrary
 import DowlioMedia
@@ -33,6 +34,10 @@ final class NewDownloadModel: Identifiable {
     }
 
     var media: SentPageModel? { sentPages.current }
+
+    func addSent(_ link: SentLink) {
+        draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+    }
 
     func discardSentPage() {
         sentPages.clear()
@@ -80,7 +85,7 @@ final class NewDownloadModel: Identifiable {
         sentPages.clear()
         draft.text = ""
         draft.addSent(page.url, referrer: nil, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)
-        sentPages.send(page) { _ in }
+        sentPages.send(page)
     }
 
     /// Checks every link that needs it, now.
@@ -105,7 +110,7 @@ final class NewDownloadModel: Identifiable {
     private func record(_ check: NewDownloadDraft.Check, for url: URL, checkedWith headers: RequestOptions) {
         draft.record(check, for: url, checkedWith: headers)
         guard draft.webPageToAnalyse == url, media?.draft.page.url != url else { return }
-        sentPages.send(SentPage(url: url, cookies: headers.cookies, userAgent: headers.userAgent)) { _ in }
+        sentPages.send(SentPage(url: url, cookies: headers.cookies, userAgent: headers.userAgent))
     }
 
     private func scheduleChecks() {

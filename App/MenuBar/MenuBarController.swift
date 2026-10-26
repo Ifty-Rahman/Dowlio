@@ -74,9 +74,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         catchToast.show(notice, under: button)
     }
 
-    func showSent(_ url: URL, referrer: URL?, cookies: [Cookie], browser: String?, userAgent: String?) {
+    func showSent(_ link: SentLink) {
         if !popover.isShown { open() }
-        showQuickAdd()?.draft.addSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
+        showQuickAdd()?.addSent(link)
     }
 
     func showSentPage(_ page: SentPage) {

@@ -78,13 +78,21 @@ struct SentPageDraftTests {
         #expect(draft.versions(showing: .audio) == [m4a])
     }
 
+    @Test func aFilesTypeDecidesVideoOrAudioBeforeItsExtension() {
+        let bare = Version(source: .file(URL(string: "https://cdn.example.com/talk.ogg")!))
+
+        #expect(MediaText.isAudio(bare))
+        #expect(!MediaText.isAudio(ogg))
+        #expect(MediaText.isAudio(m4a))
+    }
+
     @Test func aVersionRowNamesItsTypeAndSize() {
-        #expect(SentPageDraft.title(of: mp4) == "MP4")
-        #expect(SentPageDraft.size(of: mp4) == "38.2 MB")
-        #expect(SentPageDraft.title(of: Version(source: .file(URL(string: "https://a.example/b")!), contentType: "audio/mpeg")) == "MPEG")
-        #expect(SentPageDraft.size(of: ogg.withoutSize) == nil)
-        #expect(SentPageDraft.durationText(61) == "1:01")
-        #expect(SentPageDraft.durationText(3725) == "1:02:05")
+        #expect(MediaText.title(of: mp4) == "MP4")
+        #expect(MediaText.size(of: mp4) == "38.2 MB")
+        #expect(MediaText.title(of: Version(source: .file(URL(string: "https://a.example/b")!), contentType: "audio/mpeg")) == "MPEG")
+        #expect(MediaText.size(of: ogg.withoutSize) == nil)
+        #expect(MediaText.duration(61) == "1:01")
+        #expect(MediaText.duration(3725) == "1:02:05")
     }
 
     @Test func theSourceLineSaysWhichBrowserSentItAndWhetherItWasSignedIn() {

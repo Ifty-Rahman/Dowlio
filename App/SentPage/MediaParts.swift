@@ -63,7 +63,7 @@ struct VideoThumbnail: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if let duration {
-                Text(SentPageDraft.durationText(duration))
+                Text(MediaText.duration(duration))
                     .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4)
@@ -121,11 +121,11 @@ private struct VersionRow: View {
                 Image(systemName: isChosen ? "smallcircle.filled.circle.fill" : "circle")
                     .font(.system(size: 15))
                     .foregroundStyle(isChosen ? Color.accentColor : Color.secondary)
-                Text(SentPageDraft.title(of: version))
+                Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
                     .frame(width: 64, alignment: .leading)
                 Spacer(minLength: DowlioDesign.Spacing.sm)
-                Text(SentPageDraft.size(of: version) ?? "")
+                Text(MediaText.size(of: version) ?? "")
                     .font(DowlioDesign.TypeRole.detailMetric)
             }
             .padding(.horizontal, DowlioDesign.Spacing.sm)

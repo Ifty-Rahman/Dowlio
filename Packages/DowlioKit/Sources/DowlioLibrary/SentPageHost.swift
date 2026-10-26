@@ -41,13 +41,13 @@ public final class SentPageHost {
         self.analyze = analyze
     }
 
-    public func send(_ page: SentPage, handBack: @escaping (URL) -> Void) {
+    public func send(_ page: SentPage, handBack: ((URL) -> Void)? = nil) {
         current?.stop()
         let model = SentPageModel(page: page)
         current = model
         model.listen(to: analyze(page)) { [weak self, weak model] file in
             if let self, self.current === model { self.current = nil }
-            handBack(file)
+            handBack?(file)
         }
     }
 

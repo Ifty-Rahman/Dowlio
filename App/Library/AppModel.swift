@@ -153,9 +153,9 @@ final class AppModel {
     private func receive(_ link: SentLink) {
         switch sentRoute {
         case .quickAdd:
-            menuBar?.showSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+            menuBar?.showSent(link)
         case .sheet, .openWindowThenSheet:
-            sentSheet()?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+            sentSheet()?.addSent(link)
         }
     }
 
