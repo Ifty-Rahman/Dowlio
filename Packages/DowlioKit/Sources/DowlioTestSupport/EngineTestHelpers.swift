@@ -38,10 +38,24 @@ public func waitUntil(_ condition: @Sendable () -> Bool) async throws {
 public enum TestFiles {
     /// A fresh empty folder under the temporary directory.
     public static func makeFolder() throws -> URL {
-        let folder = FileManager.default.temporaryDirectory
-            .appending(path: "DowlioTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let folder = runFolder.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
+    }
+
+    public static let runFolder: URL = {
+        let root = FileManager.default.temporaryDirectory.appending(path: "DowlioTests", directoryHint: .isDirectory)
+        removeEndedRuns(in: root) { kill($0, 0) == 0 || errno == EPERM }
+        atexit { try? FileManager.default.removeItem(at: TestFiles.runFolder) }
+        return root.appending(path: "run-\(getpid())", directoryHint: .isDirectory)
+    }()
+
+    public static func removeEndedRuns(in root: URL, isRunning: (pid_t) -> Bool) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        for name in names where name.hasPrefix("run-") {
+            guard let pid = pid_t(name.dropFirst(4)), !isRunning(pid) else { continue }
+            try? FileManager.default.removeItem(at: root.appending(path: name))
+        }
     }
 
     public static func sha256(_ data: Data) -> String {
