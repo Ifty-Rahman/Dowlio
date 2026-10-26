@@ -6,6 +6,7 @@ extension DownloadRun {
         case probe
         case whole
         case segment(Int)
+        case fragment(FragmentPosition)
     }
 
     func withRetries<T: Sendable>(_ key: RetryKey, host: URL, _ work: () async throws -> T) async throws -> T {
@@ -24,6 +25,7 @@ extension DownloadRun {
                 let delay = policy.delay(afterFailure: failures, retryAfter: retryable.retryAfter, random: configuration.random)
                 retries.begin(key, attempt: failures, nextTry: configuration.now().addingTimeInterval(delay.timeInterval))
                 if let plan = planStore.plan { saveManifest(plan) }
+                if let plan = mediaPlans.plan { saveManifest(plan) }
                 await publishRetryState()
                 do {
                     try await Task.sleep(for: delay)
@@ -43,10 +45,11 @@ extension DownloadRun {
 
     func lowerLimit(of host: URL, for key: RetryKey) {
         guard let hostKey = host.hostLimitKey else { return }
-        if case .segment = key {
+        switch key {
+        case .segment, .fragment:
             let limit = min(gate.currentLimit, connectionSetting)
             configuration.hostLimits.updateLimit(for: hostKey) { min($0 ?? .max, limit) }
-        } else {
+        case .probe, .whole:
             let setting = connectionSetting
             configuration.hostLimits.updateLimit(for: hostKey) { SegmentPlanner.lowered($0 ?? setting) }
         }

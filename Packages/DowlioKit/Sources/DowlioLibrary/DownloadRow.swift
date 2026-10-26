@@ -39,6 +39,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     /// A Completed download whose file is no longer where Dowlio put it.
     public var isFileMissing: Bool
     public var lostCookies = false
+    public var isMedia = false
     public var origin: DownloadOrigin?
 
     public var originText: String? {
@@ -163,7 +164,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
             if isFileMissing { return "File not found" }
             return ByteText.string(totalBytes ?? receivedBytes)
         case .failed(let error):
-            let failure = FailureText(error)
+            let failure = FailureText(error, isMedia: isMedia)
             return "\(failure.reason) · \(failure.nextStep)"
         case .downloading:
             let connections = activeConnections == 1 ? "1 connection" : "\(activeConnections) connections"
@@ -218,8 +219,9 @@ public struct FailureText: Equatable, Sendable {
     public var reason: String
     public var nextStep: String
 
-    public init(_ error: DownloadError) {
+    public init(_ error: DownloadError, isMedia: Bool = false) {
         switch error {
+        case .linkExpired where isMedia: (reason, nextStep) = ("Link expired", "Send the page again")
         case .linkExpired: (reason, nextStep) = ("Link expired", "Copy a fresh link from the site and add it again")
         case .needsSignIn: (reason, nextStep) = ("Needs sign-in", "This site only gives the file to signed-in visitors")
         case .forbidden: (reason, nextStep) = ("Refused", "The server won't give this file")
@@ -230,7 +232,7 @@ public struct FailureText: Equatable, Sendable {
         case .notEnoughSpace: (reason, nextStep) = ("Not enough space", "Free up space, then Retry")
         case .destinationNotWritable: (reason, nextStep) = ("Can't save to this folder", "Fix its permissions, then Retry")
         case .incompleteFile: (reason, nextStep) = ("Incomplete file", "Retry fetches the missing part")
-        case .mediaNotSupportedYet: (reason, nextStep) = ("Video downloads aren't supported yet", "A later version of Dowlio can download it")
+        case .mediaUnplayable: (reason, nextStep) = ("Couldn't make a playable file", "Send the page again and pick another version")
         }
     }
 }

@@ -24,7 +24,7 @@ let package = Package(
         .target(name: "DowlioConnect", dependencies: ["DowlioCore", "DowlioEngine", "DowlioStore", "DowlioLibrary", "DowlioMedia"]),
         .executableTarget(name: "dowlio-cli", dependencies: ["DowlioEngine"]),
         // Test infrastructure shared by test targets. Never shipped.
-        .target(name: "DowlioTestSupport", dependencies: ["DowlioCore", "DowlioEngine"]),
+        .target(name: "DowlioTestSupport", dependencies: ["DowlioCore", "DowlioEngine"], resources: [.copy("Resources/Media")]),
         .testTarget(name: "DowlioCoreTests", dependencies: ["DowlioCore"]),
         .testTarget(
             name: "DowlioEngineTests",

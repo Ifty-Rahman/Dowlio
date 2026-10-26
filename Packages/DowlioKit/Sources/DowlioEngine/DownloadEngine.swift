@@ -33,9 +33,13 @@ public actor DownloadEngine {
     let configuration: EngineConfiguration
 
     /// An engine whose learned host limits live in `hostLimits`. The default keeps them in memory.
-    public init(hostLimits: any HostLimitStore = InMemoryHostLimitStore()) {
+    public init(
+        hostLimits: any HostLimitStore = InMemoryHostLimitStore(),
+        remux: (@Sendable ([URL], URL) async throws -> Void)? = nil
+    ) {
         var configuration = EngineConfiguration()
         configuration.hostLimits = hostLimits
+        configuration.remux = remux
         self.init(configuration: configuration)
     }
 
@@ -58,11 +62,15 @@ public actor DownloadEngine {
         options: RequestOptions = RequestOptions(),
         id: DownloadID = DownloadID()
     ) -> DownloadID {
+        start(id, url: url, media: nil, destination: destination, options: options)
+    }
+
+    private func start(_ id: DownloadID, url: URL, media: MediaSource?, destination: Destination, options: RequestOptions) -> DownloadID {
         guard entries[id] == nil else { return id }
         let entry = register(id, url: url, destination: destination, options: options, state: .probing)
 
         let run = DownloadRun(
-            id: id, url: url, destination: destination, options: options, partialFile: entry.partialFile,
+            id: id, url: url, media: media, destination: destination, options: options, partialFile: entry.partialFile,
             configuration: configuration
         ) { [weak self] change in
             await self?.update(id, change)
@@ -82,10 +90,8 @@ public actor DownloadEngine {
         switch source {
         case .file(let url):
             return add(url: url, destination: destination, options: options, id: id)
-        case .media:
-            guard entries[id] == nil else { return id }
-            register(id, url: source.url, destination: destination, options: options, state: .failed(.mediaNotSupportedYet))
-            return id
+        case .media(let media):
+            return start(id, url: media.firstURL, media: media, destination: destination, options: options)
         }
     }
 
@@ -221,6 +227,20 @@ public actor DownloadEngine {
         options.maximumFailures = maximumFailures
         options.allowsWorkStealing = allowsWorkStealing
 
+        if let media = manifest.mediaSource {
+            let plan = MediaPlan(restoring: media, fileName: fileName, partial: partial, finished: manifest.finishedFragments ?? [])
+            var snapshot = DownloadSnapshot(
+                id: id, state: .paused, fileName: fileName, destinationFolder: folder,
+                isNotSecure: manifest.originalURL.isPlainHTTP, displayHost: manifest.originalURL.displayHost
+            )
+            snapshot.apply(plan.reading)
+            snapshot.canResume = true
+            snapshot.category = FileCategory(fileName: fileName, contentType: nil)
+            let run = adoptRestored(id, snapshot: snapshot, url: manifest.originalURL, media: media, folder: folder, options: options)
+            run.adopt(plan)
+            return id
+        }
+
         let segments = manifest.segments.map { ByteRange(start: $0.start, end: $0.end) }
         let plan = DownloadPlan(
             fileName: fileName,
@@ -245,18 +265,25 @@ public actor DownloadEngine {
         snapshot.canResume = plan.canResume
         snapshot.category = FileCategory(fileName: fileName, contentType: nil)
 
+        let run = adoptRestored(id, snapshot: snapshot, url: manifest.originalURL, media: nil, folder: folder, options: options)
+        run.adopt(plan)
+        return id
+    }
+
+    private func adoptRestored(
+        _ id: DownloadID, snapshot: DownloadSnapshot, url: URL, media: MediaSource?, folder: URL, options: RequestOptions
+    ) -> DownloadRun {
         let entry = DownloadEntry(snapshot: snapshot)
         entries[id] = entry
         publishToAll(snapshot)
         let run = DownloadRun(
-            id: id, url: manifest.originalURL, destination: .folder(folder), options: options,
+            id: id, url: url, media: media, destination: .folder(folder), options: options,
             partialFile: entry.partialFile, configuration: configuration
         ) { [weak self] change in
             await self?.update(id, change)
         }
-        run.adopt(plan)
         entries[id]?.run = run
-        return id
+        return run
     }
 
     /// Where the download's partial file is, or `nil` before it exists, after the file is

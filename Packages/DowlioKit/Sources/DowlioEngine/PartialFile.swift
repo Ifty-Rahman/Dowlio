@@ -127,9 +127,14 @@ final class PartialFile: @unchecked Sendable {
     /// Flushes the data, moves it into `folder` as `fileName` in one atomic rename, deletes the
     /// package and returns the name the finished file got. If `fileName` is taken, `policy` decides.
     /// The data file stays open until it's in place, so a download whose move failed can retry.
-    func finish(named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL) throws -> Finished {
+    func finish(
+        named fileName: String, in folder: URL, policy: NameConflictPolicy, source: URL, replacingDataWith replacement: URL? = nil
+    ) throws -> Finished {
         try withOpenHandle { handle in
             try handle.synchronize()
+            if let replacement, rename(replacement.path, dataURL.path) != 0 {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
             try markAsDownloaded(from: source)
             let finished = try moveIntoPlace(named: fileName, in: folder, policy: policy)
             try? handle.close()

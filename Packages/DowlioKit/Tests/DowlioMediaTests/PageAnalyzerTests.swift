@@ -121,6 +121,116 @@ struct PageAnalyzerTests {
         #expect(candidates.first?.versions.compactMap(\.height).sorted() == [240, 720])
     }
 
+    @Test func aWatchedPlaylistBecomesOneVideoWithAVersionPerVariant() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Stream page</title>", at: "/watch")
+        site.serve(text: """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=800000,AVERAGE-BANDWIDTH=640000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1280x720
+            720p/video.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=400000,CODECS="avc1.64001e,mp4a.40.2",RESOLUTION=640x360
+            360p/video.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=300000,CODECS="avc1.64001e,mp4a.40.2",RESOLUTION=640x360
+            locked/video.m3u8
+            """, at: "/hls/master.m3u8")
+        for variant in ["720p", "360p"] {
+            site.serve(text: Self.mediaPlaylist(segments: 3, named: "seg"), at: "/hls/\(variant)/video.m3u8")
+        }
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "seg", key: "#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\""), at: "/hls/locked/video.m3u8")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = ["/hls/master.m3u8", "/hls/720p/video.m3u8"].map { WatchedRequest(url: site.url($0), kind: .manifest, contentType: "application/vnd.apple.mpegurl") }
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.count == 1)
+        let video = try #require(candidates.first)
+        #expect(video.label == "Stream page")
+        #expect(video.duration == 18)
+        #expect(video.versions.map(\.height) == [720, 360])
+        #expect(video.versions.first?.codecs == "H.264 + AAC")
+        #expect(video.versions.first?.totalBytes == 1_440_000)
+        #expect(video.versions.first?.isEstimatedSize == true)
+        guard case .media(let media) = video.versions.first?.source else { Issue.record("not media"); return }
+        #expect(media.tracks.first?.kind == .combined)
+        #expect(media.tracks.first?.fragments.map(\.url.lastPathComponent) == ["seg0.ts", "seg1.ts", "seg2.ts"])
+    }
+
+    @Test func aVariantWhoseSoundIsAnotherPlaylistIsVideoOnlyForNow() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Clip</title>", at: "/watch")
+        site.serve(text: """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",DEFAULT=YES,URI="audio/en.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1280x720,AUDIO="aud"
+            720p/video.m3u8
+            """, at: "/hls/master.m3u8")
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "seg"), at: "/hls/720p/video.m3u8")
+        site.serve(text: Self.mediaPlaylist(segments: 3, named: "aac"), at: "/hls/audio/en.m3u8")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest, contentType: "application/vnd.apple.mpegurl")]
+        }
+
+        guard case .found(let candidates) = found, case .media(let media) = candidates.first?.versions.first?.source else {
+            Issue.record("not media: \(found)")
+            return
+        }
+        #expect(media.tracks.map(\.kind) == [.video])
+        #expect(candidates.first?.versions.first?.codecs == "H.264")
+    }
+
+    @Test func aPlaylistWhoseSegmentsAreOneFileIsThatFile() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Post</title>", at: "/watch")
+        site.serve(text: """
+            #EXTM3U
+            #EXT-X-VERSION:6
+            #EXT-X-MAP:URI="CMAF_720.mp4",BYTERANGE="900@0"
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:1000@900
+            CMAF_720.mp4
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:1100@1900
+            CMAF_720.mp4
+            #EXT-X-ENDLIST
+            """, at: "/v/CMAF_720.m3u8")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/v/CMAF_720.m3u8"), kind: .manifest)]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.first?.versions.first?.source == .file(site.url("/v/CMAF_720.mp4")))
+    }
+
+    @Test func liveAndUnfinishedPlaylistsArentOfferedYet() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Live</title>", at: "/watch")
+        site.serve(text: "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nlive0.ts\n", at: "/live/index.m3u8")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: site.url("/live/index.m3u8"), kind: .manifest)]
+        }
+
+        #expect(found == .found([]))
+    }
+
+    @Test func aLinkStraightToAPlaylistIsAVideoNotAFile() async throws {
+        let site = try await Site()
+        site.serve(text: Self.mediaPlaylist(segments: 2, named: "part"), type: "application/vnd.apple.mpegurl", at: "/clip/index.m3u8")
+
+        let found = try await site.analyze("/clip/index.m3u8")
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.first?.versions.count == 1)
+    }
+
+    static func mediaPlaylist(segments: Int, named: String, key: String = "") -> String {
+        let body = (0..<segments).map { "#EXTINF:6.0,\n\(named)\($0).ts" }.joined(separator: "\n")
+        return "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n\(key)\n\(body)\n#EXT-X-ENDLIST\n"
+    }
+
     @Test func aLinkToAPlainFileIsHandedBack() async throws {
         let site = try await Site()
         site.serve(video: 500, type: "application/pdf", at: "/files/report.pdf")
@@ -252,6 +362,10 @@ struct Site {
 
     func serve(html: String, at path: String) {
         server.serve(TestServer.File(data: Data(html.utf8), headers: ["Content-Type": "text/html; charset=utf-8"]), at: path)
+    }
+
+    func serve(text: String, type: String = "application/vnd.apple.mpegurl", at path: String) {
+        server.serve(TestServer.File(data: Data(text.utf8), headers: ["Content-Type": type]), at: path)
     }
 
     func serve(video bytes: Int, type: String = "video/mp4", at path: String) {

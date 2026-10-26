@@ -138,6 +138,7 @@ public enum MediaText {
     }
 
     public static func container(of version: Version) -> String {
+        if case .media = version.source { return "MP4" }
         let ext = version.source.url.pathExtension.uppercased()
         if !ext.isEmpty { return ext }
         return version.contentType?.split(separator: "/").last.map { $0.uppercased() } ?? "File"

@@ -419,6 +419,7 @@ public actor Library {
         )
         row.lostCookies = lostCookies.contains(id)
         row.origin = record.origin
+        row.isMedia = record.mediaSource != nil
         return row
     }
 

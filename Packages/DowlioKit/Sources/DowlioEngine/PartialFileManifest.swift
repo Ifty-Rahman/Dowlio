@@ -4,8 +4,8 @@ import Foundation
 /// The `manifest.json` inside a partial file: everything needed to resume the download, so the
 /// partial file is self-contained (architecture.md, files on disk). It never holds cookies.
 struct PartialFileManifest: Codable, Equatable, Sendable {
-    /// Format 2 added `layout`, format 3 `nameConflictPolicy`.
-    static let currentFormatVersion = 3
+    /// Format 2 added `layout`, format 3 `nameConflictPolicy`, format 4 `mediaSource` and `finishedFragments`.
+    static let currentFormatVersion = 4
     /// The oldest format this version still reads.
     static let oldestReadableFormatVersion = 1
 

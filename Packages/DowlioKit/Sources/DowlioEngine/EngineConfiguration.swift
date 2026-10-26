@@ -7,6 +7,7 @@ package struct EngineConfiguration: Sendable {
     var now: @Sendable () -> Date = { Date() }
     var random: @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }
     var hostLimits: any HostLimitStore = InMemoryHostLimitStore()
+    package var remux: (@Sendable ([URL], URL) async throws -> Void)?
 
     package init() {}
 }

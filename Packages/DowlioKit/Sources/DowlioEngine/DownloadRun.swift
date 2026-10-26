@@ -6,6 +6,7 @@ struct DownloadRun: Sendable {
 
     let id: DownloadID
     let url: URL
+    let media: MediaSource?
     let destination: Destination
     let options: RequestOptions
     let partialFile: PartialFileLocation
@@ -16,10 +17,12 @@ struct DownloadRun: Sendable {
     let planStore = PlanStore()
     let retries = RetryTracker()
     let gate = ConnectionGate()
+    let mediaPlans = MediaPlanStore()
 
     init(
         id: DownloadID,
         url: URL,
+        media: MediaSource? = nil,
         destination: Destination,
         options: RequestOptions,
         partialFile: PartialFileLocation,
@@ -28,6 +31,7 @@ struct DownloadRun: Sendable {
     ) {
         self.id = id
         self.url = url
+        self.media = media
         self.destination = destination
         self.options = options
         self.partialFile = partialFile
@@ -41,6 +45,7 @@ struct DownloadRun: Sendable {
     }
 
     func run(resuming: Bool = false) async {
+        if let media { return await runMedia(media, resuming: resuming) }
         var current: DownloadPlan?
         do {
             var plan = try await prepare(resuming: resuming)
@@ -104,6 +109,7 @@ struct DownloadRun: Sendable {
     /// Lets go of everything the download holds, for a download that's cancelled.
     func discard() {
         planStore.forget()
+        mediaPlans.forget()
     }
 
     private func prepare(resuming: Bool) async throws -> DownloadPlan {

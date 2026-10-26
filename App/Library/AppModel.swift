@@ -58,7 +58,7 @@ final class AppModel {
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let library = Library(engine: DownloadEngine(), store: store)
+            let library = Library(engine: DownloadEngine(remux: AVRemuxer.remux), store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
         } catch {

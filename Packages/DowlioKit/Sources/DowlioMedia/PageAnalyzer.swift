@@ -25,7 +25,15 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+        if HLSVersions.isPlaylist(page.url) {
+            let candidates = await playlistCandidates([page.url], page: page, label: page.url.lastPathComponent, thumbnail: nil)
+            return report(.found(candidates))
+        }
         if let linked = try? await inspect(page.url, pageOptions(page)), !linked.isWebPage {
+            if HLSVersions.isPlaylist(page.url, contentType: linked.contentType) {
+                let candidates = await playlistCandidates([page.url], page: page, label: linked.fileName, thumbnail: nil)
+                return report(.found(candidates))
+            }
             let version = Version(source: .file(page.url), contentType: linked.contentType, totalBytes: linked.totalBytes)
             guard Self.kind(of: linked) != nil else { return report(.plainFile(page.url)) }
             return report(.found([Candidate(label: linked.fileName, versions: [version])]))
@@ -69,7 +77,60 @@ public struct PageAnalyzer: Sendable {
             }
             return candidate.versions.isEmpty ? nil : candidate
         }
-        report(.found(kept))
+        let playlists = page.watched.filter { HLSVersions.isPlaylist($0.url, contentType: $0.contentType) }.map(\.url)
+        let streamed = await playlistCandidates(playlists, page: page, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
+        report(.found(kept + streamed))
+    }
+
+    private func playlistCandidates(_ urls: [URL], page: SentPage, label: String, thumbnail: URL?) async -> [Candidate] {
+        let options = mediaOptions(page)
+        var parsed: [(URL, Playlist)] = []
+        for url in urls where !parsed.contains(where: { $0.0 == url }) {
+            if let playlist = await playlist(at: url, options: options) { parsed.append((url, playlist)) }
+        }
+        var covered = Set<URL>()
+        for case let (_, .master(master)) in parsed {
+            master.variants.forEach { covered.insert($0.url) }
+            master.audio.compactMap(\.url).forEach { covered.insert($0) }
+        }
+        var candidates: [Candidate] = []
+        for (url, playlist) in parsed {
+            switch playlist {
+            case .master(let master):
+                let found = await withTaskGroup(of: (Int, Version?, Double).self) { group in
+                    for (index, variant) in master.variants.enumerated() {
+                        group.addTask {
+                            guard case .media(let media) = await self.playlist(at: variant.url, options: options) else { return (index, nil, 0) }
+                            return (index, HLSVersions.version(of: media, variant: variant, audioIsSeparate: HLSVersions.audioIsSeparate(for: variant, in: master)), media.duration)
+                        }
+                    }
+                    var results: [(Int, Version?, Double)] = []
+                    for await result in group { results.append(result) }
+                    return results.sorted { $0.0 < $1.0 }
+                }
+                let versions = found.compactMap(\.1)
+                guard !versions.isEmpty else { continue }
+                candidates.append(Candidate(label: label, thumbnail: thumbnail, duration: found.map(\.2).max(), versions: versions))
+            case .media(let media):
+                guard !covered.contains(url), let version = HLSVersions.version(of: media, variant: nil) else { continue }
+                candidates.append(Candidate(label: label, thumbnail: thumbnail, duration: media.duration, versions: [version]))
+            }
+        }
+        return candidates
+    }
+
+    private func playlist(at url: URL, options: RequestOptions) async -> Playlist? {
+        var request = URLRequest(url: url)
+        if let agent = options.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
+        if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
+        if !options.cookies.isEmpty {
+            request.setValue(options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
+        }
+        request.httpShouldHandleCookies = false
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= Self.largestPage
+        else { return nil }
+        return try? M3U8Parser.parse(String(decoding: data, as: UTF8.self), base: http.url ?? url)
     }
 
     private struct Players {
