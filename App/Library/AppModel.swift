@@ -164,7 +164,7 @@ final class AppModel {
         case .quickAdd:
             menuBar?.showSentPage(page)
         case .sheet, .openWindowThenSheet:
-            sentSheet()?.analyse(page)
+            sentSheet()?.analyze(page)
         }
     }
 
@@ -223,9 +223,10 @@ final class AppModel {
 
     func continueInWindow(_ quickAdd: NewDownloadModel) {
         showLibraryWindow()
-        if let newDownload {
+        if let newDownload, quickAdd.media == nil {
             newDownload.draft.merge(quickAdd.draft)
         } else {
+            newDownload?.discardSentPage()
             newDownload = quickAdd
         }
     }

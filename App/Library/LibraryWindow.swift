@@ -129,7 +129,10 @@ struct LibraryWindow: View {
                 return true
             }
             .sheet(item: newDownloadSheet) { sheet in
-                NewDownloadSheet(model: model, sheet: sheet) { model.newDownload = nil }
+                NewDownloadSheet(model: model, sheet: sheet) {
+                    sheet.discardSentPage()
+                    model.newDownload = nil
+                }
             }
             .focusedSceneValue(\.findInLibrary, SearchFocus.isAvailable ? FindInLibrary { isSearching = true } : nil)
             .focusedSceneValue(\.selectedDownloads, SelectedDownloads(

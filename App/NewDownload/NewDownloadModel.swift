@@ -33,6 +33,10 @@ final class NewDownloadModel: Identifiable {
     }
 
     var media: SentPageModel? { sentPages.current }
+
+    func discardSentPage() {
+        sentPages.clear()
+    }
     var showing = SentPageDraft.Showing.video {
         didSet {
             guard let media, showing != oldValue, let first = media.draft.versions(showing: showing).first else { return }
@@ -72,7 +76,7 @@ final class NewDownloadModel: Identifiable {
         draft.append(more)
     }
 
-    func analyse(_ page: SentPage) {
+    func analyze(_ page: SentPage) {
         sentPages.clear()
         draft.text = ""
         draft.addSent(page.url, referrer: nil, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)

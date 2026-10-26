@@ -81,7 +81,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     func showSentPage(_ page: SentPage) {
         if !popover.isShown { open() }
-        showQuickAdd()?.analyse(page)
+        showQuickAdd()?.analyze(page)
     }
 
     private func showQuickAdd() -> NewDownloadModel? {
@@ -138,7 +138,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let previous = returnTo
         let opened = openedAt
         returnTo = nil
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self, let previous, !previous.isTerminated, !model.movedFocus(since: opened) else { return }
             previous.activate()
         }
@@ -182,7 +182,7 @@ final class MenuBarPanel {
     }
 
     func endQuickAdd() {
-        quickAdd?.sentPages.clear()
+        quickAdd?.discardSentPage()
         showsQuickAdd = false
         quickAdd = nil
     }
