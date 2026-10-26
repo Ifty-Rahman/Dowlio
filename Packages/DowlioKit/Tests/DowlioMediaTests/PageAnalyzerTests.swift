@@ -180,6 +180,46 @@ struct PageAnalyzerTests {
         #expect(candidates.first?.versions.first?.codecs == "H.264")
     }
 
+    @Test func downloadLinksAndThePlayersStreamOfOneVideoAreOneVideoWithEveryVersion() async throws {
+        let site = try await Site()
+        site.serve(html: """
+            <title>Self Checkout</title>
+            <meta property="og:duration" content="17">
+            <a href="/dload/abc/240/1-240p.mp4">Download MP4 (240p, h264, 29.62 MB)</a>
+            <a href="/dload/abc/720/1-720p.mp4">Download MP4 (720p, h264, 301.68 MB)</a>
+            <a href="/dload/abc/720/1-720p-av1.mp4">Download MP4 (720p, av1, 201.10 MB)</a>
+            """, at: "/video-abc/")
+        site.serve(video: 300, at: "/dload/abc/240/1-240p.mp4")
+        site.serve(video: 900, at: "/dload/abc/720/1-720p.mp4")
+        site.serve(video: 600, at: "/dload/abc/720/1-720p-av1.mp4")
+        site.serve(text: """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=400000,CODECS="avc1.64001e,mp4a.40.2",RESOLUTION=426x240
+            240p/video.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1280x720
+            720p/video.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=12000000,CODECS="avc1.640033,mp4a.40.2",RESOLUTION=3840x2160
+            2160p/video.m3u8
+            """, at: "/hls/master.m3u8")
+        for variant in ["240p", "720p", "2160p"] {
+            site.serve(text: Self.mediaPlaylist(segments: 3, named: "seg"), at: "/hls/\(variant)/video.m3u8")
+        }
+
+        let found = try await site.analyze("/video-abc/") {
+            $0.watched = ["/hls/master.m3u8", "/hls/master.m3u8?token=2", "/hls/2160p/video.m3u8?token=3"].map {
+                WatchedRequest(url: site.url($0), kind: .manifest, contentType: "application/vnd.apple.mpegurl")
+            }
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.count == 1)
+        let versions = try #require(candidates.first).versions
+        #expect(versions.map(\.height) == [240, 240, 720, 720, 720, 2160])
+        #expect(versions.map { $0.source.url.pathComponents.suffix(2).joined(separator: "/") } == [
+            "240/1-240p.mp4", "240p/seg0.ts", "720/1-720p.mp4", "720/1-720p-av1.mp4", "720p/seg0.ts", "2160p/seg0.ts",
+        ])
+    }
+
     @Test func aPlaylistWhoseSegmentsAreOneFileIsThatFile() async throws {
         let site = try await Site()
         site.serve(html: "<title>Post</title>", at: "/watch")

@@ -79,7 +79,7 @@ public struct PageAnalyzer: Sendable {
         }
         let playlists = page.watched.filter { HLSVersions.isPlaylist($0.url, contentType: $0.contentType) }.map(\.url)
         let streamed = await playlistCandidates(playlists, page: page, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
-        report(.found(kept + streamed))
+        report(.found(Self.merged(kept + streamed)))
     }
 
     private func playlistCandidates(_ urls: [URL], page: SentPage, label: String, thumbnail: URL?) async -> [Candidate] {
@@ -88,10 +88,10 @@ public struct PageAnalyzer: Sendable {
         for url in urls where !parsed.contains(where: { $0.0 == url }) {
             if let playlist = await playlist(at: url, options: options) { parsed.append((url, playlist)) }
         }
-        var covered = Set<URL>()
+        var covered = Set<String>()
         for case let (_, .master(master)) in parsed {
-            master.variants.forEach { covered.insert($0.url) }
-            master.audio.compactMap(\.url).forEach { covered.insert($0) }
+            master.variants.forEach { covered.insert(Self.withoutQuery($0.url)) }
+            master.audio.compactMap(\.url).forEach { covered.insert(Self.withoutQuery($0)) }
         }
         var candidates: [Candidate] = []
         for (url, playlist) in parsed {
@@ -112,11 +112,47 @@ public struct PageAnalyzer: Sendable {
                 guard !versions.isEmpty else { continue }
                 candidates.append(Candidate(label: label, thumbnail: thumbnail, duration: found.map(\.2).max(), versions: versions))
             case .media(let media):
-                guard !covered.contains(url), let version = HLSVersions.version(of: media, variant: nil) else { continue }
+                guard !covered.contains(Self.withoutQuery(url)), let version = HLSVersions.version(of: media, variant: nil) else { continue }
                 candidates.append(Candidate(label: label, thumbnail: thumbnail, duration: media.duration, versions: [version]))
             }
         }
         return candidates
+    }
+
+    private static func withoutQuery(_ url: URL) -> String {
+        var parts = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        parts?.query = nil
+        parts?.fragment = nil
+        return parts?.string ?? url.absoluteString
+    }
+
+    static let sameLengthWithin = 2.0
+
+    static func merged(_ candidates: [Candidate]) -> [Candidate] {
+        var groups: [[Candidate]] = []
+        for candidate in candidates {
+            if let length = candidate.duration,
+               let index = groups.firstIndex(where: { $0.contains { other in other.duration.map { abs($0 - length) <= sameLengthWithin } ?? false } }) {
+                groups[index].append(candidate)
+            } else {
+                groups.append([candidate])
+            }
+        }
+        return groups.map { group in
+            guard group.count > 1, var first = group.first else { return group[0] }
+            first.thumbnail = group.lazy.compactMap(\.thumbnail).first
+            first.duration = group.compactMap(\.duration).max()
+            first.versions = distinct(group.flatMap(\.versions))
+            return first
+        }
+    }
+
+    private static func distinct(_ versions: [Version]) -> [Version] {
+        var seen = Set<URL>()
+        return versions.enumerated()
+            .filter { seen.insert($0.element.source.url).inserted }
+            .sorted { ($0.element.height ?? 0, $0.offset) < ($1.element.height ?? 0, $1.offset) }
+            .map(\.element)
     }
 
     private func playlist(at url: URL, options: RequestOptions) async -> Playlist? {
