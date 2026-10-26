@@ -62,3 +62,22 @@ button {
   color: GrayText;
   margin: 10px 0 0;
 }
+
+#send-page {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: AccentColor;
+  color: AccentColorText;
+  font-weight: 600;
+}
+
+#send-page[hidden] {
+  display: none;
+}
+
+#send-page:disabled {
+  opacity: 0.5;
+}

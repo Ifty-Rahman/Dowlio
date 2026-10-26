@@ -3,6 +3,7 @@ import DowlioConnect
 import DowlioCore
 import DowlioEngine
 import DowlioLibrary
+import DowlioMedia
 import DowlioStore
 import Observation
 
@@ -126,6 +127,11 @@ final class AppModel {
                 self?.receive(link)
             }
         }
+        Task { [weak self] in
+            for await page in server.sentPages {
+                self?.receive(page)
+            }
+        }
         let updates = preferenceUpdates.stream
         Task {
             for await preferences in updates {
@@ -145,15 +151,43 @@ final class AppModel {
     }
 
     private func receive(_ link: SentLink) {
+        let page = SentPage(url: link.url, browser: link.browser, cookies: link.cookies, userAgent: link.userAgent)
+        receive(page, referrer: link.referrer)
+    }
+
+    private func receive(_ page: SentPage, referrer: URL? = nil) {
+        let file: (URL) -> Void = { [weak self] url in
+            self?.receiveFile(url, referrer: referrer ?? page.url, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)
+        }
+        guard let menuBar, menuBar.isVisible, let library else {
+            file(page.url)
+            return
+        }
+        let analyzer = PageAnalyzer { url, options in try await library.inspect(url, options: options) }
+        menuBar.showSentPage(SentPageModel(page: page, analyzer: analyzer, handBack: file))
+    }
+
+    private func receiveFile(_ url: URL, referrer: URL?, cookies: [Cookie], browser: String?, userAgent: String?) {
         let menuBarShown = menuBar?.isVisible ?? false
         switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
         case .quickAdd:
-            menuBar?.showSent(link)
+            menuBar?.showSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
         case .sheet, .openWindowThenSheet:
             showLibraryWindow()
             if newDownload == nil { newDownload = makeNewDownload() }
-            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+            newDownload?.draft.addSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
         }
+    }
+
+    func addSent(_ download: SentPageDraft.Download) async -> DownloadID? {
+        guard let library else { return nil }
+        notifier.askPermissionIfNeeded()
+        let settings = settings
+        var options = settings.options(connections: nil)
+        options.referrer = download.options.referrer
+        options.userAgent = download.options.userAgent
+        options.cookies = download.options.cookies
+        return await library.add(download.source, destination: settings.destination(in: settings.folder), options: options, origin: download.origin)
     }
 
     func downloadInBrowser(_ notice: CatchNotice) {
@@ -214,7 +248,14 @@ final class AppModel {
 
     var isLibraryWindowOpen = false
 
+    private var lastFocusMove: Date?
+
+    func movedFocus(since date: Date) -> Bool {
+        lastFocusMove.map { $0 >= date } ?? false
+    }
+
     func showLibraryWindow() {
+        lastFocusMove = Date()
         NSApp.activate()
         if let libraryWindow, libraryWindow.isVisible || libraryWindow.isMiniaturized {
             libraryWindow.makeKeyAndOrderFront(nil)
@@ -248,6 +289,7 @@ final class AppModel {
     var openSettingsWindow: (() -> Void)?
 
     func showSettings() {
+        lastFocusMove = Date()
         NSApp.activate()
         openSettingsWindow?()
     }
@@ -304,11 +346,13 @@ final class AppModel {
     }
 
     func showInFinder(_ row: DownloadRow) {
+        lastFocusMove = Date()
         guard let file = row.finishedFile else { return }
         NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 
     func open(_ row: DownloadRow) {
+        lastFocusMove = Date()
         guard let file = row.finishedFile else { return }
         NSWorkspace.shared.open(file)
     }

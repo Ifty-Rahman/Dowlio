@@ -1,4 +1,5 @@
 import DowlioCore
+import DowlioMedia
 import Foundation
 
 enum Incoming: Equatable {
@@ -10,6 +11,7 @@ enum Incoming: Equatable {
     case catchReleased
     case settingsChange(CatchPreferenceChange)
     case linkSend(url: URL, referrer: URL?, browser: String?, cookies: [Cookie], userAgent: String?)
+    case pageSend(SentPage)
     case unknown(type: String)
 }
 
@@ -92,6 +94,21 @@ struct Envelope {
                 url: url, referrer: link("referrer"), browser: text("browser"), cookies: cookies,
                 userAgent: text("userAgent", limit: Self.maximumHeaderValue)
             )
+        case "page.send":
+            guard let url = link("url"), let cookies = cookies() else { return nil }
+            let media = ((object["media"] as? [[String: Any]]) ?? []).prefix(Self.maximumScannedMedia).compactMap { entry -> ScannedMedia? in
+                guard let value = entry["url"] as? String, value.count <= 8192, let address = URL(string: value), Self.isWebLink(address) else { return nil }
+                let poster = (entry["poster"] as? String).flatMap(URL.init(string:)).flatMap { Self.isWebLink($0) ? $0 : nil }
+                let duration = (entry["duration"] as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+                let kind = (entry["kind"] as? String).flatMap(ScannedMedia.Kind.init(rawValue:)) ?? .video
+                let group = (entry["group"] as? Int).flatMap { $0 > 0 ? $0 : nil }
+                return ScannedMedia(url: address, kind: kind, poster: poster, duration: duration, group: group)
+            }
+            let embedded = ((object["embeddedJson"] as? [Any]) ?? []).prefix(Self.maximumEmbeddedJSON).compactMap { $0 as? String }
+            message = .pageSend(SentPage(
+                url: url, title: text("title", limit: 1000), browser: text("browser"), cookies: cookies,
+                userAgent: text("userAgent", limit: Self.maximumHeaderValue), scan: Array(media), embeddedJSON: Array(embedded)
+            ))
         case "settings.change":
             let catches = object["catches"] as? Bool
             let site = text("neverCatchSite")
@@ -108,6 +125,8 @@ extension Envelope {
     static let maximumBody = 64 * 1024
     static let maximumHeaders = 40
     static let maximumHeaderValue = 4096
+    static let maximumScannedMedia = 200
+    static let maximumEmbeddedJSON = 40
     static let unreplayedHeaders: Set<String> = [
         "host", "cookie", "range", "if-range", "content-length", "connection", "keep-alive", "accept-encoding",
         "transfer-encoding", "te", "trailer", "upgrade", "expect", "proxy-authorization", "proxy-connection",
@@ -158,6 +177,7 @@ struct Outgoing: Encodable {
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
     static let linkReceived = Outgoing(type: "link.received")
+    static let pageReceived = Outgoing(type: "page.received")
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(
             type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch

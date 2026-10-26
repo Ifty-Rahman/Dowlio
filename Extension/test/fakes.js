@@ -164,6 +164,24 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       onAdded: { addListener: (listener) => chrome.permissions.addedListeners.push(listener) },
       onRemoved: { addListener: (listener) => chrome.permissions.removedListeners.push(listener) },
     },
+    scripting: {
+      frames: [],
+      calls: [],
+      fails: false,
+      async executeScript(injection) {
+        chrome.scripting.calls.push(injection);
+        if (chrome.scripting.fails) throw new Error("Cannot access contents of the page");
+        return chrome.scripting.frames;
+      },
+    },
+    tabs: {
+      byId: {},
+      async get(tabId) {
+        const tab = chrome.tabs.byId[tabId];
+        if (!tab) throw new Error(`No tab with id: ${tabId}`);
+        return tab;
+      },
+    },
     cookies: {
       jar: {},
       async getAll({ url }) {

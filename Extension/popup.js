@@ -1,7 +1,8 @@
-import { catchControls, lastDeclineText, popupText } from "./lib/popup-text.js";
+import { catchControls, lastDeclineText, popupText, sendPageControl } from "./lib/popup-text.js";
 
 const storage = chrome.storage.local;
 let tabUrl;
+let tabId;
 
 async function render() {
   const { status, code, catching, lastDecline } = await storage.get(["status", "code", "catching", "lastDecline"]);
@@ -17,6 +18,11 @@ async function render() {
   noteView.hidden = !note;
   noteView.textContent = note ?? "";
 
+  const sending = sendPageControl({ status, tabUrl });
+  const sendPage = document.getElementById("send-page");
+  sendPage.hidden = !sending.shown;
+  sendPage.disabled = !sending.enabled;
+
   const controls = catchControls({ status, catching, tabUrl });
   document.getElementById("catching").hidden = !controls.shown;
   if (!controls.shown) return;
@@ -29,6 +35,12 @@ async function render() {
   neverCaught.textContent = controls.siteText ?? "";
   neverCatch.dataset.site = controls.site ?? "";
 }
+
+document.getElementById("send-page").addEventListener("click", () => {
+  if (typeof tabId !== "number") return;
+  chrome.runtime.sendMessage({ type: "page.send", tabId });
+  window.close();
+});
 
 document.getElementById("retry").addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "pair.retry" });
@@ -48,6 +60,7 @@ chrome.tabs
   .query({ active: true, currentWindow: true })
   .then(([tab]) => {
     tabUrl = tab?.url;
+    tabId = tab?.id;
   })
   .catch(() => {})
   .finally(render);

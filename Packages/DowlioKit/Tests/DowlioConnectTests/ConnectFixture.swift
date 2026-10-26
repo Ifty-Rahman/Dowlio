@@ -1,5 +1,6 @@
 import DowlioConnect
 import DowlioCore
+import DowlioMedia
 import DowlioEngine
 import DowlioLibrary
 import DowlioStore
@@ -90,6 +91,10 @@ struct ConnectFixture {
 
     func nextSentLink() async throws -> SentLink {
         for await link in server.sentLinks { return link }
+        throw ConnectClientError.closed
+    }
+    func nextSentPage() async throws -> SentPage {
+        for await page in server.sentPages { return page }
         throw ConnectClientError.closed
     }
 

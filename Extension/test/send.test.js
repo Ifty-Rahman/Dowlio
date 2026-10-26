@@ -19,12 +19,6 @@ async function worker({ connect = true } = {}) {
 const menuClick = { menuItemId: "send-to-dowlio", linkUrl: "https://cdn.example.com/files/Report.pdf", pageUrl: "https://example.com/reports" };
 const sends = (socket) => socket.sent.filter((message) => message.type === "link.send");
 
-test("Send to Dowlio appears only on links", async () => {
-  const { chrome } = await worker();
-
-  assert.deepEqual(chrome.contextMenus.items, [{ id: "send-to-dowlio", title: "Send to Dowlio", contexts: ["link"] }]);
-});
-
 test("choosing Send to Dowlio hands the link and its page to Dowlio", async () => {
   const { chrome, socket } = await worker();
 

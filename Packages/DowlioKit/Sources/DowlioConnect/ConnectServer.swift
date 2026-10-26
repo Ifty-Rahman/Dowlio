@@ -1,4 +1,5 @@
 import DowlioCore
+import DowlioMedia
 import DowlioLibrary
 import DowlioStore
 import Foundation
@@ -66,6 +67,8 @@ public actor ConnectServer {
     private let sent: AsyncStream<SentLink>.Continuation
 
     public nonisolated let sentLinks: AsyncStream<SentLink>
+    private let sentPage: AsyncStream<SentPage>.Continuation
+    public nonisolated let sentPages: AsyncStream<SentPage>
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -100,6 +103,7 @@ public actor ConnectServer {
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
         (sentLinks, sent) = AsyncStream.makeStream()
+        (sentPages, sentPage) = AsyncStream.makeStream()
         (browserChanges, browserChange) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
 
@@ -238,6 +242,11 @@ public actor ConnectServer {
             let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
             sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, userAgent: userAgent))
             send(.linkReceived.replying(to: requestID), to: session)
+        case var .pageSend(page):
+            guard let pairing = session.pairing else { return close(session) }
+            page.browser = session.appName ?? page.browser ?? (try? store.browserPairing(pairing))?.browserName
+            sentPage.yield(page)
+            send(.pageReceived.replying(to: requestID), to: session)
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)

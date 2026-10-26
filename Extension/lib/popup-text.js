@@ -33,6 +33,11 @@ export function catchControls({ status, catching, tabUrl }) {
   };
 }
 
+export function sendPageControl({ status, tabUrl }) {
+  if (!/^https?:/i.test(tabUrl ?? "")) return { shown: false };
+  return { shown: true, enabled: status === "connected" };
+}
+
 const DECLINE_MEMORY = 60 * 60 * 1000;
 
 export function lastDeclineText(decline, now = Date.now()) {

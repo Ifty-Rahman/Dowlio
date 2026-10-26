@@ -31,6 +31,8 @@ targets:
         product: DowlioLibrary
       - package: DowlioKit
         product: DowlioConnect
+      - package: DowlioKit
+        product: DowlioMedia
     postCompileScripts:
       - name: Bundle Dowlio Connect
         basedOnDependencyAnalysis: false
@@ -38,7 +40,7 @@ targets:
           destination="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Dowlio Connect"
           rm -rf "$destination"
           mkdir -p "$destination"
-          rsync -a --exclude /test --exclude /package.json --exclude /node_modules --exclude .DS_Store "${SRCROOT}/Extension/" "$destination/"
+          rsync -a --exclude /test --exclude /package.json --exclude /package-lock.json --exclude /node_modules --exclude .DS_Store "${SRCROOT}/Extension/" "$destination/"
     info:
       path: App/Info.plist
       properties:

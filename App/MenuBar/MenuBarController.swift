@@ -1,6 +1,8 @@
 import AppKit
+import DowlioCore
 import DowlioConnect
 import DowlioLibrary
+import DowlioMedia
 import Observation
 import SwiftUI
 
@@ -14,6 +16,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let panel = MenuBarPanel()
     private var drawnFraction: Double??
+    private var returnTo: NSRunningApplication?
+    private var openedAt = Date()
     private lazy var dismissal = PopoverDismissal(hooks: .init(
         popoverWindow: { [weak self] in self?.popover.contentViewController?.view.window },
         isPointerOnIcon: { [weak self] in self?.isPointerOnIcon ?? false },
@@ -70,14 +74,28 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         catchToast.show(notice, under: button)
     }
 
-    func showSent(_ link: SentLink) {
+    func showSent(_ url: URL, referrer: URL?, cookies: [Cookie], browser: String?, userAgent: String?) {
         if !popover.isShown { open() }
         moreMenu.hide()
+        endSentPage()
         if !panel.showsQuickAdd || panel.quickAdd == nil {
             panel.quickAdd = model.makeNewDownload()
             panel.showsQuickAdd = true
         }
-        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+        panel.quickAdd?.draft.addSent(url, referrer: referrer, cookies: cookies, browser: browser, userAgent: userAgent)
+    }
+
+    func showSentPage(_ sentPage: SentPageModel) {
+        if !popover.isShown { open() }
+        moreMenu.hide()
+        endSentPage()
+        panel.sentPage = sentPage
+        sentPage.start()
+    }
+
+    private func endSentPage() {
+        panel.sentPage?.stop()
+        panel.sentPage = nil
     }
 
     @objc private func toggle() {
@@ -108,6 +126,10 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         catchToast.hide()
         panel.showsQuickAdd = false
         panel.quickAdd = nil
+        endSentPage()
+        let front = NSWorkspace.shared.frontmostApplication
+        returnTo = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+        openedAt = Date()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         let window = popover.contentViewController?.view.window
         window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
@@ -120,7 +142,15 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         moreMenu.hide()
         panel.showsQuickAdd = false
         panel.quickAdd = nil
+        endSentPage()
         dismissal.stop()
+        let previous = returnTo
+        let opened = openedAt
+        returnTo = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let previous, !previous.isTerminated, !model.movedFocus(since: opened) else { return }
+            previous.activate()
+        }
     }
 
     private var isPointerOnIcon: Bool {
@@ -152,6 +182,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 final class MenuBarPanel {
     var showsQuickAdd = false
     var quickAdd: NewDownloadModel?
+    var sentPage: SentPageModel?
     @ObservationIgnored weak var moreAnchor: NSView?
 }
 
