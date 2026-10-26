@@ -186,7 +186,7 @@ public struct NothingFoundText: Equatable, Sendable {
 
 public enum MediaText {
     public static func isAudio(_ version: Version) -> Bool {
-        MediaFile.kind(of: version.source.url, contentType: version.contentType) == .audio
+        version.isAudio
     }
 
     public static func isH264(_ version: Version) -> Bool {
@@ -204,20 +204,28 @@ public enum MediaText {
     }
 
     public static func container(of version: Version) -> String {
-        if case .media = version.source { return "MP4" }
+        if case .media(let media) = version.source { return media.fileExtension.uppercased() }
         let ext = version.source.url.pathExtension.uppercased()
         if !ext.isEmpty { return ext }
         return version.contentType?.split(separator: "/").last.map { $0.uppercased() } ?? "File"
     }
 
     public static func title(of version: Version) -> String {
-        if let height = version.height, !isAudio(version) { return "\(height)p" }
+        if isAudio(version) { return "Audio" }
+        if let height = version.height { return "\(height)p" }
         return container(of: version)
     }
 
     public static func detail(of version: Version) -> String {
-        let parts = [version.height == nil || isAudio(version) ? nil : container(of: version), version.codecs]
+        let parts = isAudio(version)
+            ? [container(of: version), version.codecs, version.isExtractedAudio ? "extracted after download" : nil]
+            : [version.height == nil ? nil : container(of: version), version.codecs]
         return parts.compactMap { $0 }.joined(separator: " · ")
+    }
+
+    public static func fileExtension(of version: Version) -> String {
+        if case .media(let media) = version.source { return media.fileExtension }
+        return version.source.url.pathExtension
     }
 
     public static func size(of version: Version) -> String? {

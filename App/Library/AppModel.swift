@@ -353,7 +353,7 @@ final class AppModel {
     }
 
     nonisolated static func nameIsTaken(in folder: URL) -> (String) -> Bool {
-        let folders = [folder, folder.appending(path: FileCategory.video.folderName, directoryHint: .isDirectory)]
+        let folders = [folder] + [FileCategory.video, .audio].map { folder.appending(path: $0.folderName, directoryHint: .isDirectory) }
         return { name in folders.contains { FileManager.default.fileExists(atPath: $0.appending(path: name).path) } }
     }
 

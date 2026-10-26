@@ -39,7 +39,7 @@ public struct QualityPreference: Equatable, Sendable {
 
 public enum MediaNaming {
     public static func fileName(label: String, version: Version, addsResolution: Bool = true, isTaken: (String) -> Bool) -> String {
-        let ext = version.source.url.pathExtension
+        let ext = MediaText.fileExtension(of: version)
         let cleaned = label
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "/", with: "-")

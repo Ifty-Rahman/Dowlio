@@ -41,8 +41,8 @@ extension DownloadRun {
             return plan
         }
 
-        let fileName = options.fileName.map(FileNaming.chosen) ?? Self.mediaFileName(for: url)
-        let contentType = media.tracks.allSatisfy { $0.kind == .audio } ? "audio/mp4" : "video/mp4"
+        let fileName = options.fileName.map(FileNaming.chosen) ?? Self.mediaFileName(for: url, of: media)
+        let contentType = media.contentType
         let folder = destination.folder(forFileNamed: fileName, contentType: contentType)
         let category = FileCategory(fileName: fileName, contentType: contentType)
         let isNotSecure = media.tracks.contains { track in
@@ -74,9 +74,9 @@ extension DownloadRun {
         return plan
     }
 
-    static func mediaFileName(for url: URL) -> String {
+    static func mediaFileName(for url: URL, of media: MediaSource) -> String {
         let (base, _) = FileNaming.split(FileNaming.name(for: url))
-        return "\(base).mp4"
+        return "\(base).\(media.fileExtension)"
     }
 
     private func receivePieces(of plan: MediaPlan, resuming: Bool) async throws {
@@ -212,7 +212,7 @@ extension DownloadRun {
         try Task.checkCancellation()
         guard let remux = configuration.remux else { throw DownloadError.mediaUnplayable }
         let joined = try join(plan)
-        let output = plan.partial.packageURL.appending(path: "video.mp4")
+        let output = plan.partial.packageURL.appending(path: "output.\(plan.media.fileExtension)")
         do {
             try await remux(joined, output)
         } catch {

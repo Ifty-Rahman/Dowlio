@@ -89,10 +89,32 @@ struct SentPageDraftTests {
     @Test func aVersionRowNamesItsTypeAndSize() {
         #expect(MediaText.title(of: mp4) == "MP4")
         #expect(MediaText.size(of: mp4) == "38.2 MB")
-        #expect(MediaText.title(of: Version(source: .file(URL(string: "https://a.example/b")!), contentType: "audio/mpeg")) == "MPEG")
+        #expect(MediaText.title(of: Version(source: .file(URL(string: "https://a.example/b")!), contentType: "audio/mpeg")) == "Audio")
+        #expect(MediaText.detail(of: Version(source: .file(URL(string: "https://a.example/b")!), contentType: "audio/mpeg")) == "MPEG")
         #expect(MediaText.size(of: ogg.withoutSize) == nil)
         #expect(MediaText.duration(61) == "1:01")
         #expect(MediaText.duration(3725) == "1:02:05")
+    }
+
+    @Test func anAudioRowNamesItsTypeAndCodec() {
+        let audio = Version(source: .file(URL(string: "https://cdn.example.com/talk.m4a")!), contentType: "audio/mp4", totalBytes: 3_420_000, codecs: "AAC")
+
+        #expect([MediaText.title(of: audio), MediaText.detail(of: audio), MediaText.size(of: audio)] == ["Audio", "M4A · AAC", "3.42 MB"])
+    }
+
+    @Test func anExtractedAudioRowSaysSoAndShowsTheVideosSize() throws {
+        let video = Version(source: .file(URL(string: "https://cdn.example.com/clip.mp4")!), contentType: "video/mp4", totalBytes: 38_200_000, codecs: "H.264 + AAC")
+        let audio = try #require(Version.extractedAudio(of: video))
+
+        #expect([MediaText.title(of: audio), MediaText.detail(of: audio), MediaText.size(of: audio)] == ["Audio", "M4A · AAC · extracted after download", "38.2 MB"])
+        #expect(MediaText.isAudio(audio))
+    }
+
+    @Test func theExtractedAudioIsNamedAsAnM4A() throws {
+        let video = Version(source: .file(URL(string: "https://cdn.example.com/clip.mp4")!), contentType: "video/mp4", totalBytes: 100)
+        let audio = try #require(Version.extractedAudio(of: video))
+
+        #expect(MediaNaming.fileName(label: "Holiday clip", version: audio) { _ in false } == "Holiday clip.m4a")
     }
 
     @Test func theSourceLineSaysWhichBrowserSentItAndWhetherItWasSignedIn() {

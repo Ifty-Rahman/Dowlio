@@ -61,7 +61,7 @@ struct NeedsSignInTests {
 
         let found = try await site.analyze("/watch")
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.flatMap(\.versions).map(\.source.url) == [site.url("/media/open.mp4")])
     }
 

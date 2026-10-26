@@ -61,7 +61,8 @@ public struct PageAnalyzer: Sendable {
             }
             let version = Version(source: .file(page.url), contentType: linked.contentType, totalBytes: linked.totalBytes)
             guard Self.kind(of: linked) != nil else { return report(.plainFile(page.url)) }
-            return report(.found([Candidate(label: linked.fileName, versions: [version])]))
+            let candidate = Candidate(label: linked.fileName, versions: [version])
+            return report(.found([candidate.withExtractedAudio(splittable: linked.splitsIntoSegments ? [page.url] : [])]))
         }
 
         let found = await candidates(on: page, reading: await read(page, refusals: refusals), refusals: refusals, report: report)
@@ -73,7 +74,7 @@ public struct PageAnalyzer: Sendable {
     private func linkedPlaylist(_ page: SentPage, label: String) async -> PageAnalysis {
         let refusals = Refusals()
         let candidates = await playlistCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil)
-        return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates)
+        return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates.map { $0.withExtractedAudio(splittable: []) })
     }
 
     private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
@@ -93,7 +94,7 @@ public struct PageAnalyzer: Sendable {
 
         let options = mediaOptions(page)
         let sources = players.list.flatMap(\.sources)
-        let versions = await withTaskGroup(of: (URL, Version?).self) { group in
+        let probed = await withTaskGroup(of: (URL, Probe).self) { group in
             for media in sources {
                 group.addTask { [inspect] in
                     let url = media.url
@@ -102,19 +103,21 @@ public struct PageAnalyzer: Sendable {
                         inspection = try await inspect(url, options)
                     } catch {
                         if !watchedFiles.contains(url) { refusals.note(error) }
-                        return (url, nil)
+                        return (url, Probe())
                     }
-                    guard Self.kind(of: inspection) != nil else { return (url, nil) }
-                    return (url, Version(
+                    guard Self.kind(of: inspection) != nil else { return (url, Probe()) }
+                    return (url, Probe(version: Version(
                         source: .file(url), contentType: inspection.contentType, totalBytes: inspection.totalBytes,
                         height: media.height ?? MediaFile.height(in: url.path), codecs: media.codecs ?? MediaFile.codecs(in: url.path)
-                    ))
+                    ), splitsIntoSegments: inspection.splitsIntoSegments))
                 }
             }
-            var found: [URL: Version] = [:]
-            for await (url, version) in group { found[url] = version }
+            var found: [URL: Probe] = [:]
+            for await (url, probe) in group { found[url] = probe }
             return found
         }
+        let versions = probed.compactMapValues(\.version)
+        let splittable = Set(probed.filter(\.value.splitsIntoSegments).keys)
         let kept = players.list.enumerated().compactMap { index, player -> Candidate? in
             var candidate = candidates[index]
             candidate.versions = player.sources.compactMap { versions[$0.url] }.filter { version in
@@ -124,7 +127,7 @@ public struct PageAnalyzer: Sendable {
         }
         let playlists = page.watched.filter { HLSVersions.isPlaylist($0.url, contentType: $0.contentType) }.map(\.url)
         let streamed = await playlistCandidates(playlists, page: page, refusals: refusals, label: label, thumbnail: reading?.image ?? page.scan.lazy.compactMap(\.poster).first)
-        return Self.merged(kept + streamed)
+        return Self.merged(kept + streamed).map { $0.withExtractedAudio(splittable: splittable) }
     }
 
     private func playlistCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
@@ -296,6 +299,11 @@ public struct PageAnalyzer: Sendable {
         options.referrer = page.url
         return options
     }
+}
+
+private struct Probe: Sendable {
+    var version: Version?
+    var splitsIntoSegments = false
 }
 
 final class Refusals: @unchecked Sendable {

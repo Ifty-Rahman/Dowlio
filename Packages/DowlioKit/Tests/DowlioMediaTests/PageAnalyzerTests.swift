@@ -17,7 +17,7 @@ struct PageAnalyzerTests {
 
         let found = try await site.analyze("/watch")
 
-        #expect(found == .found([Candidate(
+        #expect(found.withoutExtractedAudio == .found([Candidate(
             label: "Holiday clip",
             thumbnail: site.url("/media/poster.jpg"),
             versions: [Version(source: .file(site.url("/media/clip.mp4")), contentType: "video/mp4", totalBytes: 1000)]
@@ -37,7 +37,7 @@ struct PageAnalyzerTests {
 
         let found = try await site.analyze("/html5_video")
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.map { $0.versions.map(\.source.url.lastPathComponent) } == [["mov_bbb.mp4", "mov_bbb.ogg"], ["talk.mp3"]])
     }
 
@@ -50,7 +50,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/stream/clip.mp4"), kind: .file, contentType: "video/mp4")]
         }
 
-        #expect(found == .found([Candidate(
+        #expect(found.withoutExtractedAudio == .found([Candidate(
             label: "Clip page",
             versions: [Version(source: .file(site.url("/stream/clip.mp4")), contentType: "video/mp4", totalBytes: 2_000_000)]
         )]))
@@ -64,7 +64,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest, contentType: "application/vnd.apple.mpegurl")]
         }
 
-        #expect(found == .found([]))
+        #expect(found.withoutExtractedAudio == .found([]))
     }
 
     @Test func smallFilesFromAnotherSiteAreTakenForAdsUnlessThePageShowsThem() async throws {
@@ -81,7 +81,7 @@ struct PageAnalyzerTests {
                 + [WatchedRequest(url: site.url("/own.mp4"), kind: .file, contentType: "video/mp4")]
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(Set(candidates.flatMap(\.versions).map(\.source.url.lastPathComponent)) == ["shown.mp4", "long.mp4", "own.mp4"])
     }
 
@@ -94,7 +94,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/vid/avc1/720x1280/clip.mp4"), kind: .file, contentType: "video/mp4")]
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.first?.versions.first?.height == 720)
         #expect(candidates.first?.versions.first?.codecs == "H.264")
     }
@@ -116,7 +116,7 @@ struct PageAnalyzerTests {
             ]
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.count == 1)
         #expect(candidates.first?.versions.compactMap(\.height).sorted() == [240, 720])
     }
@@ -142,7 +142,7 @@ struct PageAnalyzerTests {
             $0.watched = ["/hls/master.m3u8", "/hls/720p/video.m3u8"].map { WatchedRequest(url: site.url($0), kind: .manifest, contentType: "application/vnd.apple.mpegurl") }
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.count == 1)
         let video = try #require(candidates.first)
         #expect(video.label == "Stream page")
@@ -172,7 +172,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/hls/master.m3u8"), kind: .manifest, contentType: "application/vnd.apple.mpegurl")]
         }
 
-        guard case .found(let candidates) = found, case .media(let media) = candidates.first?.versions.first?.source else {
+        guard case .found(let candidates) = found.withoutExtractedAudio, case .media(let media) = candidates.first?.versions.first?.source else {
             Issue.record("not media: \(found)")
             return
         }
@@ -211,7 +211,7 @@ struct PageAnalyzerTests {
             }
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.count == 1)
         let versions = try #require(candidates.first).versions
         #expect(versions.map(\.height) == [240, 240, 720, 720, 720, 2160])
@@ -240,7 +240,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/v/CMAF_720.m3u8"), kind: .manifest)]
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.first?.versions.first?.source == .file(site.url("/v/CMAF_720.mp4")))
     }
 
@@ -253,7 +253,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/live/index.m3u8"), kind: .manifest)]
         }
 
-        #expect(found == .found([]))
+        #expect(found.withoutExtractedAudio == .found([]))
     }
 
     @Test func aLinkStraightToAPlaylistIsAVideoNotAFile() async throws {
@@ -262,7 +262,7 @@ struct PageAnalyzerTests {
 
         let found = try await site.analyze("/clip/index.m3u8")
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.first?.versions.count == 1)
     }
 
@@ -284,7 +284,7 @@ struct PageAnalyzerTests {
 
         let found = try await site.analyze("/media/talk.mp4")
 
-        #expect(found == .found([Candidate(
+        #expect(found.withoutExtractedAudio == .found([Candidate(
             label: "talk.mp4",
             versions: [Version(source: .file(site.url("/media/talk.mp4")), contentType: "video/mp4", totalBytes: 800)]
         )]))
@@ -302,7 +302,7 @@ struct PageAnalyzerTests {
             $0.userAgent = "Mozilla/5.0 Dia"
         }
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.map(\.versions.first?.totalBytes) == [300])
         let media = site.server.requests.filter { $0.path == "/media/clip.mp4" }
         #expect(!media.isEmpty)
@@ -322,7 +322,7 @@ struct PageAnalyzerTests {
             $0.scan = [ScannedMedia(url: site.url("/stream/episode.m4a"), kind: .audio, duration: 1800)]
         }
 
-        #expect(found == .found([Candidate(
+        #expect(found.withoutExtractedAudio == .found([Candidate(
             label: "Player",
             duration: 1800,
             versions: [Version(source: .file(site.url("/stream/episode.m4a")), contentType: "audio/mp4", totalBytes: 640)]
@@ -344,7 +344,7 @@ struct PageAnalyzerTests {
 
         let found = try await site.analyze("/watch")
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.flatMap(\.versions).map(\.source) == [.file(site.url("/media/real.mp4"))])
     }
 
@@ -378,7 +378,7 @@ struct PageAnalyzerTests {
 
         let found = try await site.analyze("/video-AbCdEfGh123/sample-video/")
 
-        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.count == 1)
         let video = try #require(candidates.first)
         #expect(video.label == "Sample Video - Performer - TUBE")
@@ -420,5 +420,16 @@ struct Site {
         var last: PageAnalysis?
         for await update in analyzer.analyze(sent) { last = update }
         return try #require(last)
+    }
+}
+
+extension PageAnalysis {
+    var withoutExtractedAudio: PageAnalysis {
+        guard case .found(let candidates) = self else { return self }
+        return .found(candidates.map { candidate in
+            var candidate = candidate
+            candidate.versions.removeAll(where: \.isExtractedAudio)
+            return candidate
+        })
     }
 }

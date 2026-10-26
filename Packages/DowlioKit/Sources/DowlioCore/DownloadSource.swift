@@ -19,16 +19,33 @@ public struct MediaSource: Codable, Equatable, Sendable {
     }
 
     public let tracks: [MediaTrack]
+    public let keepsAudioOnly: Bool
 
-    public init(tracks: [MediaTrack]) throws {
+    public init(tracks: [MediaTrack], keepsAudioOnly: Bool = false) throws {
         guard !tracks.isEmpty else { throw Error.noTracks }
         guard tracks.allSatisfy({ !$0.fragments.isEmpty }) else { throw Error.trackWithoutFragments }
         self.tracks = tracks
+        self.keepsAudioOnly = keepsAudioOnly
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        try self.init(tracks: container.decode([MediaTrack].self, forKey: .tracks))
+        try self.init(
+            tracks: container.decode([MediaTrack].self, forKey: .tracks),
+            keepsAudioOnly: container.decodeIfPresent(Bool.self, forKey: .keepsAudioOnly) ?? false
+        )
+    }
+
+    public var isAudio: Bool {
+        keepsAudioOnly || tracks.allSatisfy { $0.kind == .audio }
+    }
+
+    public var fileExtension: String { isAudio ? "m4a" : "mp4" }
+
+    public var contentType: String { isAudio ? "audio/mp4" : "video/mp4" }
+
+    public var extractsAudio: Bool {
+        keepsAudioOnly && tracks.contains { $0.kind != .audio }
     }
 
     public var firstURL: URL {

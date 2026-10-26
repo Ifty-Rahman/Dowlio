@@ -37,7 +37,7 @@ struct LookAgainTests {
 
         let updates = await updates(analyzer.analyze(SentPage(url: site.url("/watch"))))
 
-        #expect(updates == [.playing, .found([Candidate(
+        #expect(updates.map(\.withoutExtractedAudio) == [.playing, .found([Candidate(
             label: "Hidden clip",
             versions: [Version(source: .file(site.url("/hidden/clip.mp4")), contentType: "video/mp4", totalBytes: 4000)]
         )])])
