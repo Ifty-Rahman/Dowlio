@@ -9,6 +9,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case found
         case nothingFound
         case needsSignIn
+        case restricted(Candidate.Restriction)
     }
 
     public enum Showing: Equatable, Sendable {
@@ -72,9 +73,24 @@ public struct SentPageDraft: Equatable, Sendable {
             excluded = []
             picks = [:]
             showing = .video
-            phase = found.isEmpty ? .nothingFound : .found
+            phase = Self.phase(of: found)
             if found.isEmpty { emptyResults += 1 }
             return nil
+        }
+    }
+
+    private static func phase(of found: [Candidate]) -> Phase {
+        guard !found.isEmpty else { return .nothingFound }
+        let restrictions = Set(found.map(\.restriction))
+        guard restrictions.count == 1, let only = restrictions.first, let restriction = only else { return .found }
+        return .restricted(restriction)
+    }
+
+    public var restrictionLine: String? {
+        switch selectedCandidate?.restriction {
+        case .protected: "This video is protected and can't be downloaded"
+        case .live: "Live stream, not supported yet"
+        case nil: nil
         }
     }
 
@@ -124,6 +140,7 @@ public struct SentPageDraft: Equatable, Sendable {
     public func chosenVersion(of index: Int) -> Version? {
         guard candidates.indices.contains(index) else { return nil }
         let versions = candidates[index].versions
+        guard !versions.isEmpty else { return nil }
         if let pick = picks[index], versions.contains(pick), MediaText.isAudio(pick) == (showing == .audio) { return pick }
         if !versions.contains(where: MediaText.isAudio) || !versions.contains(where: { !MediaText.isAudio($0) }) {
             return preference.pick(from: versions, showing: MediaText.isAudio(versions[0]) ? .audio : .video) ?? versions.first

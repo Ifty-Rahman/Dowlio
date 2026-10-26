@@ -6,6 +6,11 @@ enum HLSVersions {
         url.pathExtension.lowercased() == "m3u8" || (contentType?.lowercased().contains("mpegurl") ?? false)
     }
 
+    static func restriction(of media: MediaPlaylist) -> Candidate.Restriction? {
+        if media.encryption == .protected { return .protected }
+        return media.isComplete ? nil : .live
+    }
+
     static func codecNames(_ codecs: [String]) -> String? {
         let named = codecs.compactMap { codec -> String? in
             let lowered = codec.lowercased()
@@ -38,7 +43,7 @@ enum HLSVersions {
     }
 
     static func version(of media: MediaPlaylist, variant: Variant?, audioIsSeparate: Bool = false) -> Version? {
-        guard media.isComplete, media.encryption == .none, !media.fragments.isEmpty else { return nil }
+        guard restriction(of: media) == nil, !media.fragments.isEmpty else { return nil }
         let listed = variant?.codecs ?? []
         let codecs = audioIsSeparate ? listed.filter { !isAudioCodec($0) } : listed
         let source: DownloadSource

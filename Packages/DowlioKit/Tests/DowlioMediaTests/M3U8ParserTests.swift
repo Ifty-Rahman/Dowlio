@@ -81,6 +81,53 @@ struct M3U8ParserTests {
         #expect(drm.encryption == .protected)
     }
 
+    @Test func eachEncryptedFragmentCarriesItsKeyAndTheSequenceNumberAsItsIV() throws {
+        guard case .media(let aes) = try fixture("hls-media-aes128", at: "https://cdn.example.com/oceans/index.m3u8") else {
+            Issue.record("not media"); return
+        }
+
+        let keys = aes.fragments.map(\.key)
+        #expect(keys.allSatisfy { $0?.url == URL(string: "https://cdn.example.com/oceans/oceans.key") })
+        #expect(keys.first??.iv == Data(repeating: 0, count: 15) + [1])
+        #expect(keys.last??.iv == Data(repeating: 0, count: 15) + [15])
+    }
+
+    @Test func aKeyWithItsOwnIVUsesItAndAKeyOfNoneEndsEncryption() throws {
+        let playlist = try M3U8Parser.parse("""
+            #EXTM3U
+            #EXT-X-KEY:METHOD=AES-128,URI="/k/1",IV=0x000102030405060708090A0B0C0D0E0F
+            #EXTINF:4,
+            a.ts
+            #EXT-X-KEY:METHOD=NONE
+            #EXTINF:4,
+            b.ts
+            #EXT-X-ENDLIST
+            """, base: URL(string: "https://a.example/v/index.m3u8")!)
+        guard case .media(let media) = playlist else { Issue.record("not media"); return }
+
+        #expect(media.fragments[0].key == FragmentKey(url: URL(string: "https://a.example/k/1")!, iv: Data(0..<16)))
+        #expect(media.fragments[1].key == nil)
+    }
+
+    @Test func anAES128KeyWithNoAddressCantBeDecryptedSoIsProtected() throws {
+        let playlist = try M3U8Parser.parse("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n", base: URL(string: "https://a.example/v.m3u8")!)
+        guard case .media(let media) = playlist else { Issue.record("not media"); return }
+
+        #expect(media.encryption == .protected)
+    }
+
+    @Test func aMasterWithASessionKeyForADRMSystemIsProtected() throws {
+        let playlist = try M3U8Parser.parse("""
+            #EXTM3U
+            #EXT-X-SESSION-KEY:METHOD=SAMPLE-AES,URI="skd://abc",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXT-X-STREAM-INF:BANDWIDTH=100000,RESOLUTION=640x360
+            v.m3u8
+            """, base: URL(string: "https://a.example/master.m3u8")!)
+        guard case .master(let master) = playlist else { Issue.record("not master"); return }
+
+        #expect(master.isProtected)
+    }
+
     @Test func textThatIsntAPlaylistIsRefused() {
         #expect(throws: M3U8Parser.Error.notAPlaylist) {
             try M3U8Parser.parse("<html>nope</html>", base: URL(string: "https://a.example/x.m3u8")!)

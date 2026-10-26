@@ -70,7 +70,7 @@ final class NewDownloadModel: Identifiable {
         case .looking, .playing: return false
         case .found: return !media.draft.downloads.isEmpty
         case .nothingFound: return draft.canDownload
-        case .needsSignIn: return false
+        case .needsSignIn, .restricted: return false
         }
     }
 

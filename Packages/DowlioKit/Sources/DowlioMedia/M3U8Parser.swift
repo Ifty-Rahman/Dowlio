@@ -9,6 +9,7 @@ public enum Playlist: Equatable, Sendable {
 public struct MasterPlaylist: Equatable, Sendable {
     public var variants: [Variant]
     public var audio: [Rendition]
+    public var isProtected = false
 }
 
 public struct Variant: Equatable, Sendable {
@@ -67,9 +68,12 @@ public enum M3U8Parser {
     private static func master(_ lines: [String], base: URL) -> MasterPlaylist {
         var variants: [Variant] = []
         var audio: [Rendition] = []
+        var isProtected = false
         var pending: [String: String]?
         for line in lines {
-            if let value = line.value(of: "#EXT-X-STREAM-INF:") {
+            if let value = line.value(of: "#EXT-X-SESSION-KEY:") {
+                if case .protected = KeyTag(attributes(value)) { isProtected = true }
+            } else if let value = line.value(of: "#EXT-X-STREAM-INF:") {
                 pending = attributes(value)
             } else if let value = line.value(of: "#EXT-X-MEDIA:") {
                 let found = attributes(value)
@@ -90,7 +94,7 @@ public enum M3U8Parser {
                 ))
             }
         }
-        return MasterPlaylist(variants: variants, audio: audio)
+        return MasterPlaylist(variants: variants, audio: audio, isProtected: isProtected)
     }
 
     private static func media(_ lines: [String], base: URL) -> MediaPlaylist {
@@ -101,8 +105,12 @@ public enum M3U8Parser {
         var encryption = MediaPlaylist.Encryption.none
         var pendingRange: (length: Int64, offset: Int64?)?
         var nextOffset: [URL: Int64] = [:]
+        var sequence: UInt64 = 0
+        var key: PendingKey?
         for line in lines {
-            if let value = line.value(of: "#EXTINF:") {
+            if let value = line.value(of: "#EXT-X-MEDIA-SEQUENCE:") {
+                sequence = UInt64(value.trimmingCharacters(in: .whitespaces)) ?? 0
+            } else if let value = line.value(of: "#EXTINF:") {
                 duration += Double(value.split(separator: ",").first ?? "") ?? 0
             } else if let value = line.value(of: "#EXT-X-BYTERANGE:") {
                 pendingRange = byteRange(value)
@@ -110,16 +118,26 @@ public enum M3U8Parser {
                 let found = attributes(value)
                 guard let url = found["URI"].flatMap({ resolve($0, base) }) else { continue }
                 let range = found["BYTERANGE"].flatMap(byteRange)
-                initialization = MediaFragment(url: url, bytes: range.map { closed($0.length, at: $0.offset ?? 0) })
+                initialization = MediaFragment(
+                    url: url, bytes: range.map { closed($0.length, at: $0.offset ?? 0) }, key: key?.fragmentKey(sequence: sequence)
+                )
                 if let range { nextOffset[url] = (range.offset ?? 0) + range.length }
             } else if let value = line.value(of: "#EXT-X-KEY:") {
                 let found = attributes(value)
-                let method = found["METHOD"] ?? "NONE"
-                let format = found["KEYFORMAT"] ?? "identity"
-                if method == "AES-128" && format == "identity" {
+                switch KeyTag(found) {
+                case .none:
+                    key = nil
+                case .aes128:
+                    guard let url = found["URI"].flatMap({ resolve($0, base) }) else {
+                        encryption = .protected
+                        key = nil
+                        continue
+                    }
                     if encryption == .none { encryption = .aes128 }
-                } else if method != "NONE" {
+                    key = PendingKey(url: url, iv: found["IV"].flatMap(iv))
+                case .protected:
                     encryption = .protected
+                    key = nil
                 }
             } else if line.hasPrefix("#EXT-X-ENDLIST") {
                 isComplete = true
@@ -131,12 +149,54 @@ public enum M3U8Parser {
                     nextOffset[url] = offset + range.length
                 }
                 pendingRange = nil
-                fragments.append(MediaFragment(url: url, bytes: bytes))
+                fragments.append(MediaFragment(url: url, bytes: bytes, key: key?.fragmentKey(sequence: sequence + UInt64(fragments.count))))
             }
         }
         return MediaPlaylist(
             fragments: fragments, initialization: initialization, duration: duration, isComplete: isComplete, encryption: encryption
         )
+    }
+
+    private struct PendingKey {
+        var url: URL
+        var iv: Data?
+
+        func fragmentKey(sequence: UInt64) -> FragmentKey {
+            FragmentKey(url: url, iv: iv ?? Data(repeating: 0, count: 8) + withUnsafeBytes(of: sequence.bigEndian) { Data($0) })
+        }
+    }
+
+    private enum KeyTag {
+        case none
+        case aes128
+        case protected
+
+        init(_ attributes: [String: String]) {
+            let method = attributes["METHOD"] ?? "NONE"
+            let format = attributes["KEYFORMAT"] ?? "identity"
+            if method == "NONE" {
+                self = .none
+            } else if method == "AES-128" && format == "identity" {
+                self = .aes128
+            } else {
+                self = .protected
+            }
+        }
+    }
+
+    private static func iv(_ text: String) -> Data? {
+        var hex = text.trimmingCharacters(in: .whitespaces)
+        if hex.lowercased().hasPrefix("0x") { hex.removeFirst(2) }
+        guard !hex.isEmpty, hex.count <= 32, hex.allSatisfy(\.isHexDigit) else { return nil }
+        hex = String(repeating: "0", count: 32 - hex.count) + hex
+        var bytes = Data()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            bytes.append(UInt8(hex[index..<next], radix: 16) ?? 0)
+            index = next
+        }
+        return bytes
     }
 
     private static func byteRange(_ value: String) -> (length: Int64, offset: Int64?)? {

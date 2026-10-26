@@ -92,7 +92,7 @@ struct NewDownloadSheet: View {
                 SkeletonRows()
                 LookingLine(media: media)
             }
-        case .found:
+        case .found, .restricted:
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
                 MediaHeader(media: media, subtitle: versionsLine(media))
                 if media.draft.candidates.count > 1 { VideoStrip(media: media) }

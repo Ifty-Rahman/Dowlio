@@ -163,6 +163,7 @@ extension DownloadRun {
         }
         try RetryableFailure.throwIfEndedEarly(received: written, expected: expected)
         try handle.synchronize()
+        if let key = piece.fragment.key { written = try await decrypt(temporary, with: key, of: plan) }
         try? FileManager.default.removeItem(at: part)
         try FileManager.default.moveItem(at: temporary, to: part)
         plan.finish(position, bytes: written)

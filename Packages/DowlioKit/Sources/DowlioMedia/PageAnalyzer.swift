@@ -145,23 +145,32 @@ public struct PageAnalyzer: Sendable {
         for (url, playlist) in parsed {
             switch playlist {
             case .master(let master):
-                let found = await withTaskGroup(of: (Int, Version?, Double).self) { group in
+                if master.isProtected {
+                    candidates.append(Candidate(label: label, thumbnail: thumbnail, versions: [], restriction: .protected))
+                    continue
+                }
+                let found = await withTaskGroup(of: VariantPlaylist.self) { group in
                     for (index, variant) in master.variants.enumerated() {
                         group.addTask {
-                            guard case .media(let media) = await self.playlist(at: variant.url, options: options, refusals: refusals) else { return (index, nil, 0) }
-                            return (index, HLSVersions.version(of: media, variant: variant, audioIsSeparate: HLSVersions.audioIsSeparate(for: variant, in: master)), media.duration)
+                            guard case .media(let media) = await self.playlist(at: variant.url, options: options, refusals: refusals) else {
+                                return VariantPlaylist(index: index)
+                            }
+                            let version = HLSVersions.version(of: media, variant: variant, audioIsSeparate: HLSVersions.audioIsSeparate(for: variant, in: master))
+                            return VariantPlaylist(index: index, media: media, version: version)
                         }
                     }
-                    var results: [(Int, Version?, Double)] = []
+                    var results: [VariantPlaylist] = []
                     for await result in group { results.append(result) }
-                    return results.sorted { $0.0 < $1.0 }
+                    return results.sorted { $0.index < $1.index }
                 }
-                let versions = found.compactMap(\.1)
-                guard !versions.isEmpty else { continue }
-                candidates.append(Candidate(label: label, thumbnail: thumbnail, duration: found.map(\.2).max(), versions: versions))
+                let playlists = found.compactMap(\.media)
+                let candidate = Candidate(label: label, thumbnail: thumbnail, duration: playlists.map(\.duration).max(), versions: found.compactMap(\.version))
+                if let shown = candidate.offeredOrRestricted(by: playlists) { candidates.append(shown) }
             case .media(let media):
-                guard !covered.contains(Self.withoutQuery(url)), let version = HLSVersions.version(of: media, variant: nil) else { continue }
-                candidates.append(Candidate(label: label, thumbnail: thumbnail, duration: media.duration, versions: [version]))
+                guard !covered.contains(Self.withoutQuery(url)) else { continue }
+                let versions = HLSVersions.version(of: media, variant: nil).map { [$0] } ?? []
+                let candidate = Candidate(label: label, thumbnail: thumbnail, duration: media.duration, versions: versions)
+                if let shown = candidate.offeredOrRestricted(by: [media]) { candidates.append(shown) }
             }
         }
         return candidates
@@ -179,8 +188,8 @@ public struct PageAnalyzer: Sendable {
     static func merged(_ candidates: [Candidate]) -> [Candidate] {
         var groups: [[Candidate]] = []
         for candidate in candidates {
-            if let length = candidate.duration,
-               let index = groups.firstIndex(where: { $0.contains { other in other.duration.map { abs($0 - length) <= sameLengthWithin } ?? false } }) {
+            if candidate.restriction == nil, let length = candidate.duration,
+               let index = groups.firstIndex(where: { $0.contains { other in other.restriction == nil && other.duration.map { abs($0 - length) <= sameLengthWithin } ?? false } }) {
                 groups[index].append(candidate)
             } else {
                 groups.append([candidate])
@@ -298,6 +307,23 @@ public struct PageAnalyzer: Sendable {
         var options = pageOptions(page)
         options.referrer = page.url
         return options
+    }
+}
+
+private struct VariantPlaylist: Sendable {
+    var index: Int
+    var media: MediaPlaylist?
+    var version: Version?
+}
+
+private extension Candidate {
+    func offeredOrRestricted(by playlists: [MediaPlaylist]) -> Candidate? {
+        guard versions.isEmpty else { return self }
+        let found = playlists.compactMap(HLSVersions.restriction)
+        guard let restriction = found.contains(.protected) ? .protected : found.first else { return nil }
+        var restricted = self
+        restricted.restriction = restriction
+        return restricted
     }
 }
 

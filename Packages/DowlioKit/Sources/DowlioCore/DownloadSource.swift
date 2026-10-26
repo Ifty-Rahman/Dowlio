@@ -74,10 +74,22 @@ public struct MediaTrack: Codable, Equatable, Sendable {
 public struct MediaFragment: Codable, Equatable, Sendable {
     public var url: URL
     public var bytes: ClosedRange<Int64>?
+    public var key: FragmentKey?
 
-    public init(url: URL, bytes: ClosedRange<Int64>? = nil) {
+    public init(url: URL, bytes: ClosedRange<Int64>? = nil, key: FragmentKey? = nil) {
         self.url = url
         self.bytes = bytes
+        self.key = key
+    }
+}
+
+public struct FragmentKey: Codable, Hashable, Sendable {
+    public var url: URL
+    public var iv: Data
+
+    public init(url: URL, iv: Data) {
+        self.url = url
+        self.iv = iv
     }
 }
 

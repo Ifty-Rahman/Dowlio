@@ -102,6 +102,14 @@ struct MediaChoices: View {
     var boxed = false
 
     var body: some View {
+        if let line = media.draft.restrictionLine {
+            RestrictionNote(line: line, isLive: media.draft.selectedCandidate?.restriction == .live)
+        } else {
+            choices
+        }
+    }
+
+    private var choices: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
             if media.draft.hasVideoAndAudio {
                 Picker("Show", selection: Binding(get: { media.draft.showing }, set: { media.show($0) })) {
@@ -378,6 +386,11 @@ private struct VideoCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .overlay(alignment: .bottomLeading) {
+                if let restriction = candidate.restriction {
+                    RestrictionBadge(restriction: restriction).padding(ring + 4)
+                }
+            }
             .help(candidate.label)
             .accessibilityLabel("Video \(number): \(candidate.label)")
             .accessibilityAddTraits(isShown ? .isSelected : [])
@@ -416,6 +429,41 @@ private struct SelectionMark: View {
         }
         .frame(width: 16, height: 16)
         .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
+    }
+}
+
+private struct RestrictionBadge: View {
+    let restriction: Candidate.Restriction
+
+    var body: some View {
+        Group {
+            if restriction == .live {
+                Circle().fill(.red).frame(width: 7, height: 7)
+            } else {
+                Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .background(.black.opacity(0.55), in: Circle())
+        .accessibilityLabel(restriction == .live ? "Live stream" : "Protected")
+    }
+}
+
+struct RestrictionNote: View {
+    let line: String
+    let isLive: Bool
+
+    var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.sm) {
+            if isLive {
+                Circle().fill(.red).frame(width: 8, height: 8)
+            } else {
+                Image(systemName: "lock.fill").foregroundStyle(.secondary)
+            }
+            Text(line).font(DowlioDesign.TypeRole.detail)
+        }
+        .padding(.vertical, DowlioDesign.Spacing.xs)
+        .accessibilityElement(children: .combine)
     }
 }
 

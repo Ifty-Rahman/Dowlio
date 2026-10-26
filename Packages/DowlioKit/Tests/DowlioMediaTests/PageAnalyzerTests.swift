@@ -147,7 +147,7 @@ struct PageAnalyzerTests {
         let video = try #require(candidates.first)
         #expect(video.label == "Stream page")
         #expect(video.duration == 18)
-        #expect(video.versions.map(\.height) == [720, 360])
+        #expect(video.versions.map(\.height) == [720, 360, 360])
         #expect(video.versions.first?.codecs == "H.264 + AAC")
         #expect(video.versions.first?.totalBytes == 1_440_000)
         #expect(video.versions.first?.isEstimatedSize == true)
@@ -244,7 +244,7 @@ struct PageAnalyzerTests {
         #expect(candidates.first?.versions.first?.source == .file(site.url("/v/CMAF_720.mp4")))
     }
 
-    @Test func liveAndUnfinishedPlaylistsArentOfferedYet() async throws {
+    @Test func aPlaylistWithoutAnEndIsALiveStreamWithNothingToDownload() async throws {
         let site = try await Site()
         site.serve(html: "<title>Live</title>", at: "/watch")
         site.serve(text: "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nlive0.ts\n", at: "/live/index.m3u8")
@@ -253,7 +253,7 @@ struct PageAnalyzerTests {
             $0.watched = [WatchedRequest(url: site.url("/live/index.m3u8"), kind: .manifest)]
         }
 
-        #expect(found.withoutExtractedAudio == .found([]))
+        #expect(found.withoutExtractedAudio == .found([Candidate(label: "Live", duration: 6, versions: [], restriction: .live)]))
     }
 
     @Test func aLinkStraightToAPlaylistIsAVideoNotAFile() async throws {

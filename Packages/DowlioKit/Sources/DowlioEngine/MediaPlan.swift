@@ -11,6 +11,7 @@ final class MediaPlan: @unchecked Sendable {
     let media: MediaSource
     let partial: PartialFile
     let pieces: [Piece]
+    let keys = FragmentKeys()
     private let lock = NSLock()
     private var finished: [FragmentPosition: Int64]
     private var receiving: [FragmentPosition: Int64] = [:]

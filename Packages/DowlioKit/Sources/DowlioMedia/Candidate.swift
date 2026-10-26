@@ -82,16 +82,23 @@ public struct ScannedMedia: Equatable, Sendable {
 }
 
 public struct Candidate: Equatable, Sendable {
+    public enum Restriction: Hashable, Sendable {
+        case protected
+        case live
+    }
+
     public var label: String
     public var thumbnail: URL?
     public var duration: Double?
     public var versions: [Version]
+    public var restriction: Restriction?
 
-    public init(label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version]) {
+    public init(label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version], restriction: Restriction? = nil) {
         self.label = label
         self.thumbnail = thumbnail
         self.duration = duration
         self.versions = versions
+        self.restriction = restriction
     }
 }
 
