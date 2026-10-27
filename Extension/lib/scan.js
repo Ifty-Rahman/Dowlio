@@ -2,7 +2,7 @@ export function scanPage(doc = document, base = doc.baseURI) {
   const VIDEO_FILES = ["mp4", "m4v", "mov", "webm", "mkv"];
   const AUDIO_FILES = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac"];
   const EMBEDDED_LIMIT = 160000;
-  const MEDIA_KEYS = ["itemStruct", "reblogKey", "carousel_media", "video_versions", "video_dash_manifest", "videoDeliveryResponseFragment", "playable_url", "browser_native_hd_url"];
+  const MEDIA_KEYS = ["itemStruct", "reblogKey", "grid_title", "carousel_media", "video_versions", "video_dash_manifest", "videoDeliveryResponseFragment", "playable_url", "browser_native_hd_url"];
   const media = [];
   const seen = new Set();
   let players = 0;
