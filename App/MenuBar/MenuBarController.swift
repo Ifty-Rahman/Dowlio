@@ -79,8 +79,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         showQuickAdd()?.addSent(link)
     }
 
-    func sendTarget() -> NewDownloadModel? {
-        if !popover.isShown { open() }
+    func sendTarget(activating: Bool = true) -> NewDownloadModel? {
+        if !popover.isShown { open(activating: activating) }
         return showQuickAdd()
     }
 
@@ -116,7 +116,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         popover.performClose(nil)
     }
 
-    private func open() {
+    private func open(activating: Bool = true) {
         guard let button = item.button else { return }
         catchToast.hide()
         panel.dropEmptyQuickAdd()
@@ -126,8 +126,10 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         let window = popover.contentViewController?.view.window
         window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
-        NSApp.activate()
-        window?.makeKey()
+        if activating {
+            NSApp.activate()
+            window?.makeKey()
+        }
         dismissal.start()
     }
 

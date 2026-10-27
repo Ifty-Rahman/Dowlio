@@ -168,9 +168,11 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       frames: [],
       calls: [],
       fails: false,
+      visibility: {},
       async executeScript(injection) {
         chrome.scripting.calls.push(injection);
         if (chrome.scripting.fails) throw new Error("Cannot access contents of the page");
+        if (!injection.target.allFrames) return [{ frameId: 0, result: chrome.scripting.visibility[injection.target.tabId] ?? "hidden" }];
         return chrome.scripting.frames;
       },
     },
@@ -184,11 +186,17 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
         if (!tab) throw new Error(`No tab with id: ${tabId}`);
         return tab;
       },
-      active: null,
-      queries: [],
-      async query(query) {
-        chrome.tabs.queries.push(query);
-        return chrome.tabs.active ? [chrome.tabs.active] : [];
+    },
+    windows: {
+      list: [],
+      lastFocused: null,
+      async getAll({ windowTypes } = {}) {
+        return chrome.windows.list.filter((window) => !windowTypes || windowTypes.includes(window.type));
+      },
+      async getLastFocused({ windowTypes } = {}) {
+        const window = chrome.windows.list.find((candidate) => candidate.id === chrome.windows.lastFocused);
+        if (!window || (windowTypes && !windowTypes.includes(window.type))) throw new Error("No last-focused window");
+        return window;
       },
     },
     cookies: {

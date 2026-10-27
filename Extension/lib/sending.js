@@ -6,6 +6,8 @@ export const PAGE_MENU_ITEM = "send-page-to-dowlio";
 export const RECEIPT_TIMEOUT = 5000;
 export const CONNECT_WAIT = 3000;
 export const SCAN_TIMEOUT = 4000;
+export const VISIBILITY_CHECKS = 4;
+export const VISIBILITY_TIMEOUT = 500;
 
 export function startSending({ chrome, navigator, link, watching, timers = globalThis, now = Date.now }) {
   chrome.contextMenus.removeAll(() => {
@@ -33,9 +35,9 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     return chrome.storage.local.set({ lastSend: { host, step, at: now() } }).catch(() => {});
   }
 
-  function withinTime(work, fallback) {
+  function withinTime(work, fallback, timeout = SCAN_TIMEOUT) {
     return new Promise((resolve) => {
-      const timer = timers.setTimeout(() => resolve(fallback), SCAN_TIMEOUT);
+      const timer = timers.setTimeout(() => resolve(fallback), timeout);
       work.then(
         (value) => {
           timers.clearTimeout(timer);
@@ -134,11 +136,27 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     await noteStep(tab.url, "received");
   }
 
+  async function frontTab() {
+    const focused = (await chrome.windows.getAll({ populate: true, windowTypes: ["normal", "popup", "app"] })).find((window) => window.focused);
+    const window = focused ?? (await chrome.windows.getLastFocused({ populate: true, windowTypes: ["normal"] }));
+    const active = window?.tabs?.find((tab) => tab.active);
+    const pages = (window?.tabs ?? []).filter((tab) => /^https?:/i.test(tab.url ?? ""));
+    const candidates = [...new Set([active, ...pages.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))])]
+      .filter((tab) => pages.includes(tab))
+      .slice(0, VISIBILITY_CHECKS);
+    if (candidates.every((tab) => tab === active)) return active;
+    const visible = await Promise.all(candidates.map((tab) => isOnScreen(tab.id)));
+    return candidates[visible.indexOf(true)] ?? active;
+  }
+
+  async function isOnScreen(tabId) {
+    const asked = Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId }, func: () => document.visibilityState }));
+    const frames = await withinTime(asked, null, VISIBILITY_TIMEOUT);
+    return frames?.[0]?.result === "visible";
+  }
+
   async function scanFront(requestId) {
-    let tab;
-    try {
-      [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    } catch {}
+    const tab = await frontTab().catch(() => undefined);
     if (!/^https?:/i.test(tab?.url ?? "")) return link.reply("page.none", requestId, { reason: "noTab" });
     await noteStep(tab.url, "asked");
     const found = await scan(tab.id);

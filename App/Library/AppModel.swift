@@ -148,7 +148,7 @@ final class AppModel {
     func sendFrontPage() {
         let server = connectServer
         let app = FrontBrowser.frontApp
-        let target = sendTarget()
+        let target = sendTarget(activating: false)
         let ask = target?.askFrontPage(of: app?.name ?? "the browser")
         Task { [weak self, weak target] in
             let outcome = await FrontPage.read(app, scan: { await server?.scanPage(in: $0) ?? .notConnected }, appleEvents: { await FrontBrowser.read($0) })
@@ -186,9 +186,9 @@ final class AppModel {
         sendTarget()?.analyze(page)
     }
 
-    private func sendTarget() -> NewDownloadModel? {
+    private func sendTarget(activating: Bool = true) -> NewDownloadModel? {
         switch sentRoute {
-        case .quickAdd: menuBar?.sendTarget()
+        case .quickAdd: menuBar?.sendTarget(activating: activating)
         case .sheet, .openWindowThenSheet: sentSheet()
         }
     }
