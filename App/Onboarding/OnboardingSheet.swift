@@ -167,7 +167,7 @@ private struct ShortcutPage: View {
             } header: {
                 PageHeader(symbol: "keyboard.fill", title: "Your shortcut", subtitle: "Press it on a page with a video, and Dowlio lists what it finds there.")
             } footer: {
-                Text("Try it now: open a page with a video in a browser with Dowlio Connect, then press the shortcut.")
+                Text("Try it now: open a page with a video, then press the shortcut. In a browser without Dowlio Connect, macOS first asks whether Dowlio may read its page.")
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
             }

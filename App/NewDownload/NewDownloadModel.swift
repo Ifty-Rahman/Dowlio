@@ -12,6 +12,7 @@ import Observation
 final class NewDownloadModel: Identifiable {
     var draft: NewDownloadDraft {
         didSet {
+            if draft.text != oldValue.text, !draft.text.isEmpty { frontPage = nil }
             if let page = media?.draft.page.url, draft.links != [page] { sentPages.clear() }
             if draft.links != oldValue.links || draft.links.map(draft.inspectionOptions(for:)) != oldValue.links.map(oldValue.inspectionOptions(for:)) {
                 scheduleChecks()
@@ -34,12 +35,31 @@ final class NewDownloadModel: Identifiable {
     }
 
     var media: SentPageModel? { sentPages.current }
+    private(set) var frontPage: FrontPageState?
+
+    func askFrontPage(of browser: String) {
+        sentPages.clear()
+        draft.text = ""
+        frontPage = .asking(browser)
+    }
+
+    func couldntRead(_ reason: CouldntRead) {
+        guard case .asking = frontPage else { return }
+        frontPage = .couldntRead(reason)
+    }
+
+    func useClipboard(_ text: String?) -> Bool {
+        guard let link = ClipboardLink.first(in: text) else { return false }
+        draft.text = link.absoluteString
+        return true
+    }
 
     func addSent(_ link: SentLink) {
         draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
     }
 
     func discardSentPage() {
+        frontPage = nil
         sentPages.clear()
     }
     var makesDefaultQuality = false
@@ -78,6 +98,7 @@ final class NewDownloadModel: Identifiable {
     }
 
     func analyze(_ page: SentPage) {
+        frontPage = nil
         makesDefaultQuality = false
         sentPages.clear()
         draft.text = ""

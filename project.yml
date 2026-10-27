@@ -58,6 +58,11 @@ targets:
         # Plain http:// downloads are allowed and marked "Not secure" (docs/adr/0003).
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        NSAppleEventsUsageDescription: Dowlio reads the address of the page in front when you press the Send to Dowlio shortcut in a browser without Dowlio Connect.
+    entitlements:
+      path: App/Dowlio.entitlements
+      properties:
+        com.apple.security.automation.apple-events: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio

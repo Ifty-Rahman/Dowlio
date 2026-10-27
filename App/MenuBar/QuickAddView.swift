@@ -30,7 +30,11 @@ struct QuickAddView: View {
             .focused($linkFocused)
             .onSubmit { if sheet.canDownload { download(sheet) } }
         let links = sheet.draft.links
-        if let media = sheet.media, media.draft.phase == .needsSignIn {
+        if sheet.media == nil, let state = sheet.frontPage {
+            FrontPageBody(sheet: sheet, state: state)
+                .padding(.horizontal, DowlioDesign.Spacing.md)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+        } else if let media = sheet.media, media.draft.phase == .needsSignIn {
             NeedsSignInBody(media: media)
                 .padding(.horizontal, DowlioDesign.Spacing.md)
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))

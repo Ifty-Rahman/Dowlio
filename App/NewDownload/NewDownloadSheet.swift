@@ -21,6 +21,8 @@ struct NewDownloadSheet: View {
             linkField
             if let media = sheet.media {
                 mediaBlock(media)
+            } else if let state = sheet.frontPage {
+                FrontPageBody(sheet: sheet, state: state)
             }
             if !sheet.draft.lines.isEmpty, sheet.media == nil { cards }
             if let explanation = sheet.draft.explanation {

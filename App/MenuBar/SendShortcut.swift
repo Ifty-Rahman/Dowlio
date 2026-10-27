@@ -11,7 +11,7 @@ struct SendShortcutRecorder: View {
             KeyboardShortcuts.Recorder(for: .sendPage)
         } label: {
             Text("Send to Dowlio")
-            Text("Sends the page you're on in Chrome, Arc, Brave, Edge, Dia and other browsers with Dowlio Connect.")
+            Text("Sends the page you're on in Safari, Chrome, Arc, Brave, Edge and browsers with Dowlio Connect. For a browser without Dowlio Connect, macOS asks once whether Dowlio may read its page.")
         }
     }
 }

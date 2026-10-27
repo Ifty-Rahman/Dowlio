@@ -79,9 +79,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         showQuickAdd()?.addSent(link)
     }
 
-    func showSentPage(_ page: SentPage) {
+    func sendTarget() -> NewDownloadModel? {
         if !popover.isShown { open() }
-        showQuickAdd()?.analyze(page)
+        return showQuickAdd()
     }
 
     private func showQuickAdd() -> NewDownloadModel? {
@@ -175,7 +175,7 @@ final class MenuBarPanel {
     var quickAdd: NewDownloadModel?
 
     func dropEmptyQuickAdd() {
-        let waiting = quickAdd.map { !$0.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.media != nil } ?? false
+        let waiting = quickAdd.map { !$0.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.media != nil || $0.frontPage != nil } ?? false
         guard !waiting else { return }
         showsQuickAdd = false
         quickAdd = nil

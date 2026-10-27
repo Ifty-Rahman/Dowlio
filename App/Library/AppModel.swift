@@ -146,12 +146,20 @@ final class AppModel {
     }
 
     func sendFrontPage() {
-        let front = NSWorkspace.shared.frontmostApplication
-        guard let server = connectServer, let front, front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              let app = front.bundleURL.flatMap({ PeerProcess.appName(forExecutable: $0.path) })
-        else { return NSSound.beep() }
-        Task {
-            if await server.scanPage(in: app) != .sent { NSSound.beep() }
+        guard let server = connectServer else { return }
+        let app = FrontBrowser.frontApp
+        let target = sendTarget()
+        target?.askFrontPage(of: app?.name ?? "the browser")
+        Task { [weak self, weak target] in
+            let outcome = await FrontPage.read(app, scan: { await server.scanPage(in: $0) }, appleEvents: { await FrontBrowser.read($0) })
+            switch outcome {
+            case .sentThroughConnect:
+                break
+            case .read(let page):
+                self?.receive(page)
+            case .couldntRead(let reason):
+                target?.couldntRead(reason)
+            }
         }
     }
 
@@ -175,11 +183,13 @@ final class AppModel {
     }
 
     private func receive(_ page: SentPage) {
+        sendTarget()?.analyze(page)
+    }
+
+    private func sendTarget() -> NewDownloadModel? {
         switch sentRoute {
-        case .quickAdd:
-            menuBar?.showSentPage(page)
-        case .sheet, .openWindowThenSheet:
-            sentSheet()?.analyze(page)
+        case .quickAdd: menuBar?.sendTarget()
+        case .sheet, .openWindowThenSheet: sentSheet()
         }
     }
 

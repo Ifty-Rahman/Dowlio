@@ -42,7 +42,7 @@ fi
 
 # Sign nested code first, then the app. Phase 1 has no nested code yet.
 log "Signing with identity: $IDENTITY"
-codesign --force --options runtime --timestamp=none ${KEYCHAIN:+--keychain "$KEYCHAIN"} --sign "$IDENTITY" "$APP_PATH"
+codesign --force --options runtime --timestamp=none --entitlements "$ROOT/App/Dowlio.entitlements" ${KEYCHAIN:+--keychain "$KEYCHAIN"} --sign "$IDENTITY" "$APP_PATH"
 
 log "Verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
