@@ -14,12 +14,14 @@ public struct SitePage: Sendable {
 
     public var url: URL
     public var embeddedJSON: [String]
+    public var html: String?
     public var cookies: [Cookie]
     private let fetch: Fetch
 
-    public init(url: URL, embeddedJSON: [String] = [], cookies: [Cookie] = [], fetch: @escaping Fetch) {
+    public init(url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], fetch: @escaping Fetch) {
         self.url = url
         self.embeddedJSON = embeddedJSON
+        self.html = html
         self.cookies = cookies
         self.fetch = fetch
     }
@@ -78,7 +80,7 @@ public struct ReaderFailure: Equatable, Sendable {
 }
 
 public enum SiteReaders {
-    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader()]
+    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader(), RedditReader()]
 }
 
 enum PostLabel {
@@ -118,6 +120,12 @@ extension Dictionary where Key == String, Value == Any {
 }
 
 extension URL {
+    func pathComponent(after markers: Set<String>) -> String? {
+        let parts = Array(pathComponents.dropFirst())
+        guard let index = parts.firstIndex(where: markers.contains), index + 1 < parts.count else { return nil }
+        return parts[index + 1]
+    }
+
     func isOn(_ hosts: Set<String>) -> Bool {
         guard let host = host(percentEncoded: false)?.lowercased() else { return false }
         return hosts.contains { host == $0 || host.hasSuffix("." + $0) }

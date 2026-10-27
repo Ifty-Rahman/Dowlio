@@ -6,8 +6,10 @@ struct HTMLReader {
     private(set) var image: URL?
     private(set) var duration: Double?
     private(set) var embeddedJSON: [String] = []
+    let html: String
 
     init(_ html: String, base: URL) {
+        self.html = html
         var pageTitle: String?
         var openMedia = ScannedMedia.Kind.video
         var players = 0
@@ -108,8 +110,8 @@ struct HTMLReader {
         var attributes: [String: String]
     }
 
-    static func tags(in html: String) -> [Tag] {
-        let pattern = try! NSRegularExpression(pattern: #"<(/?video|/?audio|meta|source|a)\b([^>]*)>"#, options: [.caseInsensitive])
+    static func tags(in html: String, named names: [String] = ["/?video", "/?audio", "meta", "source", "a"]) -> [Tag] {
+        let pattern = try! NSRegularExpression(pattern: #"<("# + names.joined(separator: "|") + #")(?![-\w])([^>]*)>"#, options: [.caseInsensitive])
         let attribute = try! NSRegularExpression(pattern: #"([A-Za-z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#)
         let text = html as NSString
         return pattern.matches(in: html, range: NSRange(location: 0, length: text.length)).map { match in

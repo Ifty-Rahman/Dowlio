@@ -26,14 +26,21 @@ enum HLSVersions {
             source = .media(built)
         }
         let bandwidth = variant?.averageBandwidth ?? variant?.bandwidth
+        let exact = audio == nil ? fileSize(of: media) : nil
+        let estimate = bandwidth.map { Int64(Double($0) * media.duration / 8) }
         return Version(
             source: source,
             contentType: "video/mp4",
-            totalBytes: bandwidth.map { Int64(Double($0) * media.duration / 8) },
-            isEstimatedSize: bandwidth != nil,
+            totalBytes: exact ?? estimate,
+            isEstimatedSize: exact == nil && estimate != nil,
             height: variant?.height,
             codecs: MediaCodecs.names(codecs)
         )
+    }
+
+    private static func fileSize(of media: MediaPlaylist) -> Int64? {
+        guard media.singleFile != nil else { return nil }
+        return media.fragments.last?.bytes.map { $0.upperBound + 1 }
     }
 
     static func audioVersion(of media: MediaPlaylist, language: String?, codecs: [String]) -> Version? {

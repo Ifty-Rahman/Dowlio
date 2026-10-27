@@ -182,7 +182,7 @@ public struct PageAnalyzer: Sendable {
     private func readSite(_ page: SentPage, reading: HTMLReader?, refusals: Refusals) async -> SiteFinding? {
         guard let reader = readers.first(where: { $0.recognises(page.url) }) else { return nil }
         let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
-        let sitePage = SitePage(url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), cookies: page.cookies) { url in
+        let sitePage = SitePage(url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), html: reading?.html, cookies: page.cookies) { url in
             try await self.readerData(at: url, for: page)
         }
         let videos: [SiteVideo]

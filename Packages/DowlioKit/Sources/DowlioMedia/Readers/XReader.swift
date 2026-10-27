@@ -15,9 +15,7 @@ public struct XReader: SiteReader {
     }
 
     public func post(in page: URL) -> String? {
-        let parts = page.pathComponents
-        guard let index = parts.firstIndex(where: { $0 == "status" || $0 == "statuses" }), index + 1 < parts.count else { return nil }
-        let id = parts[index + 1]
+        guard let id = page.pathComponent(after: ["status", "statuses"]) else { return nil }
         return !id.isEmpty && id.allSatisfy(\.isNumber) ? id : nil
     }
 

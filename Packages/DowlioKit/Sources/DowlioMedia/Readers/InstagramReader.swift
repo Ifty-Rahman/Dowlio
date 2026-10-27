@@ -13,9 +13,7 @@ public struct InstagramReader: SiteReader {
     }
 
     public func post(in page: URL) -> String? {
-        let parts = page.pathComponents
-        guard let index = parts.firstIndex(where: { ["p", "reel", "reels", "tv"].contains($0) }), index + 1 < parts.count else { return nil }
-        let code = parts[index + 1]
+        guard let code = page.pathComponent(after: ["p", "reel", "reels", "tv"]) else { return nil }
         return code.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" } ? code : nil
     }
 
