@@ -105,6 +105,13 @@ test("a carousel post is passed on whole, so its videos keep its caption", () =>
   assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [post]);
 });
 
+test("a video object with only the older playable address is passed on as a media object", () => {
+  const video = { __typename: "Video", id: "5", playable_url: "https://cdn.example.com/sd.mp4" };
+  const found = scan(`<script type="application/json">${JSON.stringify({ data: { node: { story: { attachments: [{ media: video }] } } } })}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [video]);
+});
+
 test("of two media objects with one ID, the fuller is passed on", () => {
   const preview = { pk: "7", video_versions: [] };
   const full = { pk: "7", caption: { text: "Full" }, video_versions: [{ url: "https://cdn.example.com/v.mp4" }] };

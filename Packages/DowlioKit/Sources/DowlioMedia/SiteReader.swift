@@ -39,13 +39,18 @@ public struct SiteVideo: Equatable, Sendable {
     public var duration: Double?
     public var versions: [Version]
     public var streams: [URL]
+    public var restriction: Candidate.Restriction?
 
-    public init(label: String? = nil, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version] = [], streams: [URL] = []) {
+    public init(
+        label: String? = nil, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version] = [], streams: [URL] = [],
+        restriction: Candidate.Restriction? = nil
+    ) {
         self.label = label
         self.thumbnail = thumbnail
         self.duration = duration
         self.versions = versions
         self.streams = streams
+        self.restriction = restriction
     }
 }
 
@@ -73,7 +78,7 @@ public struct ReaderFailure: Equatable, Sendable {
 }
 
 public enum SiteReaders {
-    public static let all: [any SiteReader] = [XReader(), InstagramReader()]
+    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader()]
 }
 
 enum PostLabel {

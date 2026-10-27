@@ -51,3 +51,30 @@ struct ReaderSite {
         return candidates
     }
 }
+
+enum PageFixture {
+    static func html(_ name: String) throws -> String {
+        let url = try #require(Bundle.module.url(forResource: "Fixtures/Pages/\(name)", withExtension: "html"))
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    static func embedded(_ key: String, in name: String) throws -> [String: Any] {
+        let html = try html(name)
+        let start = try #require(html.range(of: "data-sjs>")).upperBound
+        let end = try #require(html.range(of: "</script>", range: start..<html.endIndex)).lowerBound
+        let page = try JSONSerialization.jsonObject(with: Data(html[start..<end].utf8))
+        return try #require(first(key, in: page) as? [String: Any])
+    }
+
+    static func json(_ object: Any) -> String {
+        String(decoding: (try? JSONSerialization.data(withJSONObject: object)) ?? Data(), as: UTF8.self)
+    }
+
+    private static func first(_ key: String, in value: Any) -> Any? {
+        if let object = value as? [String: Any] {
+            if let found = object[key] { return found }
+            return object.values.lazy.compactMap { first(key, in: $0) }.first
+        }
+        return (value as? [Any])?.lazy.compactMap { first(key, in: $0) }.first
+    }
+}

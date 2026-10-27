@@ -197,7 +197,8 @@ public struct PageAnalyzer: Sendable {
         for (index, video) in videos.enumerated() {
             var video = video
             if index < PageLayout.probedAtOnce { video.versions = await sized(video.versions, on: page) }
-            found += await candidates(of: video, on: page, label: video.label ?? fallback, refusals: refusals)
+            let label = video.label ?? Self.player(lasting: video.duration, on: page)?.label ?? fallback
+            found += await candidates(of: video, on: page, label: label, refusals: refusals)
         }
         guard !found.isEmpty else {
             readerFailed(ReaderFailure(reader: reader.name, site: site, reason: "found nothing"))
@@ -218,7 +219,15 @@ public struct PageAnalyzer: Sendable {
         }
     }
 
+    private static func player(lasting duration: Double?, on page: SentPage) -> ScannedPlayer? {
+        let matching = page.players.filter { sameLength($0.duration, duration) }
+        return matching.count == 1 ? matching[0] : nil
+    }
+
     private func candidates(of video: SiteVideo, on page: SentPage, label: String, refusals: Refusals) async -> [Candidate] {
+        if let restriction = video.restriction {
+            return [Candidate(label: label, thumbnail: video.thumbnail, duration: video.duration, versions: [], restriction: restriction)]
+        }
         let streamed = await streamCandidates(video.streams, page: page, refusals: refusals, label: label, thumbnail: video.thumbnail)
         let versions = Self.distinct(video.versions + streamed.flatMap(\.versions))
         guard !versions.isEmpty else { return streamed.filter { $0.restriction != nil } }

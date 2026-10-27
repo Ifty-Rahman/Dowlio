@@ -10,24 +10,11 @@ struct InstagramReaderTests {
     }
 
     private func fixture() throws -> String {
-        let url = try #require(Bundle.module.url(forResource: "Fixtures/Pages/instagram-reel", withExtension: "html"))
-        return try String(contentsOf: url, encoding: .utf8)
+        try PageFixture.html("instagram-reel")
     }
 
     private func reel() throws -> [String: Any] {
-        let html = try fixture()
-        let start = try #require(html.range(of: "data-sjs>")).upperBound
-        let end = try #require(html.range(of: "</script>", range: start..<html.endIndex)).lowerBound
-        let page = try JSONSerialization.jsonObject(with: Data(html[start..<end].utf8))
-        return try #require(Self.first("xig_fetch_media", in: page) as? [String: Any])
-    }
-
-    private static func first(_ key: String, in value: Any) -> Any? {
-        if let object = value as? [String: Any] {
-            if let found = object[key] { return found }
-            return object.values.lazy.compactMap { first(key, in: $0) }.first
-        }
-        return (value as? [Any])?.lazy.compactMap { first(key, in: $0) }.first
+        try PageFixture.embedded("xig_fetch_media", in: "instagram-reel")
     }
 
     private func reel(code: String, caption: String, seconds: Double) throws -> [String: Any] {
@@ -39,10 +26,6 @@ struct InstagramReaderTests {
         other["video_versions"] = [["width": 720, "height": 1280, "url": "https://scontent.cdn.example/v/\(code).mp4"]]
         other["video_dash_manifest"] = nil
         return other
-    }
-
-    private func json(_ object: Any) throws -> String {
-        String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
     }
 
     @Test func aReelIsReadFromTheEmbeddedDataOfThePage() async throws {
@@ -69,7 +52,7 @@ struct InstagramReaderTests {
         site.site.serve(html: "<title>Instagram</title>", at: "/reel/Ab12Cd34Ef5/")
         let reel = try reel()
 
-        let candidates = try await site.candidates("/reel/Ab12Cd34Ef5/") { $0.embeddedJSON = [try! self.json(reel)] }
+        let candidates = try await site.candidates("/reel/Ab12Cd34Ef5/") { $0.embeddedJSON = [PageFixture.json(reel)] }
 
         #expect(candidates.map(\.label) == ["Sample Account: Sample caption for a reel"])
         #expect(candidates.first?.versions.count == 10)
@@ -82,7 +65,7 @@ struct InstagramReaderTests {
         var reel = try reel(code: "Aa11Bb22Cc3", caption: "Sized reel", seconds: 12)
         reel["video_versions"] = [["width": 720, "height": 1280, "url": site.url("/v/reel.mp4").absoluteString]]
 
-        let candidates = try await site.candidates("/reel/Aa11Bb22Cc3/") { $0.embeddedJSON = [try! self.json(reel)] }
+        let candidates = try await site.candidates("/reel/Aa11Bb22Cc3/") { $0.embeddedJSON = [PageFixture.json(reel)] }
 
         #expect(candidates.first?.versions.map(\.totalBytes) == [3_000])
     }
@@ -99,7 +82,7 @@ struct InstagramReaderTests {
             ],
         ]
 
-        let candidates = try await site.candidates("/p/Ca12Ro34Us5/") { $0.embeddedJSON = [try! self.json(post)] }
+        let candidates = try await site.candidates("/p/Ca12Ro34Us5/") { $0.embeddedJSON = [PageFixture.json(post)] }
 
         #expect(candidates.map(\.label) == ["sampleaccount: Two clips from the beach", "sampleaccount: Two clips from the beach"])
         #expect(candidates.compactMap { $0.versions.first?.height } == [720, 1080])
@@ -110,7 +93,7 @@ struct InstagramReaderTests {
         site.site.serve(html: try fixture(), at: "/p/Ab12Cd34Ef5/")
         let other = try reel(code: "Zz99Yy88Xx7", caption: "Another reel", seconds: 12)
 
-        let candidates = try await site.candidates("/p/Ab12Cd34Ef5/") { $0.embeddedJSON = [try! self.json(other)] }
+        let candidates = try await site.candidates("/p/Ab12Cd34Ef5/") { $0.embeddedJSON = [PageFixture.json(other)] }
 
         #expect(candidates.map(\.label) == ["Sample Account: Sample caption for a reel"])
     }
@@ -122,7 +105,7 @@ struct InstagramReaderTests {
         let second = try reel(code: "Dd44Ee55Ff6", caption: "Second reel", seconds: 27.8)
 
         let candidates = try await site.candidates("/reels/") {
-            $0.embeddedJSON = [try! self.json(["items": [first, second]])]
+            $0.embeddedJSON = [PageFixture.json(["items": [first, second]])]
             $0.players = [
                 ScannedPlayer(group: 1, label: "sampleaccount • Follow First reel", duration: 45.93),
                 ScannedPlayer(group: 2, label: "otheraccount • Follow Second reel", duration: 27.83, isPlaying: true, visibility: 1),
