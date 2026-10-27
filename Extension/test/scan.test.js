@@ -112,6 +112,14 @@ test("a video object with only the older playable address is passed on as a medi
   assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [video]);
 });
 
+test("a Tumblr post is passed on whole, without the rest of the page's state", () => {
+  const post = { blogName: "sampleblog", reblogKey: "k1", id: "8", content: [{ type: "video", media: { url: "https://va.media.example/v.mp4" } }] };
+  const state = { PeeprRoute: { initialTimeline: { objects: [post] } }, viewer: { email: "private@example.com" } };
+  const found = scan(`<script type="application/json" id="___INITIAL_STATE___">${JSON.stringify(state)}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [post]);
+});
+
 test("of two media objects with one ID, the fuller is passed on", () => {
   const preview = { pk: "7", video_versions: [] };
   const full = { pk: "7", caption: { text: "Full" }, video_versions: [{ url: "https://cdn.example.com/v.mp4" }] };
