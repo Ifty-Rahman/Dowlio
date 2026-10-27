@@ -33,3 +33,9 @@ The spike cut each playlist to its first four segments and added `#EXT-X-ENDLIST
 | hls-media-fmp4-audio.m3u8 | X: the matching audio playlist, which a merge test pairs with the video one |
 | hls-master-cmaf-subtitles.m3u8 | Reddit: CMAF variants in two audio groups, plus a subtitles group |
 | hls-media-single-file-absolute.m3u8 | RedGifs: every segment is a byte range of one absolute file |
+
+## Captured for the site readers
+
+| File | Shape it keeps |
+|---|---|
+| hls-master-query-session.m3u8 | Bluesky, captured 2026-10-27: two H.264 variants whose URIs carry a `session_id` query, and no audio codec, because that video has no sound |
