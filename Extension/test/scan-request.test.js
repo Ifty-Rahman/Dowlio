@@ -62,3 +62,15 @@ test("Dowlio Connect has no keyboard shortcut of its own", async () => {
 
   assert.equal(manifest.commands, undefined);
 });
+
+test("a browser that can't list its tabs answers that there's no page", async () => {
+  const { chrome, socket } = await worker();
+  chrome.tabs.query = () => {
+    throw new Error("No window");
+  };
+
+  await socket.reply({ type: "page.scan", requestId: "scan-4" });
+  await settle();
+
+  assert.deepEqual(replies(socket, "page.none").map(({ reason }) => reason), ["noTab"]);
+});

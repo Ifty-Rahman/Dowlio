@@ -135,9 +135,10 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
   }
 
   async function scanFront(requestId) {
-    const [tab] = await Promise.resolve()
-      .then(() => chrome.tabs.query({ active: true, lastFocusedWindow: true }))
-      .catch(() => []);
+    let tab;
+    try {
+      [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    } catch {}
     if (!/^https?:/i.test(tab?.url ?? "")) return link.reply("page.none", requestId, { reason: "noTab" });
     await noteStep(tab.url, "asked");
     const found = await scan(tab.id);
