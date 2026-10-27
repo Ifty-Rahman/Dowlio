@@ -383,6 +383,19 @@ struct PageAnalyzerTests {
         #expect(site.server.requests.filter { $0.path == "/members/watch" }.allSatisfy { $0.headers["cookie"] == "session=abc" })
     }
 
+    @Test func thePageIsAskedForAsABrowserOpeningIt() async throws {
+        let site = try await Site()
+        site.serve(html: #"<video src="/media/clip.mp4"></video>"#, at: "/reel/1")
+        site.serve(video: 300, at: "/media/clip.mp4")
+
+        _ = try await site.analyze("/reel/1")
+
+        let page = try #require(site.server.requests.first { $0.path == "/reel/1" && ($0.headers["accept"] ?? "").hasPrefix("text/html") })
+        #expect(page.headers["sec-fetch-mode"] == "navigate")
+        #expect(page.headers["sec-fetch-dest"] == "document")
+        #expect(page.headers["sec-fetch-site"] == "none")
+    }
+
     @Test func mediaTheBrowserScannedIsProbedAndKept() async throws {
         let site = try await Site()
         site.serve(html: "<html><head><title>Player</title></head><body></body></html>", at: "/player")

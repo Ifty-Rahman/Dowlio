@@ -555,6 +555,9 @@ public struct PageAnalyzer: Sendable {
     private func read(_ page: SentPage, refusals: Refusals) async -> HTMLReader? {
         var request = URLRequest(url: page.url)
         request.setValue("text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        for (name, value) in ["Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document", "Sec-Fetch-Site": "none"] {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         if let agent = page.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         if !page.cookies.isEmpty {
             request.setValue(page.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
