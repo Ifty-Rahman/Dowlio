@@ -57,10 +57,28 @@ struct SentPageDraftTests {
         #expect(draft.chosenVersion == ogg)
     }
 
-    @Test func everyVideoIsIncludedUntilTakenOutAndDownloadsTakeEachOnesChoice() {
+    @Test func noVideoIsIncludedUntilChosenWhenAPageHasSeveral() {
+        var draft = SentPageDraft(page: page)
+        _ = draft.update(.found([clip, second]))
+
+        #expect(draft.downloads.isEmpty)
+        #expect(!draft.isIncluded(0))
+        #expect(!draft.isIncluded(1))
+    }
+
+    @Test func aPagesOnlyVideoIsIncluded() {
+        var draft = SentPageDraft(page: page)
+        _ = draft.update(.found([clip]))
+
+        #expect(draft.downloads.map(\.candidate) == [clip])
+    }
+
+    @Test func chosenVideosDownloadEachOnesChoiceUntilTakenOut() {
         var draft = SentPageDraft(page: page)
         _ = draft.update(.found([clip, second]))
         draft.pick(ogg)
+        draft.include(0, true)
+        draft.include(1, true)
 
         #expect(draft.downloads.map(\.version) == [ogg, ogg])
         draft.include(0, false)

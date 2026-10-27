@@ -252,19 +252,10 @@ private struct VersionRow: View {
                 Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
                     .frame(width: 58, alignment: .leading)
-                HStack(spacing: DowlioDesign.Spacing.xs) {
-                    Text(MediaText.detail(of: version))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    if !MediaText.playsInQuickTime(version) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.orange.opacity(0.85))
-                            .help("May not play in QuickTime")
-                            .accessibilityLabel("May not play in QuickTime")
-                    }
-                }
-                .font(DowlioDesign.TypeRole.detail)
+                Text(MediaText.detail(of: version))
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer(minLength: DowlioDesign.Spacing.sm)
                 Text(MediaText.size(of: version) ?? "")
                     .font(DowlioDesign.TypeRole.detailMetric)
@@ -431,7 +422,7 @@ private struct VideoCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(isIncluded ? "Leave this video out" : "Download this video too")
+            .help(isIncluded ? "Leave this video out" : "Download this video")
             .accessibilityLabel("Download video \(number)")
             .accessibilityValue(isIncluded ? "On" : "Off")
             .accessibilityAddTraits(.isToggle)

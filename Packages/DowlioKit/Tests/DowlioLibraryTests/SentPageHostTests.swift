@@ -164,6 +164,8 @@ struct FeedHostTests {
 
         #expect(probes.asked == ["Later"])
         #expect(host.current?.draft.chosenVersion == found)
+        host.current?.include(0, true)
+        host.current?.include(1, true)
         #expect(host.current?.draft.downloads.count == 2)
     }
 

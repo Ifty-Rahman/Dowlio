@@ -35,6 +35,8 @@ struct RestrictedVideoTests {
         var draft = SentPageDraft(page: page)
 
         _ = draft.update(.found([trailer, locked]))
+        draft.include(0, true)
+        draft.include(1, true)
 
         #expect(draft.phase == .found)
         #expect(draft.restrictionLine == nil)

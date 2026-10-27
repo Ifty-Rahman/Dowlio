@@ -69,8 +69,6 @@ struct QualityTests {
         #expect(MediaText.detail(of: h264_1080) == "MP4 · H.264 + AAC")
         #expect(MediaText.size(of: estimated) == "~38.2 MB")
         #expect(MediaText.title(of: audio) == "Audio")
-        #expect(MediaText.playsInQuickTime(vp9_1080) == false)
-        #expect(MediaText.playsInQuickTime(h264_720))
     }
 
     @Test func aVideoIsNamedAfterItsLabelWithTheResolutionOnlyWhenTheNameIsTaken() {

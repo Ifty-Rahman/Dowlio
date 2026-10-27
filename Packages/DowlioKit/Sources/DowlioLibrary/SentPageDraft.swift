@@ -28,7 +28,7 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var phase = Phase.looking
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
-    private var excluded: Set<Int> = []
+    private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var play: PlayRun?
 
@@ -69,7 +69,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case .found(let found):
             candidates = found
             selected = 0
-            excluded = []
+            included = found.count == 1 ? [0] : []
             picks = [:]
             showing = .video
             phase = Self.phase(of: found)
@@ -162,10 +162,10 @@ public struct SentPageDraft: Equatable, Sendable {
         picks[selected] = version
     }
 
-    public func isIncluded(_ index: Int) -> Bool { !excluded.contains(index) }
+    public func isIncluded(_ index: Int) -> Bool { included.contains(index) }
 
     public mutating func include(_ index: Int, _ included: Bool) {
-        if included { excluded.remove(index) } else { excluded.insert(index) }
+        if included { self.included.insert(index) } else { self.included.remove(index) }
     }
 
     public var downloads: [Download] {
@@ -209,11 +209,6 @@ public enum MediaText {
 
     public static func isMP4(_ version: Version) -> Bool {
         ["mp4", "m4v"].contains(version.source.url.pathExtension.lowercased()) || version.contentType?.lowercased() == "video/mp4"
-    }
-
-    public static func playsInQuickTime(_ version: Version) -> Bool {
-        let codecs = version.codecs?.lowercased() ?? ""
-        return !(codecs.contains("vp9") || codecs.contains("vp09") || codecs.contains("av1") || codecs.contains("av01"))
     }
 
     public static func container(of version: Version) -> String {
