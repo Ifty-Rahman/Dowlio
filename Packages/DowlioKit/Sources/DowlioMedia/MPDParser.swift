@@ -58,7 +58,7 @@ public enum MPDParser {
                         kind: kind(contentType: element["contentType"] ?? set["contentType"], mimeType: mimeType),
                         mimeType: mimeType,
                         bandwidth: element["bandwidth"].flatMap { Int($0) },
-                        height: (element["height"] ?? set["height"]).flatMap { Int($0) },
+                        height: element["FBQualityLabel"].flatMap(MediaFile.height(in:)) ?? (element["height"] ?? set["height"]).flatMap { Int($0) },
                         codecs: (element["codecs"] ?? set["codecs"]).map { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } } ?? [],
                         language: element["lang"] ?? set["lang"],
                         isMain: set.children("Role").contains { $0["value"] == "main" },

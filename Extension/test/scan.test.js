@@ -89,8 +89,47 @@ test("embedded JSON that mentions video is passed on, and nothing else of the pa
   assert.ok(!JSON.stringify(found).includes("secret"));
 });
 
+test("only the media objects of large embedded JSON are passed on, each once", () => {
+  const reel = (caption) => ({ pk: "42", caption: { text: caption }, video_versions: [{ url: "https://cdn.example.com/v.mp4" }] });
+  const blob = { data: { page: { padding: "x".repeat(200000), viewer: { name: "Private Person" } }, items: [reel("First"), { media: reel("First") }] } };
+  const found = scan(`<script type="application/json">${JSON.stringify(blob)}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [reel("First")]);
+  assert.ok(!JSON.stringify(found).includes("Private Person"));
+});
+
+test("a carousel post is passed on whole, so its videos keep its caption", () => {
+  const post = { code: "Ab1", caption: { text: "Holiday" }, carousel_media: [{ video_versions: [{ url: "https://cdn.example.com/1.mp4" }] }] };
+  const found = scan(`<script type="application/json">${JSON.stringify({ data: { post } })}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [post]);
+});
+
+test("of two media objects with one ID, the fuller is passed on", () => {
+  const preview = { pk: "7", video_versions: [] };
+  const full = { pk: "7", caption: { text: "Full" }, video_versions: [{ url: "https://cdn.example.com/v.mp4" }] };
+  const found = scan(`<script type="application/json">${JSON.stringify([preview, full])}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [full]);
+});
+
+test("media objects are passed on before whole blobs that only mention video", () => {
+  const blob = `{"video":"${"x".repeat(159950)}"}`;
+  const reel = { pk: "9", video_versions: [{ url: "https://cdn.example.com/v.mp4" }] };
+  const found = scan(`<script type="application/json">${blob}</script><script type="application/json">${JSON.stringify(reel)}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [reel]);
+});
+
+test("the cap counts the bytes the text takes once sent", () => {
+  const wide = `{"video":"${"é".repeat(45000)}"}`;
+  const found = scan(`<script type="application/json">${wide}</script><script type="application/json">${wide}</script>`);
+
+  assert.equal(found.embeddedJson.length, 1);
+});
+
 test("embedded JSON is capped so the whole scan fits in one message", () => {
-  const big = `{"video":"${"x".repeat(80000)}"}`;
+  const big = `{"video":"${"x".repeat(90000)}"}`;
   const found = scan(`<script type="application/json">${big}</script><script type="application/json">${big}</script>`);
 
   assert.equal(found.embeddedJson.length, 1);

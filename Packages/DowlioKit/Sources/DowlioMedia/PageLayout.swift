@@ -53,12 +53,16 @@ struct PageLayout {
         } else if !unplaced.isEmpty {
             loose.append(Bucket(streams: unplaced))
         }
-        let ordered = shown.sorted { a, b in
+        let ordered = Self.ordered(shown)
+        buckets = (ordered.compactMap { byGroup[$0.group] } + loose + [other]).filter { !$0.isEmpty }
+    }
+
+    static func ordered(_ players: [ScannedPlayer]) -> [ScannedPlayer] {
+        players.sorted { a, b in
             if a.isPlaying != b.isPlaying { return a.isPlaying }
             if a.visibility != b.visibility { return a.visibility > b.visibility }
             return a.group < b.group
         }
-        buckets = (ordered.compactMap { byGroup[$0.group] } + loose + [other]).filter { !$0.isEmpty }
     }
 
     static func matchingPlayer(for url: URL, in players: [ScannedPlayer]) -> Int? {

@@ -24,6 +24,10 @@ public struct SitePage: Sendable {
         self.fetch = fetch
     }
 
+    public var embeddedObjects: [Any] {
+        embeddedJSON.compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8), options: [.fragmentsAllowed]) }
+    }
+
     public func json(at url: URL) async throws -> Any {
         try JSONSerialization.jsonObject(with: try await fetch(url), options: [.fragmentsAllowed])
     }
@@ -69,7 +73,7 @@ public struct ReaderFailure: Equatable, Sendable {
 }
 
 public enum SiteReaders {
-    public static let all: [any SiteReader] = [XReader()]
+    public static let all: [any SiteReader] = [XReader(), InstagramReader()]
 }
 
 enum PostLabel {
@@ -91,6 +95,20 @@ enum PostLabel {
 
     private static func squash(_ text: String?) -> String {
         (text ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+}
+
+extension Dictionary where Key == String, Value == Any {
+    func object(_ key: String) -> [String: Any]? {
+        self[key] as? [String: Any]
+    }
+
+    func objects(_ key: String) -> [[String: Any]] {
+        self[key] as? [[String: Any]] ?? []
+    }
+
+    func text(_ key: String) -> String? {
+        (self[key] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

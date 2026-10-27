@@ -82,7 +82,7 @@ public struct PageAnalyzer: Sendable {
         let reading = await read(page, refusals: refusals)
         async let fromSite = readSite(page, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
-        let found = Self.joined(fromPage, await fromSite)
+        let found = Self.joined(fromPage, await fromSite, on: page)
         if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
         report(.found(found))
@@ -182,7 +182,7 @@ public struct PageAnalyzer: Sendable {
     private func readSite(_ page: SentPage, reading: HTMLReader?, refusals: Refusals) async -> SiteFinding? {
         guard let reader = readers.first(where: { $0.recognises(page.url) }) else { return nil }
         let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
-        let sitePage = SitePage(url: page.url, embeddedJSON: page.embeddedJSON, cookies: page.cookies) { url in
+        let sitePage = SitePage(url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), cookies: page.cookies) { url in
             try await self.readerData(at: url, for: page)
         }
         let videos: [SiteVideo]
@@ -194,7 +194,9 @@ public struct PageAnalyzer: Sendable {
         }
         let fallback = Self.label(of: page, reading: reading)
         var found: [Candidate] = []
-        for video in videos {
+        for (index, video) in videos.enumerated() {
+            var video = video
+            if index < PageLayout.probedAtOnce { video.versions = await sized(video.versions, on: page) }
             found += await candidates(of: video, on: page, label: video.label ?? fallback, refusals: refusals)
         }
         guard !found.isEmpty else {
@@ -202,6 +204,18 @@ public struct PageAnalyzer: Sendable {
             return nil
         }
         return SiteFinding(candidates: found.map { $0.withExtractedAudio(splittable: []) }, isPost: reader.post(in: page.url) != nil)
+    }
+
+    private func sized(_ versions: [Version], on page: SentPage) async -> [Version] {
+        await withTaskGroup(of: (Int, Int64?).self) { group in
+            for (index, version) in versions.enumerated() where version.totalBytes == nil {
+                guard case .file(let url) = version.source else { continue }
+                group.addTask { [inspect] in (index, try? await inspect(url, mediaOptions(page, for: url)).totalBytes) }
+            }
+            var sized = versions
+            for await (index, size) in group { sized[index].totalBytes = size }
+            return sized
+        }
     }
 
     private func candidates(of video: SiteVideo, on page: SentPage, label: String, refusals: Refusals) async -> [Candidate] {
@@ -224,19 +238,41 @@ public struct PageAnalyzer: Sendable {
         return data
     }
 
-    private static func joined(_ fromPage: [Candidate], _ fromSite: SiteFinding?) -> [Candidate] {
+    private static func joined(_ fromPage: [Candidate], _ fromSite: SiteFinding?, on page: SentPage) -> [Candidate] {
         guard let fromSite else { return fromPage }
         if fromSite.isPost { return fromSite.candidates }
-        var joined = fromPage
+        var rows = fromPage
+        let players = PageLayout.ordered(page.players)
+        var taken = Set<Int>()
+        var placed: [(rank: Int, candidate: Candidate)] = []
         for candidate in fromSite.candidates {
             let ids = candidate.addressIDs
-            if !ids.isEmpty, let index = joined.firstIndex(where: { !$0.addressIDs.isDisjoint(with: ids) }) {
-                joined[index] = joined[index].joining(candidate)
+            let shared = ids.isEmpty ? nil : rows.firstIndex { !$0.addressIDs.isDisjoint(with: ids) }
+            if let index = shared ?? rows.firstIndex(where: { $0.restriction == nil && Self.sameLength($0.duration, candidate.duration) }) {
+                rows[index] = rows[index].joining(candidate)
+            } else if let rank = players.indices.first(where: { !taken.contains($0) && Self.sameLength(players[$0].duration, candidate.duration) }) {
+                taken.insert(rank)
+                var labelled = candidate
+                labelled.label = players[rank].label ?? candidate.label
+                placed.append((rank, labelled))
             } else {
-                joined.append(candidate)
+                placed.append((players.count, candidate))
             }
         }
-        return joined
+        let ordered = placed.sorted { $0.rank < $1.rank }
+        rows += ordered.map(\.candidate)
+        let showing = players.first.map { $0.isPlaying || $0.visibility > 0 } ?? false
+        if showing, ordered.first?.rank == 0, let shown = ordered.first?.candidate { return Self.onScreenFirst(shown, in: rows) }
+        return rows
+    }
+
+    private static func onScreenFirst(_ shown: Candidate, in rows: [Candidate]) -> [Candidate] {
+        guard rows.count > 1, !rows.contains(where: \.isOnScreen), let index = rows.firstIndex(of: shown) else { return rows }
+        var rows = rows
+        var first = rows.remove(at: index)
+        first.isOnScreen = true
+        rows.insert(first, at: 0)
+        return rows
     }
 
     private struct ProbedBucket: Sendable {
@@ -388,6 +424,11 @@ public struct PageAnalyzer: Sendable {
     }
 
     static let sameLengthWithin = 2.0
+
+    private static func sameLength(_ one: Double?, _ other: Double?) -> Bool {
+        guard let one, let other else { return false }
+        return abs(one - other) <= sameLengthWithin
+    }
 
     static func merged(_ candidates: [Candidate]) -> [Candidate] {
         var groups: [[Candidate]] = []

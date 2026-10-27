@@ -5,6 +5,7 @@ struct HTMLReader {
     private(set) var title: String?
     private(set) var image: URL?
     private(set) var duration: Double?
+    private(set) var embeddedJSON: [String] = []
 
     init(_ html: String, base: URL) {
         var pageTitle: String?
@@ -48,6 +49,7 @@ struct HTMLReader {
             pageTitle = Self.decode(inner).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         for block in Self.jsonLD(in: html) { readJSONLD(block, base: base) }
+        embeddedJSON = Self.scripts(ofType: "application/json", in: html)
         if title == nil, let pageTitle, !pageTitle.isEmpty { title = pageTitle }
     }
 
@@ -138,8 +140,12 @@ struct HTMLReader {
     }
 
     static func jsonLD(in html: String) -> [String] {
+        scripts(ofType: "application/ld+json", in: html)
+    }
+
+    static func scripts(ofType type: String, in html: String) -> [String] {
         let pattern = try! NSRegularExpression(
-            pattern: #"<script[^>]*type\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>"#,
+            pattern: #"<script[^>]*type\s*=\s*["']"# + NSRegularExpression.escapedPattern(for: type) + #"["'][^>]*>(.*?)</script>"#,
             options: [.caseInsensitive, .dotMatchesLineSeparators]
         )
         let text = html as NSString

@@ -1,7 +1,8 @@
 export function scanPage(doc = document, base = doc.baseURI) {
   const VIDEO_FILES = ["mp4", "m4v", "mov", "webm", "mkv"];
   const AUDIO_FILES = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac"];
-  const EMBEDDED_LIMIT = 100000;
+  const EMBEDDED_LIMIT = 160000;
+  const MEDIA_KEYS = ["carousel_media", "video_versions", "video_dash_manifest", "videoDeliveryResponseFragment"];
   const media = [];
   const seen = new Set();
   let players = 0;
@@ -217,15 +218,55 @@ export function scanPage(doc = document, base = doc.baseURI) {
     if (kind) add(url, kind);
   }
 
+  function mediaHolders(value, found = []) {
+    if (Array.isArray(value)) {
+      value.forEach((child) => mediaHolders(child, found));
+    } else if (value && typeof value === "object") {
+      if (MEDIA_KEYS.some((key) => key in value)) found.push(value);
+      else Object.values(value).forEach((child) => mediaHolders(child, found));
+    }
+    return found;
+  }
+
   const embeddedJson = [];
+  const holderAt = new Map();
+  const wholeBlobs = [];
+  const bytes = (text) => new TextEncoder().encode(text).length;
   let embeddedBytes = 0;
+  function keep(text) {
+    const size = bytes(text);
+    if (embeddedBytes + size > EMBEDDED_LIMIT) return;
+    embeddedBytes += size;
+    embeddedJson.push(text);
+  }
   for (const script of doc.querySelectorAll('script[type="application/json"]')) {
     const text = script.textContent;
     if (!/video|audio|playable|dash|m3u8|\.mp4/i.test(text)) continue;
-    if (embeddedBytes + text.length > EMBEDDED_LIMIT) continue;
-    embeddedBytes += text.length;
-    embeddedJson.push(text);
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    const holders = mediaHolders(parsed);
+    if (!holders.length) {
+      wholeBlobs.push(text);
+      continue;
+    }
+    for (const holder of holders) {
+      const holderText = JSON.stringify(holder);
+      const id = String(holder.id ?? holder.pk ?? holder.code ?? holderText);
+      const index = holderAt.get(id);
+      if (index === undefined) {
+        holderAt.set(id, embeddedJson.length);
+        embeddedJson.push(holderText);
+      } else if (holderText.length > embeddedJson[index].length) {
+        embeddedJson[index] = holderText;
+      }
+    }
   }
+  const holderTexts = embeddedJson.splice(0);
+  for (const text of holderTexts.concat(wholeBlobs)) keep(text);
 
   const title = (doc.querySelector("title")?.textContent || "").trim();
   return { title, media, players: described, embeddedJson };
