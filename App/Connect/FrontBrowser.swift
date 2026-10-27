@@ -13,9 +13,10 @@ enum FrontBrowser {
 
     static func read(_ app: FrontApp) async -> AppleEventReply? {
         guard let bundleID = app.bundleID, let source = ScriptableBrowsers.script(for: bundleID) else { return nil }
-        let permission = await Task.detached { askPermission(bundleID) }.value
-        if permission == OSStatus(errAEEventNotPermitted) { return .refused }
-        return await run(source)
+        return await Task.detached {
+            guard askPermission(bundleID) != OSStatus(errAEEventNotPermitted) else { return .refused }
+            return run(source)
+        }.value
     }
 
     private static func askPermission(_ bundleID: String) -> OSStatus {
@@ -23,7 +24,6 @@ enum FrontBrowser {
         return AEDeterminePermissionToAutomateTarget(target.aeDesc, typeWildCard, typeWildCard, true)
     }
 
-    @MainActor
     private static func run(_ source: String) -> AppleEventReply {
         var error: NSDictionary?
         let result = NSAppleScript(source: source)?.executeAndReturnError(&error)

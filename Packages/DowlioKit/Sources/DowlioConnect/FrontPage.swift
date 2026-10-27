@@ -59,12 +59,20 @@ public enum ScriptableBrowsers {
 
     public static func script(for bundleID: String) -> String? {
         if chromium.contains(bundleID) {
-            return #"tell application id "\#(bundleID)" to tell active tab of front window to return (URL & linefeed & title)"#
+            return script(bundleID, tab: "active tab", title: "title")
         }
         if safari.contains(bundleID) {
-            return #"tell application id "\#(bundleID)" to tell current tab of front window to return (URL & linefeed & name)"#
+            return script(bundleID, tab: "current tab", title: "name")
         }
         return nil
+    }
+
+    private static func script(_ bundleID: String, tab: String, title: String) -> String {
+        """
+        with timeout of 5 seconds
+            tell application id "\(bundleID)" to tell \(tab) of front window to return (URL & linefeed & \(title))
+        end timeout
+        """
     }
 
     public static func reply(_ text: String) -> AppleEventReply {

@@ -146,19 +146,19 @@ final class AppModel {
     }
 
     func sendFrontPage() {
-        guard let server = connectServer else { return }
+        let server = connectServer
         let app = FrontBrowser.frontApp
         let target = sendTarget()
-        target?.askFrontPage(of: app?.name ?? "the browser")
+        let ask = target?.askFrontPage(of: app?.name ?? "the browser")
         Task { [weak self, weak target] in
-            let outcome = await FrontPage.read(app, scan: { await server.scanPage(in: $0) }, appleEvents: { await FrontBrowser.read($0) })
+            let outcome = await FrontPage.read(app, scan: { await server?.scanPage(in: $0) ?? .notConnected }, appleEvents: { await FrontBrowser.read($0) })
             switch outcome {
             case .sentThroughConnect:
                 break
             case .read(let page):
                 self?.receive(page)
             case .couldntRead(let reason):
-                target?.couldntRead(reason)
+                if let ask { target?.couldntRead(reason, asked: ask) }
             }
         }
     }

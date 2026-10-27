@@ -83,6 +83,12 @@ struct ScriptableBrowsersTests {
         #expect(script.contains("current tab of front window"))
     }
 
+    @Test func aBrowserThatDoesntAnswerIsGivenUpOnAfterFiveSeconds() throws {
+        let script = try #require(ScriptableBrowsers.script(for: "com.apple.Safari"))
+
+        #expect(script.contains("with timeout of 5 seconds"))
+    }
+
     @Test(arguments: ["com.apple.finder", "company.thebrowser.dia", "org.mozilla.firefox"])
     func otherAppsAreNotScripted(bundleID: String) {
         #expect(ScriptableBrowsers.script(for: bundleID) == nil)

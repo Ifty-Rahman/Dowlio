@@ -46,6 +46,7 @@ struct FrontPageBody: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, DowlioDesign.Spacing.sm)
+            .onChange(of: state) { clipboardHasNoLink = false }
         }
     }
 }

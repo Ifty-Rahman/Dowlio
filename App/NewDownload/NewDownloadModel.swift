@@ -36,15 +36,19 @@ final class NewDownloadModel: Identifiable {
 
     var media: SentPageModel? { sentPages.current }
     private(set) var frontPage: FrontPageState?
+    private var frontPageAsk: UUID?
 
-    func askFrontPage(of browser: String) {
+    func askFrontPage(of browser: String) -> UUID {
         sentPages.clear()
         draft.text = ""
         frontPage = .asking(browser)
+        let ask = UUID()
+        frontPageAsk = ask
+        return ask
     }
 
-    func couldntRead(_ reason: CouldntRead) {
-        guard case .asking = frontPage else { return }
+    func couldntRead(_ reason: CouldntRead, asked ask: UUID) {
+        guard case .asking = frontPage, frontPageAsk == ask else { return }
         frontPage = .couldntRead(reason)
     }
 
