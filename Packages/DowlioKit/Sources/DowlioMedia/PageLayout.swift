@@ -1,3 +1,4 @@
+import DowlioCore
 import Foundation
 
 struct PageLayout {
@@ -20,9 +21,13 @@ struct PageLayout {
     let isFeed: Bool
 
     init(page: SentPage, players: [(group: Int?, sources: [ScannedMedia])], streams: [URL]) {
-        isFeed = page.players.count > 1
+        let holdingMedia = Set(players.compactMap(\.group))
+        let shown = page.players.filter { player in
+            player.isPlaying || player.visibility > 0 || player.poster != nil || player.duration != nil || holdingMedia.contains(player.group)
+        }
+        isFeed = shown.count > 1
         var byGroup: [Int: Bucket] = [:]
-        for player in page.players { byGroup[player.group] = Bucket(player: player) }
+        for player in shown { byGroup[player.group] = Bucket(player: player) }
         var loose: [Bucket] = []
         for (group, sources) in players {
             if let group, byGroup[group] != nil {
@@ -34,7 +39,8 @@ struct PageLayout {
         var other = Bucket(isOther: true)
         var unplaced: [URL] = []
         for url in streams {
-            if let group = Self.matchingPlayer(for: url, in: page.players) {
+            let referrer = page.watched.first { $0.url == url }?.referrer
+            if let group = Self.matchingPlayer(for: url, in: shown) ?? Self.framingPlayer(for: referrer, in: shown) {
                 byGroup[group]?.streams.append(url)
             } else {
                 unplaced.append(url)
@@ -42,12 +48,12 @@ struct PageLayout {
         }
         if isFeed {
             other.streams = unplaced
-        } else if let only = page.players.first {
+        } else if let only = shown.first {
             byGroup[only.group]?.streams += unplaced
         } else if !unplaced.isEmpty {
             loose.append(Bucket(streams: unplaced))
         }
-        let ordered = page.players.sorted { a, b in
+        let ordered = shown.sorted { a, b in
             if a.isPlaying != b.isPlaying { return a.isPlaying }
             if a.visibility != b.visibility { return a.visibility > b.visibility }
             return a.group < b.group
@@ -59,6 +65,14 @@ struct PageLayout {
         let wanted = ids(in: url)
         guard !wanted.isEmpty else { return nil }
         return players.first { player in player.poster.map { !ids(in: $0).isDisjoint(with: wanted) } ?? false }?.group
+    }
+
+    static func framingPlayer(for referrer: URL?, in players: [ScannedPlayer]) -> Int? {
+        guard let origin = referrer?.webOrigin else { return nil }
+        let framed = players.filter { $0.origin?.webOrigin == origin }
+        if framed.count == 1 { return framed[0].group }
+        let playing = framed.filter(\.isPlaying)
+        return playing.count == 1 ? playing[0].group : nil
     }
 
     static func ids(in url: URL) -> Set<String> {

@@ -5,7 +5,7 @@ import WebKit
 
 @MainActor
 final class HiddenPlayer: NSObject {
-    static let longestPlay: Duration = .seconds(10)
+    static let longestPlay: Duration = .seconds(15)
     static let quietAfterMedia: Duration = .seconds(3)
     private static let handlerName = "dowlioMedia"
 
@@ -20,6 +20,7 @@ final class HiddenPlayer: NSObject {
 
     private let page: SentPage
     private var found: [WatchedRequest] = []
+    private var agent: String?
     private var webView: WKWebView?
     private var window: NSWindow?
     private var waiting: CheckedContinuation<PlayedPage, Never>?
@@ -87,14 +88,18 @@ final class HiddenPlayer: NSObject {
     }
 
     fileprivate func receive(_ body: Any) {
-        guard !isFinished, let message = body as? [String: Any], let text = message["url"] as? String,
+        guard !isFinished, let message = body as? [String: Any] else { return }
+        if agent == nil { agent = (message["agent"] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        guard let text = message["url"] as? String,
               let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               !found.contains(where: { $0.url == url }) else { return }
         let type = (message["type"] as? String).flatMap { $0.isEmpty ? nil : $0.split(separator: ";").first.map(String.init) }
         let isManifest = ["m3u8", "mpd"].contains(url.pathExtension.lowercased())
             || type.map { $0.contains("mpegurl") || $0.contains("dash+xml") } ?? false
         guard isManifest || message["element"] != nil || MediaFile.kind(of: url, contentType: type) != nil else { return }
-        found.append(WatchedRequest(url: url, kind: isManifest ? .manifest : .file, contentType: type, referrer: page.url))
+        let frame = (message["frame"] as? String).flatMap(URL.init(string:)).flatMap { ["http", "https"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil }
+        found.append(WatchedRequest(url: url, kind: isManifest ? .manifest : .file, contentType: type, referrer: frame ?? page.url))
+        guard isManifest || isSameSite(frame ?? page.url) else { return }
         quiet?.cancel()
         quiet = Task { [weak self] in
             try? await Task.sleep(for: Self.quietAfterMedia)
@@ -123,7 +128,7 @@ final class HiddenPlayer: NSObject {
         window?.close()
         webView = nil
         window = nil
-        waiting.resume(returning: PlayedPage(title: title, media: found))
+        waiting.resume(returning: PlayedPage(title: title, media: found, userAgent: agent))
     }
 
     private func isSameSite(_ url: URL?) -> Bool {
@@ -146,7 +151,9 @@ final class HiddenPlayer: NSObject {
             const key = url + '|' + (type || '');
             if (sent.has(key)) return;
             sent.add(key);
-            handler.postMessage(element ? { url, type: type || '', element: true } : { url, type: type || '' });
+            const message = { url, type: type || '', frame: location.href, agent: navigator.userAgent };
+            if (element) message.element = true;
+            handler.postMessage(message);
           };
           const check = (value) => { if (typeof value === 'string' && media.test(value.split('#')[0])) send(value); };
           const isMediaType = (type) => /mpegurl|dash\\+xml|^video\\/|^audio\\//i.test(type || '');
@@ -188,14 +195,30 @@ final class HiddenPlayer: NSObject {
               if (source && !source.startsWith('blob:')) send(source, '', true);
               element.querySelectorAll('source[src]').forEach((child) => send(child.src, child.type, true));
             });
+            try {
+              if (typeof window.jwplayer === 'function') {
+                const playlist = window.jwplayer().getPlaylist() || [];
+                playlist.forEach((item) => {
+                  check(item.file);
+                  (item.sources || []).forEach((source) => check(source.file));
+                });
+              }
+            } catch (e) {}
             const first = document.querySelector('video');
             if (first && first.paused) {
               const started = first.play();
               if (started && started.catch) started.catch(() => {});
             }
           };
+          const pressPlay = () => {
+            if (window === window.top || innerWidth < 400 || innerHeight < 220) return;
+            if (sent.size > 0) return;
+            const target = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+            if (target) target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          };
           document.addEventListener('DOMContentLoaded', play);
           setInterval(play, 500);
+          [1500, 2500, 3500].forEach((delay) => setTimeout(pressPlay, delay));
         })();
         """
 }

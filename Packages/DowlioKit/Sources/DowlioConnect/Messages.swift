@@ -112,7 +112,8 @@ struct Envelope {
                     poster: (entry["poster"] as? String).flatMap(URL.init(string:)).flatMap { Self.isWebLink($0) ? $0 : nil },
                     duration: (entry["duration"] as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
                     isPlaying: entry["playing"] as? Bool ?? false,
-                    visibility: (entry["visible"] as? Double).map { min(max($0, 0), 1) } ?? 0
+                    visibility: (entry["visible"] as? Double).map { min(max($0, 0), 1) } ?? 0,
+                    origin: (entry["origin"] as? String).flatMap(URL.init(string:)).flatMap { Self.isWebLink($0) ? $0 : nil }
                 )
             }
             let embedded = ((object["embeddedJson"] as? [Any]) ?? []).prefix(Self.maximumEmbeddedJSON).compactMap { $0 as? String }

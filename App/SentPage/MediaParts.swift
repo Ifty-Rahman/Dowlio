@@ -336,7 +336,7 @@ struct VideoStrip: View {
                 }
             }
             .offset(x: -CGFloat(first) * (cardWidth + Self.gap))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .frame(height: cardHeight)
             .clipped()
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }

@@ -114,11 +114,17 @@ export function scanPage(doc = document, base = doc.baseURI) {
     return kept.length ? kept.join(" - ") : title;
   }
 
+  const GENERIC = /^(video|audio|media)?\s*(player|video|audio)?$|^advertisement$|^ad$/i;
+
+  function named(text) {
+    return text && !GENERIC.test(text) ? text : "";
+  }
+
   function headingLabel(element, box) {
-    const own = squash(element.getAttribute("aria-label") || element.getAttribute("title"));
+    const own = named(squash(element.getAttribute("aria-label") || element.getAttribute("title")));
     if (own) return own;
     for (const scope of [box, ...ancestors(element)].filter(Boolean)) {
-      const label = squash(scope.getAttribute?.("aria-label"));
+      const label = named(squash(scope.getAttribute?.("aria-label")));
       if (label && scope.tagName.toLowerCase() !== "body") return label;
       const heading = squash(scope.querySelector?.("h1, h2, h3, h4, h5, h6")?.textContent);
       if (heading && holdsOnlyThis(scope)) return heading;
@@ -137,13 +143,31 @@ export function scanPage(doc = document, base = doc.baseURI) {
     return Math.round(((across * down) / (box.width * box.height)) * 100) / 100;
   }
 
+  function frameOrigin() {
+    const own = doc.defaultView?.origin;
+    if (typeof own === "string" && /^https?:/.test(own)) return own;
+    try {
+      const url = new URL(base);
+      return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const origin = frameOrigin();
+
+  const isPlaying = (element) => element.paused === false && !element.ended;
+  const watchedNow = elements.filter((element) => isPlaying(element) && visibleShare(element) > 0);
+
   function describe(element, index) {
     const box = post(element);
-    const label = postLabel(box) || (elements.length === 1 ? titleLabel() : null) || headingLabel(element, box) || `Video ${index + 1} of ${elements.length}`;
+    const alone = elements.length === 1 || (watchedNow.length === 1 && watchedNow[0] === element);
+    const label = postLabel(box) || (alone ? titleLabel() : null) || headingLabel(element, box) || `Video ${index + 1} of ${elements.length}`;
     const entry = { group: index + 1, label: shorten(label), playing: element.paused === false && !element.ended, visible: visibleShare(element) };
     const poster = resolve(element.getAttribute("poster"));
     if (poster) entry.poster = poster;
     if (Number.isFinite(element.duration) && element.duration > 0) entry.duration = element.duration;
+    if (origin) entry.origin = origin;
     return entry;
   }
 

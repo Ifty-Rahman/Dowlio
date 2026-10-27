@@ -18,6 +18,7 @@ enum SettingsKey {
     static let showsInDock = "showsInDock"
     static let startsInMenuBar = "startsInMenuBar"
     static let notifiesWhenFinished = "notifiesWhenFinished"
+    static let notifiesOnProblems = "notifiesOnProblems"
     static let thenAction = "thenAction"
     static let hasSeenWelcome = "hasSeenWelcome"
     static let catchesDownloads = "catchesDownloads"

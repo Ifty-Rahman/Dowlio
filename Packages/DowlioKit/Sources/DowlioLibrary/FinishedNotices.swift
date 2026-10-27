@@ -15,40 +15,47 @@ public struct FinishWatcher: Sendable {
     }
 }
 
-/// Groups finishes that come within five seconds of the first one, so they share one notice. The
-/// window opens at the first finish, so a steady trickle never holds a notice back for ever.
-public struct FinishGrouper: Sendable {
-    public static let window: TimeInterval = 5
-
-    private var waiting: [DownloadRow] = []
-    private var firstFinish: Date?
+public struct ProblemWatcher: Sendable {
+    private var needing: Set<DownloadID>?
 
     public init() {}
 
-    public mutating func add(_ row: DownloadRow, at date: Date) {
-        waiting.append(row)
-        if firstFinish == nil { firstFinish = date }
+    public mutating func newProblems(in rows: [DownloadRow]) -> [DownloadRow] {
+        let current = Set(rows.filter(\.needsAttention).map(\.id))
+        defer { needing = current }
+        guard let needing else { return [] }
+        return rows.filter { current.contains($0.id) && !needing.contains($0.id) }
     }
+}
 
-    public var dueDate: Date? {
-        firstFinish.map { $0.addingTimeInterval(Self.window) }
-    }
+public struct NoticeGrouper: Sendable {
+    public static let window: TimeInterval = 5
 
-    public mutating func takeDue(at now: Date) -> FinishNotice? {
-        guard let dueDate, now >= dueDate, !waiting.isEmpty else { return nil }
-        defer {
-            waiting = []
-            firstFinish = nil
+    private var group = UUID()
+    private var rows: [DownloadRow] = []
+    private var firstAt: Date?
+
+    public init() {}
+
+    public mutating func add(_ row: DownloadRow, at date: Date) -> (group: UUID, rows: [DownloadRow]) {
+        if let firstAt, date.timeIntervalSince(firstAt) < Self.window {
+            rows.append(row)
+        } else {
+            group = UUID()
+            rows = [row]
+            firstAt = date
         }
-        return FinishNotice(rows: waiting)
+        return (group, rows)
     }
 }
 
 public struct FinishNotice: Equatable, Sendable {
     public let rows: [DownloadRow]
+    public let group: UUID
 
-    public init(rows: [DownloadRow]) {
+    public init(rows: [DownloadRow], group: UUID = UUID()) {
         self.rows = rows
+        self.group = group
     }
 
     public var title: String {
@@ -65,6 +72,39 @@ public struct FinishNotice: Equatable, Sendable {
     /// The file Show in Finder, Open and "Then" act on. Only a single finish has one.
     public var singleFile: URL? {
         rows.count == 1 ? rows[0].finishedFile : nil
+    }
+}
+
+public struct ProblemNotice: Equatable, Sendable {
+    public let rows: [DownloadRow]
+    public let group: UUID
+
+    public init(rows: [DownloadRow], group: UUID = UUID()) {
+        self.rows = rows
+        self.group = group
+    }
+
+    public var title: String {
+        let failed = rows.allSatisfy { if case .failed = $0.state { true } else { false } }
+        if rows.count == 1 { return failed ? "Download failed" : "Download can't resume" }
+        return failed ? "\(rows.count) downloads failed" : "\(rows.count) downloads need attention"
+    }
+
+    public var body: String {
+        guard rows.count == 1 else { return FileNames.sentence(rows.map(\.fileName)) }
+        let row = rows[0]
+        switch row.state {
+        case .failed(let error):
+            let failure = FailureText(error, isMedia: row.isMedia)
+            return "\(row.fileName)\n\(failure.reason). \(failure.nextStep)."
+        default:
+            return "\(row.fileName)\nSend the \(row.isMedia ? "page" : "link") again from your browser."
+        }
+    }
+
+    public var retryable: DownloadID? {
+        guard rows.count == 1, case .failed = rows[0].state else { return nil }
+        return rows[0].id
     }
 }
 

@@ -34,9 +34,12 @@ test("choosing Send to Dowlio hands the link and its page to Dowlio", async () =
 });
 
 test("with Dowlio not running, the menu says to open Dowlio and the browser downloads nothing", async () => {
-  const { chrome, net } = await worker({ connect: false });
+  const { chrome, net, timers } = await worker({ connect: false });
 
-  await chrome.contextMenus.click(menuClick, { id: 3 });
+  const clicked = chrome.contextMenus.click(menuClick, { id: 3 });
+  await flush();
+  await timers.advance(3000);
+  await clicked;
 
   assert.equal(net.last().sent.filter((message) => message.type === "link.send").length, 0);
   assert.deepEqual(chrome.downloads.calls, []);

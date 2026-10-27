@@ -29,6 +29,7 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
     let model: AppModel
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
+    @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
     @State private var notificationsDenied = false
 
@@ -52,6 +53,9 @@ private struct GeneralSettings: View {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+            }
+            Section("When a download fails or can't resume") {
+                Toggle("Show a notification", isOn: $notifiesOnProblems)
             }
         }
         .settingsForm()

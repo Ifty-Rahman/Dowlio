@@ -21,6 +21,32 @@ struct RowTextTests {
         #expect(Self.row(state: .failed(error)).stateWord == "Failed")
     }
 
+    @Test func aDownloadThatCantResumeAfterAQuitNeedsAttentionAndSaysWhatToDo() {
+        var file = Self.row(state: .paused)
+        file.receivedBytes = 1_200_000
+        file.totalBytes = 4_800_000
+        file.lostCookies = true
+        var media = file
+        media.isMedia = true
+
+        #expect(file.needsAttention)
+        #expect(file.stateWord == "Can't resume")
+        #expect(file.detailLine == "1.20 MB of 4.80 MB · Send the link again from your browser")
+        #expect(media.detailLine == "1.20 MB of 4.80 MB · Send the page again from your browser")
+    }
+
+    @Test(arguments: [
+        (DownloadRow.State.failed(.notFound), true),
+        (.paused, false),
+        (.downloading, false),
+        (.queued, false),
+        (.retrying(attempt: 1, nextTry: Date()), false),
+        (.completed, false),
+    ])
+    func onlyFailedAndStuckDownloadsNeedAttention(state: DownloadRow.State, needsAttention: Bool) {
+        #expect(Self.row(state: state).needsAttention == needsAttention)
+    }
+
     @Test(arguments: [
         (DownloadOrigin(kind: .caught, browser: "Arc") as DownloadOrigin?, "Caught from Arc" as String?),
         (DownloadOrigin(kind: .sent, browser: "Brave"), "Sent from Brave"),

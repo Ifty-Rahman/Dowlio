@@ -15,7 +15,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
     private let panel = MenuBarPanel()
-    private var drawnFraction: Double??
+    private var drawnIcon: (fraction: Double?, needsAttention: Bool)?
     private var returnTo: NSRunningApplication?
     private var openedAt = Date()
     private lazy var dismissal = PopoverDismissal(hooks: .init(
@@ -161,9 +161,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let steps = Double(StatusIcon.progressSteps)
         let fraction = summary.progressFraction.map { ($0 * steps).rounded(.down) / steps }
         item.button?.setAccessibilityLabel("Dowlio, \(summary.status)")
-        guard drawnFraction != .some(fraction) else { return }
-        drawnFraction = .some(fraction)
-        item.button?.image = StatusIcon.image(progress: fraction)
+        if let drawnIcon, drawnIcon.fraction == fraction, drawnIcon.needsAttention == summary.needsAttention { return }
+        drawnIcon = (fraction, summary.needsAttention)
+        item.button?.image = StatusIcon.image(progress: fraction, needsAttention: summary.needsAttention)
     }
 }
 
@@ -201,18 +201,20 @@ enum StatusIcon {
     static let progressSteps = 34
 
     @MainActor
-    static func image(progress fraction: Double?) -> NSImage {
+    static func image(progress fraction: Double?, needsAttention: Bool = false) -> NSImage {
+        let ink: NSColor = needsAttention ? .systemRed : .black
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
-            NSColor.black.setFill()
+            ink.setFill()
+            ink.setStroke()
             arrow().fill()
             if let fraction {
-                progressBar(fraction)
+                progressBar(fraction, ink: ink)
             } else {
                 segments()
             }
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = !needsAttention
         image.accessibilityDescription = "Dowlio"
         return image
     }
@@ -240,12 +242,12 @@ enum StatusIcon {
         }
     }
 
-    private static func progressBar(_ fraction: Double) {
-        NSColor.black.withAlphaComponent(0.3).setFill()
+    private static func progressBar(_ fraction: Double, ink: NSColor) {
+        ink.withAlphaComponent(0.3).setFill()
         capsule(bar).fill()
         let filled = bar.width * CGFloat(min(max(fraction, 0), 1))
         guard filled > 0 else { return }
-        NSColor.black.setFill()
+        ink.setFill()
         capsule(NSRect(x: bar.minX, y: bar.minY, width: max(filled, bar.height), height: bar.height)).fill()
     }
 

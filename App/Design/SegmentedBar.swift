@@ -9,6 +9,7 @@ struct SegmentedBar: View {
     let fraction: Double?
     let tint: Color
     var height: CGFloat = 6
+    var needsAttention = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -54,7 +55,7 @@ struct SegmentedBar: View {
     private func pieceView(fill: Double) -> some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+                Capsule().fill(needsAttention ? tint.opacity(0.3) : Color(nsColor: .quaternaryLabelColor))
                 Capsule().fill(tint).frame(width: proxy.size.width * fill)
             }
         }

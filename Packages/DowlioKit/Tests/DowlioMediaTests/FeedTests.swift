@@ -93,6 +93,31 @@ struct FeedTests {
         #expect(candidates.map(\.isOnScreen) == [false])
     }
 
+    @Test func hiddenEmptyPlayersDontMakeAPageAFeed() async throws {
+        let site = try await Site()
+        site.serve(html: """
+            <title>Watch</title>
+            <meta property="video:duration" content="3">
+            <meta property="og:video" content="/videos/1_240P_1000K_5555555555.mp4?hash=page">
+            """, at: "/watch")
+        serveVideo("5555555555", on: site)
+        for token in ["page", "browser"] { site.serve(video: 500, at: "/videos/1_240P_1000K_5555555555.mp4?hash=\(token)") }
+
+        let found = try await site.analyze("/watch") {
+            $0.players = (1...4).map { ScannedPlayer(group: $0, label: "Related \($0)") }
+                + [ScannedPlayer(group: 5, label: "Cooking pasta at home", duration: 3, visibility: 1)]
+            $0.scan = [ScannedMedia(url: site.url("/videos/1_240P_1000K_5555555555.mp4?hash=browser"), kind: .video)]
+            $0.watched = [watched("5555555555", on: site)]
+        }
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == ["Cooking pasta at home"])
+        #expect(candidates.map(\.isOther) == [false])
+        let versions = try #require(candidates.first).versions
+        #expect(versions.count == 2)
+        #expect(versions.filter { $0.height == 240 }.count == 1)
+    }
+
     @Test func onlyTheFirstFiveVideosAreProbedAndTheRestWhenOpened() async throws {
         let site = try await Site()
         site.serve(html: "<title>Home</title>", at: "/home")
@@ -114,5 +139,31 @@ struct FeedTests {
         #expect(opened.label == "Post 7")
         #expect(opened.unprobed.isEmpty)
         #expect(opened.versions.first?.source.url.path.contains(ids[6]) == true)
+    }
+
+    @Test func aStreamPlayedInAnotherSitesFrameGoesToThatPlayerAndIsReadWithItsOrigin() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Movie - Tube</title>", at: "/watch")
+        site.serve(video: 4000, at: "/ads/clip.mp4")
+        let origin = "https://player.example"
+        let master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1868806,RESOLUTION=1280x720,CODECS=\"avc1.64001f,mp4a.40.2\"\n720p/index.txt\n"
+        let media = "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5.0,\nseg_0.png\n#EXTINF:5.0,\nseg_1.png\n#EXT-X-ENDLIST\n"
+        site.server.serve(TestServer.File(data: Data(master.utf8), headers: ["Content-Type": "text/plain; charset=utf-8"], requiredOrigin: origin), at: "/u/1/playlist.txt")
+        site.server.serve(TestServer.File(data: Data(media.utf8), headers: ["Content-Type": "text/plain; charset=utf-8"], requiredOrigin: origin), at: "/u/1/720p/index.txt")
+
+        let found = try await site.analyze("/watch") {
+            $0.scan = [ScannedMedia(url: site.url("/ads/clip.mp4"), kind: .video, group: 1)]
+            $0.players = [
+                ScannedPlayer(group: 1, label: "Ad", duration: 5, visibility: 1, origin: URL(string: "https://ads.example")),
+                ScannedPlayer(group: 2, label: "Movie", isPlaying: true, visibility: 1, origin: URL(string: origin)),
+            ]
+            $0.watched = [WatchedRequest(url: site.url("/u/1/playlist.txt"), kind: .manifest, contentType: "text/plain; charset=utf-8", referrer: URL(string: "\(origin)/"))]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == ["Movie", "Ad"])
+        #expect(candidates.first?.isOnScreen == true)
+        #expect(candidates.first?.duration == 10)
+        #expect(candidates.first?.versions.compactMap(\.height) == [720])
     }
 }

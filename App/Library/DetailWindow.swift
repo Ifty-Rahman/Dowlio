@@ -31,12 +31,12 @@ struct DetailWindow: View {
                 FileTypeBadge(text: row.badge)
                 VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                     Text(row.fileName).font(DowlioDesign.TypeRole.title).lineLimit(1).truncationMode(.middle)
-                    Label(row.stateWord, systemImage: row.state.symbolName)
+                    Label(row.stateWord, systemImage: row.symbolName)
                         .font(DowlioDesign.TypeRole.caption)
-                        .foregroundStyle(row.state.tone)
+                        .foregroundStyle(row.tone)
                 }
             }
-            SegmentedBar(segments: row.segments, fraction: row.fractionDone, tint: row.state.tone, height: 10)
+            SegmentedBar(segments: row.segments, fraction: row.fractionDone, tint: row.tone, height: 10)
             Text(row.detailLine).font(DowlioDesign.TypeRole.detailMetric).foregroundStyle(.secondary)
             speedChart
             Table(row.segments.enumerated().map { SegmentLine(number: $0.offset + 1, segment: $0.element) }) {

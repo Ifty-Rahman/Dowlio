@@ -293,6 +293,49 @@ struct PageAnalyzerTests {
         #expect(candidates.first?.versions.count == 1)
     }
 
+    @Test func aStreamAnEmbeddedPlayerRequestedIsAskedForWithThatPlayerAsReferrer() async throws {
+        let site = try await Site()
+        let player = try await Site()
+        site.serve(html: "<title>Embedded</title>", at: "/watch")
+        let embed = player.url("/e/abc")
+        for (path, text) in [
+            ("/hls/master.m3u8", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720\nindex.m3u8\n"),
+            ("/hls/index.m3u8", Self.mediaPlaylist(segments: 2, named: "seg")),
+        ] {
+            player.server.serve(TestServer.File(
+                data: Data(text.utf8), headers: ["Content-Type": "application/vnd.apple.mpegurl"], requiredReferrer: embed.absoluteString
+            ), at: path)
+        }
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: player.url("/hls/master.m3u8"), kind: .manifest, referrer: embed)]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        let versions = try #require(candidates.first?.versions)
+        #expect(versions.map(\.height) == [720, nil])
+        #expect(versions.allSatisfy { $0.referrer == embed })
+    }
+
+    @Test func aFileAnEmbeddedPlayerRequestedIsCheckedWithThatPlayerAsReferrer() async throws {
+        let site = try await Site()
+        let player = try await Site()
+        site.serve(html: "<title>Embedded</title>", at: "/watch")
+        let embed = player.url("/e/abc")
+        player.server.serve(TestServer.File(
+            data: Data(repeating: 7, count: 2_000_000), headers: ["Content-Type": "video/mp4"], requiredReferrer: embed.absoluteString
+        ), at: "/v/clip.mp4")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = [WatchedRequest(url: player.url("/v/clip.mp4"), kind: .file, contentType: "video/mp4", referrer: embed)]
+        }
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        let versions = try #require(candidates.first?.versions)
+        #expect(versions.first?.totalBytes == 2_000_000)
+        #expect(versions.allSatisfy { $0.referrer == embed })
+    }
+
     static func mediaPlaylist(segments: Int, named: String, key: String = "") -> String {
         let body = (0..<segments).map { "#EXTINF:6.0,\n\(named)\($0).ts" }.joined(separator: "\n")
         return "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n\(key)\n\(body)\n#EXT-X-ENDLIST\n"

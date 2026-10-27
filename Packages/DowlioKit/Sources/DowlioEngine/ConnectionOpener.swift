@@ -7,15 +7,18 @@ struct ConnectionOpener: Sendable {
     let idleTimeout: Duration
     let now: @Sendable () -> Date
     let shared: SharedSession?
+    let readsLikeAPlayer: Bool
 
     init(
         originalURL: URL,
         options: RequestOptions,
         idleTimeout: Duration,
         sessions: SessionMode,
+        readsLikeAPlayer: Bool = false,
         now: @escaping @Sendable () -> Date
     ) {
         self.originalURL = originalURL
+        self.readsLikeAPlayer = readsLikeAPlayer
         self.options = options
         self.idleTimeout = idleTimeout
         self.now = now
@@ -78,6 +81,7 @@ struct ConnectionOpener: Sendable {
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
+        if readsLikeAPlayer, let origin = url.crossOrigin(from: options.referrer) { request.setValue(origin, forHTTPHeaderField: "Origin") }
         if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
         // Cookies came from the link's own site, and a redirect may lead to another one.
         if !options.cookies.isEmpty, fromLinkSite {

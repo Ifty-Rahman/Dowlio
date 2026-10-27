@@ -255,7 +255,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   const catching = startCatching({ chrome, navigator, now, link: connection });
 
   const watching = startWatching({ chrome });
-  startSending({ chrome, navigator, link: connection, watching });
+  startSending({ chrome, navigator, link: connection, watching, timers, now });
 
   connect();
 }

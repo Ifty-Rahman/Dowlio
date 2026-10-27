@@ -40,9 +40,11 @@ public struct PageAnalyzer: Sendable {
         let played = await play(page)
         guard !Task.isCancelled else { return }
         let refusals = Refusals()
-        let found = await candidates(on: page.played(played), reading: nil, refusals: refusals) { _ in }
+        let seen = page.played(played)
+        let found = await candidates(on: seen, reading: nil, refusals: refusals) { _ in }
         guard !Task.isCancelled else { return }
-        report(found.isEmpty && refusals.any ? .needsSignIn : .found(found))
+        let agent = page.userAgent == nil ? seen.userAgent : nil
+        report(found.isEmpty && refusals.any ? .needsSignIn : .found(found.map { $0.requested(by: agent) }))
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
@@ -171,11 +173,11 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func probe(_ bucket: PageLayout.Bucket, in place: PageContext, refusals: Refusals) async -> ProbedBucket {
-        let options = mediaOptions(place.page)
         let probes = await withTaskGroup(of: (URL, Probe).self) { group in
             for media in bucket.files {
                 group.addTask { [inspect] in
                     let url = media.url
+                    let options = mediaOptions(place.page, for: url)
                     let inspection: LinkInspection
                     do {
                         inspection = try await inspect(url, options)
@@ -186,7 +188,8 @@ public struct PageAnalyzer: Sendable {
                     guard Self.kind(of: inspection) != nil else { return (url, Probe()) }
                     return (url, Probe(version: Version(
                         source: .file(url), contentType: inspection.contentType, totalBytes: inspection.totalBytes,
-                        height: media.height ?? MediaFile.height(in: url.path), codecs: media.codecs ?? MediaFile.codecs(in: url.path)
+                        height: media.height ?? MediaFile.height(in: url.path), codecs: media.codecs ?? MediaFile.codecs(in: url.path),
+                        referrer: place.page.referrer(of: url)
                     ), splitsIntoSegments: inspection.splitsIntoSegments))
                 }
             }
@@ -196,9 +199,9 @@ public struct PageAnalyzer: Sendable {
         }
         let shell = placeholder(of: bucket, in: place)
         var result = ProbedBucket(splittable: Set(probes.filter(\.value.splitsIntoSegments).keys))
-        let versions = bucket.files.compactMap { probes[$0.url]?.version }.filter { version in
+        let versions = Self.distinct(bucket.files.compactMap { probes[$0.url]?.version }.filter { version in
             place.shown.contains(version.source.url) || !Self.looksLikeAnAd(version, on: place.page.url)
-        }
+        })
         if !versions.isEmpty {
             var files = shell
             files.versions = versions
@@ -215,17 +218,16 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func streamCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
-        let options = mediaOptions(page)
         var parsed: [(URL, Playlist)] = []
         var candidates: [Candidate] = []
         var seen = Set<URL>()
         for url in urls where seen.insert(url).inserted {
-            guard let (data, http) = await fetch(request(for: url, options: options), refusals: refusals) else { continue }
+            guard let (data, http) = await fetch(request(for: url, options: mediaOptions(page, for: url)), refusals: refusals) else { continue }
             if let playlist = Self.playlist(in: data, from: http, at: url) {
                 parsed.append((url, playlist))
             } else if let manifest = try? MPDParser.parse(data, base: http.url ?? url),
                       let candidate = DASHVersions.candidate(of: manifest, label: label, thumbnail: thumbnail) {
-                candidates.append(candidate)
+                candidates.append(candidate.referred(by: page.referrer(of: url)))
             }
         }
         var covered = Set<String>()
@@ -234,6 +236,8 @@ public struct PageAnalyzer: Sendable {
             master.audio.compactMap(\.url).forEach { covered.insert(Self.withoutQuery($0)) }
         }
         for (url, playlist) in parsed {
+            let options = mediaOptions(page, for: url)
+            let referrer = page.referrer(of: url)
             switch playlist {
             case .master(let master):
                 if master.isProtected {
@@ -262,12 +266,12 @@ public struct PageAnalyzer: Sendable {
                     label: label, thumbnail: thumbnail, duration: found.compactMap(\.media?.duration).max(),
                     versions: videos.isEmpty ? [] : videos + audio
                 )
-                if let shown = candidate.offeredOrRestricted(by: playlists) { candidates.append(shown) }
+                if let shown = candidate.offeredOrRestricted(by: playlists) { candidates.append(shown.referred(by: referrer)) }
             case .media(let media):
                 guard !covered.contains(Self.withoutQuery(url)) else { continue }
                 let versions = HLSVersions.version(of: media, variant: nil).map { [$0] } ?? []
                 let candidate = Candidate(label: label, thumbnail: thumbnail, duration: media.duration, versions: versions)
-                if let shown = candidate.offeredOrRestricted(by: [media]) { candidates.append(shown) }
+                if let shown = candidate.offeredOrRestricted(by: [media]) { candidates.append(shown.referred(by: referrer)) }
             }
         }
         return candidates
@@ -323,11 +327,16 @@ public struct PageAnalyzer: Sendable {
     }
 
     private static func distinct(_ versions: [Version]) -> [Version] {
-        var seen = Set<URL>()
+        var seen = Set<String>()
         return versions.enumerated()
-            .filter { seen.insert($0.element.source.url).inserted }
+            .filter { seen.insert(sameFile($0.element)).inserted }
             .sorted { ($0.element.height ?? 0, $0.offset) < ($1.element.height ?? 0, $1.offset) }
             .map(\.element)
+    }
+
+    private static func sameFile(_ version: Version) -> String {
+        guard case .file(let url) = version.source, let size = version.totalBytes else { return version.source.url.absoluteString }
+        return "\(withoutQuery(url)) \(size)"
     }
 
     private func playlist(at url: URL, options: RequestOptions, refusals: Refusals) async -> Playlist? {
@@ -343,6 +352,7 @@ public struct PageAnalyzer: Sendable {
         var request = URLRequest(url: url)
         if let agent = options.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
+        if let origin = url.crossOrigin(from: options.referrer) { request.setValue(origin, forHTTPHeaderField: "Origin") }
         if !options.cookies.isEmpty {
             request.setValue(options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
@@ -430,9 +440,9 @@ public struct PageAnalyzer: Sendable {
         return options
     }
 
-    private func mediaOptions(_ page: SentPage) -> RequestOptions {
+    private func mediaOptions(_ page: SentPage, for url: URL) -> RequestOptions {
         var options = pageOptions(page)
-        options.referrer = page.url
+        options.referrer = page.referrer(of: url) ?? page.url
         return options
     }
 }
@@ -443,7 +453,35 @@ private struct VariantPlaylist: Sendable {
     var version: Version?
 }
 
+private extension SentPage {
+    func referrer(of url: URL) -> URL? {
+        watched.first { $0.url == url }?.referrer
+    }
+}
+
 private extension Candidate {
+    func referred(by referrer: URL?) -> Candidate {
+        guard let referrer else { return self }
+        var referred = self
+        referred.versions = versions.map { version in
+            var version = version
+            version.referrer = referrer
+            return version
+        }
+        return referred
+    }
+
+    func requested(by agent: String?) -> Candidate {
+        guard let agent else { return self }
+        var requested = self
+        requested.versions = versions.map { version in
+            var version = version
+            version.userAgent = agent
+            return version
+        }
+        return requested
+    }
+
     func offeredOrRestricted(by playlists: [MediaPlaylist]) -> Candidate? {
         guard versions.isEmpty else { return self }
         let found = playlists.compactMap(HLSVersions.restriction)

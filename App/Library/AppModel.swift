@@ -73,6 +73,9 @@ final class AppModel {
             draft.startImmediately = true
             add(draft)
         }
+        DebugLaunch.sendPage { [weak self] page in
+            self?.receive(page)
+        }
         DebugLaunch.useSheet { [weak self] links in
             self?.requestNewDownload(links)
         } download: { [weak self] in
@@ -341,8 +344,8 @@ final class AppModel {
         var ids: [DownloadID] = []
         for download in downloads {
             var options = settings.options(connections: chosen.connections)
-            options.referrer = chosen.referrer ?? page
-            options.userAgent = chosen.userAgent
+            options.referrer = chosen.referrer ?? download.version.referrer ?? page
+            options.userAgent = chosen.userAgent ?? download.version.userAgent
             options.cookies = chosen.cookies
             let named = downloads.count == 1 ? fileName : nil
             options.fileName = named ?? MediaNaming.fileName(

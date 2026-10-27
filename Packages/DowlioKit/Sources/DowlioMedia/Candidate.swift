@@ -64,9 +64,16 @@ public struct ScannedPlayer: Equatable, Sendable {
     public var duration: Double?
     public var isPlaying: Bool
     public var visibility: Double
+    /// The origin of the frame the player is in, which is what the browser names as the referrer
+    /// of the streams it plays.
+    public var origin: URL?
 
-    public init(group: Int, label: String? = nil, poster: URL? = nil, duration: Double? = nil, isPlaying: Bool = false, visibility: Double = 0) {
+    public init(
+        group: Int, label: String? = nil, poster: URL? = nil, duration: Double? = nil, isPlaying: Bool = false, visibility: Double = 0,
+        origin: URL? = nil
+    ) {
         self.group = group
+        self.origin = origin
         self.label = label
         self.poster = poster
         self.duration = duration
@@ -144,6 +151,8 @@ public struct Version: Equatable, Sendable {
     public var height: Int?
     public var codecs: String?
     public var language: String?
+    public var referrer: URL?
+    public var userAgent: String?
 
     public init(
         source: DownloadSource,
@@ -152,7 +161,9 @@ public struct Version: Equatable, Sendable {
         isEstimatedSize: Bool = false,
         height: Int? = nil,
         codecs: String? = nil,
-        language: String? = nil
+        language: String? = nil,
+        referrer: URL? = nil,
+        userAgent: String? = nil
     ) {
         self.source = source
         self.contentType = contentType
@@ -161,6 +172,8 @@ public struct Version: Equatable, Sendable {
         self.height = height
         self.codecs = codecs
         self.language = language
+        self.referrer = referrer
+        self.userAgent = userAgent
     }
 }
 

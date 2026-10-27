@@ -82,7 +82,31 @@ test("each player says whether it is playing and how much of it is on screen", (
 test("players are reported without any other page text", () => {
   const found = page(`<p>Private note</p>` + tweet("Ada", "hello world", "https://pbs.example.com/1.jpg"));
 
-  assert.deepEqual(Object.keys(found.players[0]).sort(), ["group", "label", "playing", "poster", "visible"]);
+  assert.deepEqual(Object.keys(found.players[0]).sort(), ["group", "label", "origin", "playing", "poster", "visible"]);
   assert.ok(!JSON.stringify(found).includes("Private note"));
   assert.ok(!JSON.stringify(found).includes("@handle"));
+});
+
+test("each player carries the origin of the frame it plays in", () => {
+  const found = page(`<video src="https://cdn.example.com/a.mp4"></video>`);
+
+  assert.equal(found.players[0].origin, "https://x.example.com");
+});
+
+test("an embedded player's video that is the one playing takes the frame's title over a generic player label", () => {
+  const found = page(
+    `<head><title>NSFS-513 Mosaic</title></head>
+     <div class="video-js" aria-label="Video Player"><video></video></div>
+     <div aria-label="Advertisement"><video></video></div>
+     <div aria-label="Advertisement"><video></video></div>`,
+    { playing: [0], boxes: [[0, 400]] },
+  );
+
+  assert.deepEqual(found.players.map((player) => player.label), ["NSFS-513 Mosaic", "Video 2 of 3", "Video 3 of 3"]);
+});
+
+test("a video playing out of sight doesn't take the page's title", () => {
+  const found = page(`<head><title>Movie</title></head><video></video><video></video>`, { playing: [0] });
+
+  assert.deepEqual(found.players.map((player) => player.label), ["Video 1 of 2", "Video 2 of 2"]);
 });

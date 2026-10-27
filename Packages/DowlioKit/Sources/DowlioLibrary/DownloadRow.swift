@@ -129,6 +129,14 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
 
     public var canCancel: Bool { state != .completed }
 
+    public var needsAttention: Bool {
+        switch state {
+        case .failed: true
+        case .paused: lostCookies
+        case .queued, .downloading, .retrying, .completed: false
+        }
+    }
+
     /// Cancel and Remove from List would delete bytes downloaded so far, so they ask first.
     public var hasBytesAtStake: Bool { state != .completed && receivedBytes > 0 }
 
@@ -150,7 +158,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         case .queued: "Queued"
         case .downloading: "Downloading"
         case .retrying: "Retrying"
-        case .paused: "Paused"
+        case .paused: lostCookies ? "Can't resume" : "Paused"
         case .failed: "Failed"
         case .completed: "Completed"
         }
@@ -170,7 +178,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
             let connections = activeConnections == 1 ? "1 connection" : "\(activeConnections) connections"
             return activeConnections > 0 ? "\(progressText) · \(connections)" : progressText
         case .paused where lostCookies:
-            return "\(progressText) · Send it again from the browser"
+            return "\(progressText) · Send the \(isMedia ? "page" : "link") again from your browser"
         case .queued, .paused, .retrying:
             return progressText
         }

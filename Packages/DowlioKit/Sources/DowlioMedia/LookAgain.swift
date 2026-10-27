@@ -3,10 +3,12 @@ import Foundation
 public struct PlayedPage: Equatable, Sendable {
     public var title: String?
     public var media: [WatchedRequest]
+    public var userAgent: String?
 
-    public init(title: String? = nil, media: [WatchedRequest] = []) {
+    public init(title: String? = nil, media: [WatchedRequest] = [], userAgent: String? = nil) {
         self.title = title
         self.media = media
+        self.userAgent = userAgent
     }
 }
 
@@ -19,6 +21,7 @@ extension SentPage {
         seen.scan = []
         seen.embeddedJSON = []
         seen.watched = played.media
+        seen.userAgent = userAgent ?? played.userAgent
         return seen
     }
 }

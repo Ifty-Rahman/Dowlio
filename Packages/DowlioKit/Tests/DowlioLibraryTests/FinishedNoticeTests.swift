@@ -25,37 +25,72 @@ struct FinishedNoticeTests {
         #expect(watcher.newlyFinished(in: [row("other.zip", .completed)]).isEmpty)
     }
 
-    /// The window opens at the first finish, so a steady trickle of finishes can't hold a notice
-    /// back for ever.
     @Test(arguments: [
-        ([0.0], 1),
-        ([0, 2], 1),
-        ([0, 4.9], 1),
-        ([0, 6], 2),
-        ([0, 3, 6, 9], 2),
-        ([0, 1, 2, 3, 4, 5.5, 6.5, 7.5, 8.5, 9.5, 11], 3),
-    ] as [([TimeInterval], Int)])
-    func finishesWithinFiveSecondsOfTheFirstShareANotice(offsets: [TimeInterval], notices: Int) {
-        var grouper = FinishGrouper()
-        var posted: [FinishNotice] = []
-        for (index, offset) in offsets.enumerated() {
-            let now = start.addingTimeInterval(offset)
-            if let due = grouper.takeDue(at: now) { posted.append(due) }
-            grouper.add(row("file\(index).zip", .completed), at: now)
+        ([0.0], [1]),
+        ([0, 2], [1, 2]),
+        ([0, 4.9], [1, 2]),
+        ([0, 6], [1, 1]),
+        ([0, 3, 6, 9], [1, 2, 1, 2]),
+    ] as [([TimeInterval], [Int])])
+    func eachNoticeShowsAtOnceAndOnesWithinFiveSecondsOfTheFirstJoinIt(offsets: [TimeInterval], sizes: [Int]) {
+        var grouper = NoticeGrouper()
+        let shown = offsets.enumerated().map { index, offset in
+            grouper.add(row("file\(index).zip", .completed), at: start.addingTimeInterval(offset))
         }
-        if let due = grouper.dueDate, let last = grouper.takeDue(at: due) { posted.append(last) }
-        #expect(posted.count == notices)
-        #expect(posted.reduce(0) { $0 + $1.rows.count } == offsets.count)
+        #expect(shown.map(\.rows.count) == sizes)
+        for (previous, next) in zip(shown, shown.dropFirst()) {
+            #expect((previous.group == next.group) == (next.rows.count > 1))
+        }
     }
 
-    @Test func nothingIsDueBeforeTheWindowClosesAndALaterFinishDoesntMoveIt() {
-        var grouper = FinishGrouper()
-        grouper.add(row("a.zip", .completed), at: start)
-        grouper.add(row("b.zip", .completed), at: start.addingTimeInterval(3))
-        #expect(grouper.takeDue(at: start.addingTimeInterval(4)) == nil)
-        #expect(grouper.dueDate == start.addingTimeInterval(FinishGrouper.window))
-        #expect(grouper.takeDue(at: start.addingTimeInterval(5))?.rows.count == 2)
-        #expect(grouper.dueDate == nil)
+    @Test func onlyDownloadsThatNewlyNeedAttentionCount() {
+        let old = row("old.zip", .failed(.notFound))
+        var running = row("new.zip", .downloading)
+        var watcher = ProblemWatcher()
+
+        #expect(watcher.newProblems(in: [old, running]).isEmpty)
+        running.state = .failed(.network(NetworkFailure(code: .timedOut, message: "")))
+        #expect(watcher.newProblems(in: [old, running]).map(\.fileName) == ["new.zip"])
+        #expect(watcher.newProblems(in: [old, running]).isEmpty)
+        running.state = .retrying(attempt: 1, nextTry: start)
+        #expect(watcher.newProblems(in: [old, running]).isEmpty)
+        running.state = .failed(.tooManyRetries)
+        #expect(watcher.newProblems(in: [old, running]).map(\.fileName) == ["new.zip"])
+    }
+
+    @Test func aDownloadAddedAlreadyFailedCounts() {
+        var watcher = ProblemWatcher()
+        _ = watcher.newProblems(in: [])
+        #expect(watcher.newProblems(in: [row("gone.zip", .failed(.notFound))]).map(\.fileName) == ["gone.zip"])
+    }
+
+    @Test func aPausedDownloadThatLostItsCookiesCounts() {
+        var paused = row("video.mp4", .downloading)
+        var watcher = ProblemWatcher()
+        _ = watcher.newProblems(in: [paused])
+        paused.state = .paused
+        paused.lostCookies = true
+        let notice = ProblemNotice(rows: watcher.newProblems(in: [paused]))
+        #expect(notice.title == "Download can't resume")
+        #expect(notice.retryable == nil)
+    }
+
+    @Test func oneFailureNamesItsFileReasonAndNextStep() {
+        let failed = row("Report.pdf", .failed(.notFound))
+        let notice = ProblemNotice(rows: [failed])
+        #expect(notice.title == "Download failed")
+        #expect(notice.body == "Report.pdf\nNot found. The link may have been removed.")
+        #expect(notice.retryable == failed.id)
+    }
+
+    @Test func severalProblemsCollapse() {
+        let failed = ProblemNotice(rows: [row("a.zip", .failed(.notFound)), row("b.zip", .failed(.forbidden))])
+        #expect(failed.title == "2 downloads failed")
+        #expect(failed.body == "a.zip and b.zip")
+        #expect(failed.retryable == nil)
+        var paused = row("c.zip", .paused)
+        paused.lostCookies = true
+        #expect(ProblemNotice(rows: [row("a.zip", .failed(.notFound)), paused]).title == "2 downloads need attention")
     }
 
     @Test func oneFinishNamesItsFileAndOffersTheThenAction() {

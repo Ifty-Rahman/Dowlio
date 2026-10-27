@@ -31,7 +31,7 @@ extension Version {
         let codecs = video.codecs?.components(separatedBy: " + ").filter(audioCodecs.contains)
         return Version(
             source: .media(source), contentType: source.contentType, totalBytes: video.totalBytes, isEstimatedSize: video.isEstimatedSize,
-            codecs: codecs.flatMap { $0.isEmpty ? nil : $0.joined(separator: " + ") }
+            codecs: codecs.flatMap { $0.isEmpty ? nil : $0.joined(separator: " + ") }, referrer: video.referrer, userAgent: video.userAgent
         )
     }
 

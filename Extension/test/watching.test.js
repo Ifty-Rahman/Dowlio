@@ -4,14 +4,14 @@ import { startWatching, WATCHED_AT_MOST } from "../lib/watching.js";
 import { fakeChrome } from "./fakes.js";
 
 let ids = 0;
-function load(chrome, { tabId = 7, url, type = "xmlhttprequest", status = 200, contentType, range, referer = "https://www.example.com/watch", origin }) {
+function load(chrome, { tabId = 7, url, type = "xmlhttprequest", method = "GET", status = 200, contentType, range, referer = "https://www.example.com/watch", origin }) {
   const requestId = String((ids += 1));
   const requestHeaders = [{ name: "Referer", value: referer }];
   if (origin) requestHeaders.push({ name: "Origin", value: origin });
   if (range) requestHeaders.push({ name: "Range", value: range });
   chrome.webRequest.fire("onSendHeaders", { requestId, tabId, url, type, requestHeaders });
   const responseHeaders = contentType ? [{ name: "Content-Type", value: contentType }] : [];
-  chrome.webRequest.fire("onHeadersReceived", { requestId, tabId, url, type, statusCode: status, responseHeaders });
+  chrome.webRequest.fire("onHeadersReceived", { requestId, tabId, url, type, method, statusCode: status, responseHeaders });
 }
 
 function watcher() {
@@ -34,6 +34,18 @@ test("playlists, manifests and whole media files are kept with how they were ask
     { url: "https://cdn.example.net/v/dash.mpd", kind: "manifest", contentType: "application/dash+xml", referrer: "https://www.example.com/watch" },
     { url: "https://api.example.org/v2/gifs/x/sd.m3u8", kind: "manifest", contentType: "text/plain", referrer: "https://www.example.com/watch" },
     { url: "https://video.example.net/clip.mp4", kind: "file", contentType: "video/mp4", referrer: "https://www.example.com/watch" },
+  ]);
+});
+
+test("a playlist a player fetches as plain text is kept for Dowlio to read", () => {
+  const { chrome, watching } = watcher();
+
+  load(chrome, { url: "https://k1.player.example/u/9/playlist.txt", contentType: "text/plain; charset=utf-8", referer: "https://player.example/" });
+  load(chrome, { url: "https://player.example/stats", method: "POST", contentType: "text/plain" });
+  load(chrome, { url: "https://player.example/notes.txt", type: "other", contentType: "text/plain" });
+
+  assert.deepEqual(watching.requestsFor(7), [
+    { url: "https://k1.player.example/u/9/playlist.txt", kind: "manifest", contentType: "text/plain; charset=utf-8", referrer: "https://player.example/" },
   ]);
 });
 

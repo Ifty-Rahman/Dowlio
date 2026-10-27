@@ -328,7 +328,8 @@ struct RelaunchTests {
 
         #expect(restored.state == .paused)
         #expect(restored.lostCookies)
-        #expect(restored.detailLine.hasSuffix("Send it again from the browser"))
+        #expect(restored.needsAttention)
+        #expect(restored.detailLine.hasSuffix("Send the link again from your browser"))
         #expect(try await relaunched.library.row(id) { _ in true }.state == .paused)
         #expect(server.requests.count == requestsBefore)
     }

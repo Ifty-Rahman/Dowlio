@@ -1,4 +1,5 @@
 import AppKit
+import DowlioMedia
 
 /// For checking the interface by hand without touching the real History: debug builds read a
 /// support folder, a download folder and links to add from the environment.
@@ -26,6 +27,18 @@ enum DebugLaunch {
             open(links.replacingOccurrences(of: " ", with: "\n"))
             try? await Task.sleep(for: .seconds(2))
             download()
+        }
+        #endif
+    }
+
+    @MainActor
+    static func sendPage(_ send: @escaping @MainActor (SentPage) -> Void) {
+        #if DEBUG
+        guard let path = ProcessInfo.processInfo.environment["DOWLIO_DEBUG_SENT_PAGE"],
+              let page = SentPageRecord.read(URL(filePath: path)) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            send(page)
         }
         #endif
     }

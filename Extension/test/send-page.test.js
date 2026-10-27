@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { CONNECT_WAIT, SCAN_TIMEOUT } from "../lib/sending.js";
 import { startWorker } from "../lib/worker.js";
 import { fakeChrome, fakeSockets, FakeTimers, flush, navigatorLike } from "./fakes.js";
 
@@ -96,11 +97,13 @@ test("the popup's button sends the tab it was opened on", async () => {
 });
 
 test("with Dowlio not running, sending a page says to open Dowlio and scans nothing", async () => {
-  const { chrome, net } = await worker({ connect: false });
+  const { chrome, net, timers } = await worker({ connect: false });
   chrome.tabs.byId[7] = tab;
 
   await chrome.contextMenus.click(pageClick, tab);
   chrome.runtime.sendMessage({ type: "page.send", tabId: 7 });
+  await settle();
+  await timers.advance(CONNECT_WAIT);
   await settle();
 
   assert.equal(net.last().sent.filter((message) => message.type === "page.send").length, 0);
@@ -161,4 +164,62 @@ test("a sent page carries the media requests its tab made, and only that tab's",
   assert.deepEqual(sends(socket)[0].requests, [
     { url: "https://video.example.net/pl/master.m3u8", kind: "manifest", contentType: "application/vnd.apple.mpegurl", referrer: tab.url },
   ]);
+});
+
+test("a page sent while the extension is still reconnecting waits for Dowlio and is sent", async () => {
+  const { chrome, net } = await worker({ connect: false });
+
+  await chrome.contextMenus.click(pageClick, tab);
+  await settle();
+  await net.last().accept();
+  await net.last().reply({ type: "hello.ok" });
+  await settle();
+
+  assert.equal(sends(net.last())[0]?.url, tab.url);
+  assert.deepEqual(chrome.notifications.shown, []);
+});
+
+test("a scan that never finishes still sends the page with the requests its players made", async () => {
+  const { chrome, socket, timers } = await worker();
+  chrome.scripting.executeScript = () => new Promise(() => {});
+  chrome.webRequest.fire("onSendHeaders", { requestId: "p", tabId: 7, url: "https://k.player.example/u/playlist.txt", type: "xmlhttprequest", requestHeaders: [] });
+  chrome.webRequest.fire("onHeadersReceived", { requestId: "p", tabId: 7, url: "https://k.player.example/u/playlist.txt", type: "xmlhttprequest", method: "GET", statusCode: 200, responseHeaders: [{ name: "Content-Type", value: "text/plain" }] });
+
+  await chrome.contextMenus.click(pageClick, tab);
+  await settle();
+  assert.equal(sends(socket).length, 0);
+  await timers.advance(SCAN_TIMEOUT);
+  await settle();
+
+  const [sent] = sends(socket);
+  assert.equal(sent?.url, tab.url);
+  assert.deepEqual(sent.media, []);
+  assert.deepEqual(sent.requests.map(({ url }) => url), ["https://k.player.example/u/playlist.txt"]);
+  assert.equal(chrome.storage.local.data.lastSend.step, "sentWithoutScan");
+});
+
+test("each send keeps its last step, so a page that never arrives can be traced", async () => {
+  const { chrome, socket, timers } = await worker();
+
+  await chrome.contextMenus.click(pageClick, tab);
+  await settle();
+  assert.equal(chrome.storage.local.data.lastSend.step, "sent");
+  assert.equal(chrome.storage.local.data.lastSend.host, "www.example.com");
+  await socket.reply({ type: "page.received", requestId: sends(socket)[0].requestId });
+  await settle();
+
+  assert.equal(chrome.storage.local.data.lastSend.step, "received");
+  await timers.advance(5000);
+});
+
+test("a scan that throws at once still sends the page", async () => {
+  const { chrome, socket } = await worker();
+  chrome.scripting.executeScript = () => {
+    throw new Error("Frame with ID 0 is showing error page");
+  };
+
+  await chrome.contextMenus.click(pageClick, tab);
+  await settle();
+
+  assert.equal(sends(socket)[0]?.url, tab.url);
 });

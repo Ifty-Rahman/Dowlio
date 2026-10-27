@@ -6,10 +6,10 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct MediaDownloadTests {
-    private func serve(_ count: Int, on server: TestServer, hold: Bool) -> MediaSource {
+    private func serve(_ count: Int, on server: TestServer, hold: Bool, origin: String? = nil) -> MediaSource {
         let fragments = (0..<count).map { index in
             let path = "/clip/seg\(index).ts"
-            server.serve(TestServer.File(data: TestServer.makeData(size: 4096, seed: UInt64(index + 1)), holdAfterBytes: hold ? 0 : nil), at: path)
+            server.serve(TestServer.File(data: TestServer.makeData(size: 4096, seed: UInt64(index + 1)), holdAfterBytes: hold ? 0 : nil, requiredOrigin: origin), at: path)
             return MediaFragment(url: server.url(for: path))
         }
         return try! MediaSource(tracks: [MediaTrack(kind: .combined, fragments: fragments)])
@@ -48,5 +48,18 @@ struct MediaDownloadTests {
         await engine.cancel(id)
 
         #expect(peak == 1)
+    }
+
+    @Test func segmentsFromAnotherSiteAreAskedForWithTheOriginOfThePlayerThatPlayedThem() async throws {
+        let server = try await TestServer()
+        let folder = try TestFiles.makeFolder()
+        let engine = DownloadEngine(configuration: .fast)
+        var options = RequestOptions()
+        options.referrer = URL(string: "https://player.example/e/abc")
+
+        let id = await engine.add(source: .media(serve(3, on: server, hold: false, origin: "https://player.example")), destination: .folder(folder), options: options)
+        let ended = try await engine.completedOrFailed(id)
+
+        #expect(ended.state == .failed(.mediaUnplayable))
     }
 }

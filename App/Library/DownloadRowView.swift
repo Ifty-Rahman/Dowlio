@@ -22,9 +22,14 @@ struct DownloadRowView: View {
                 title(stateWord: true, notSecureWord: false)
                 title(stateWord: false, notSecureWord: false)
             }
-            SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone)
+            SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.tone, needsAttention: row.needsAttention)
             HStack {
                 Text(row.detailLine)
+                    .foregroundStyle(row.needsAttention ? AnyShapeStyle(row.tone) : AnyShapeStyle(.secondary))
+                    .fontWeight(row.needsAttention ? .medium : nil)
+                    .lineLimit(row.needsAttention ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: row.needsAttention)
+                    .help(row.detailLine)
                 Spacer(minLength: DowlioDesign.Spacing.sm)
                 if let speed = row.speedText { Text(speed) }
                 if let timeLeft = row.timeLeftText { Text(timeLeft) }
@@ -43,7 +48,7 @@ struct DownloadRowView: View {
                 .font(DowlioDesign.TypeRole.heading)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            badge(row.stateWord, symbol: row.state.symbolName, tone: row.state.tone, wordShown: stateWord)
+            badge(row.stateWord, symbol: row.symbolName, tone: row.tone, wordShown: stateWord)
             if row.isNotSecure {
                 badge("Not secure", symbol: "lock.open.fill", tone: Color(nsColor: .systemOrange), wordShown: notSecureWord)
             }
@@ -77,9 +82,10 @@ struct DownloadRowView: View {
         switch row.state {
         case .downloading, .retrying, .queued:
             actionButton("Pause", symbol: "pause.fill") { actions?.pause(row) }
+        case .paused where row.lostCookies:
+            EmptyView()
         case .paused:
             actionButton("Resume", symbol: "play.fill") { actions?.resume(row) }
-                .disabled(row.lostCookies)
         case .failed:
             actionButton("Retry", symbol: "arrow.clockwise") { actions?.retry(row) }
         case .completed:

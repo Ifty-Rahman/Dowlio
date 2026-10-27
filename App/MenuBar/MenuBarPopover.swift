@@ -123,9 +123,15 @@ private struct PopoverRow: View {
                     Spacer(minLength: DowlioDesign.Spacing.xs)
                     Text(row.speedText ?? row.stateWord)
                         .font(DowlioDesign.TypeRole.caption.monospacedDigit())
-                        .foregroundStyle(row.state.tone)
+                        .foregroundStyle(row.tone)
                 }
-                SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone, height: 3)
+                SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.tone, height: 3, needsAttention: row.needsAttention)
+                if row.needsAttention {
+                    Text(row.detailLine)
+                        .font(DowlioDesign.TypeRole.detail.weight(.medium))
+                        .foregroundStyle(row.tone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.spokenSummary)
@@ -139,6 +145,11 @@ private struct PopoverRow: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help("Resume")
+            } else if case .failed = row.state {
+                Button("Retry", systemImage: "arrow.clockwise") { model.retry(row) }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Retry")
             }
             cancelButton
         }

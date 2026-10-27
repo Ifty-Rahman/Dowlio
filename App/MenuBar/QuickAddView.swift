@@ -94,6 +94,7 @@ struct QuickAddView: View {
         }
         panel.showsQuickAdd = false
         panel.quickAdd = nil
+        close()
     }
 }
 

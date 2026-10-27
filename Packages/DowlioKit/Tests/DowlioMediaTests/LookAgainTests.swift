@@ -14,11 +14,13 @@ struct LookAgainTests {
         func record(_ page: SentPage) { lock.withLock { pages.append(page.url) } }
     }
 
-    private func analyzer(on site: Site, plays: Plays, finding media: [WatchedRequest], title: String? = nil) -> PageAnalyzer {
+    private func analyzer(
+        on site: Site, plays: Plays, finding media: [WatchedRequest], title: String? = nil, userAgent: String? = nil
+    ) -> PageAnalyzer {
         let engine = DownloadEngine(configuration: .fast)
         return PageAnalyzer(lookAgain: { page in
             plays.record(page)
-            return PlayedPage(title: title, media: media)
+            return PlayedPage(title: title, media: media, userAgent: userAgent)
         }) { url, options in try await engine.inspect(url, options: options) }
     }
 
@@ -42,6 +44,24 @@ struct LookAgainTests {
             versions: [Version(source: .file(site.url("/hidden/clip.mp4")), contentType: "video/mp4", totalBytes: 4000)]
         )])])
         #expect(plays.count == 1)
+    }
+
+    @Test func whatAPlayedPageLoadsIsAskedForAsThePlayerAskedForIt() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Embed</title>", at: "/watch")
+        site.server.serve(TestServer.File(
+            data: Data(repeating: 7, count: 4000), headers: ["Content-Type": "video/mp4"], requiredUserAgent: "HiddenPlayer/1"
+        ), at: "/hidden/clip.mp4")
+        let analyzer = analyzer(
+            on: site, plays: Plays(), finding: [WatchedRequest(url: site.url("/hidden/clip.mp4"), kind: .file)], userAgent: "HiddenPlayer/1"
+        )
+
+        let updates = await updates(analyzer.analyze(SentPage(url: site.url("/watch"))))
+
+        guard case .found(let candidates) = updates.last else { Issue.record("not found: \(updates)"); return }
+        let versions = try #require(candidates.first?.versions)
+        #expect(versions.first?.totalBytes == 4000)
+        #expect(versions.allSatisfy { $0.userAgent == "HiddenPlayer/1" })
     }
 
     @Test func aPageWithVideoIsNotPlayed() async throws {

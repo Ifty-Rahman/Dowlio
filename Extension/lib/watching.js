@@ -6,8 +6,9 @@ const MEDIA_FILE = /\.(mp4|m4v|mov|webm|mkv|m4a|mp3|aac|ogg|oga|opus|wav|flac)$/
 const BYTE_RANGE_QUERY = /^(bytestart|byteend|range)$/i;
 const FROM_THE_START = /^bytes=0-$/i;
 const PENDING_AT_MOST = 500;
+const PLAIN_TEXT = /^text\/plain\b/i;
 
-function kindOf({ url, contentType, status, range }) {
+function kindOf({ url, contentType, status, range, type, method }) {
   let link;
   try {
     link = new URL(url);
@@ -16,6 +17,7 @@ function kindOf({ url, contentType, status, range }) {
   }
   if (status < 200 || status > 299) return null;
   if (MANIFEST_PATH.test(link.pathname) || MANIFEST_TYPE.test(contentType ?? "")) return "manifest";
+  if (type === "xmlhttprequest" && method === "GET" && PLAIN_TEXT.test(contentType ?? "")) return "manifest";
   if (!MEDIA_FILE.test(link.pathname)) return null;
   if (range && !FROM_THE_START.test(range)) return null;
   if ([...link.searchParams.keys()].some((key) => BYTE_RANGE_QUERY.test(key))) return null;
@@ -51,7 +53,7 @@ export function startWatching({ chrome }) {
         if (details.statusCode >= 200 && details.statusCode <= 299 && /text\/html|xhtml/i.test(contentType ?? "")) tabs.delete(details.tabId);
         return;
       }
-      const kind = kindOf({ url: details.url, contentType, status: details.statusCode, range: request.range });
+      const kind = kindOf({ url: details.url, contentType, status: details.statusCode, range: request.range, type: details.type, method: details.method });
       if (!kind) return;
       const list = (tabs.get(details.tabId) ?? []).filter((entry) => entry.url !== details.url);
       const entry = { url: details.url, kind };

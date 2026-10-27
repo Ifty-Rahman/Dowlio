@@ -4,8 +4,10 @@ import { scanPage } from "./scan.js";
 export const MENU_ITEM = "send-to-dowlio";
 export const PAGE_MENU_ITEM = "send-page-to-dowlio";
 export const RECEIPT_TIMEOUT = 5000;
+export const CONNECT_WAIT = 3000;
+export const SCAN_TIMEOUT = 4000;
 
-export function startSending({ chrome, navigator, link, watching }) {
+export function startSending({ chrome, navigator, link, watching, timers = globalThis, now = Date.now }) {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: MENU_ITEM, title: "Send to Dowlio", contexts: ["link"] });
     chrome.contextMenus.create({ id: PAGE_MENU_ITEM, title: "Send to Dowlio", contexts: ["page"] });
@@ -19,8 +21,36 @@ export function startSending({ chrome, navigator, link, watching }) {
     notify("Dowlio didn't answer", `Check that Dowlio is open, then send the ${what} again.`);
   }
 
+  async function reachable() {
+    return link.isConnected() || (await link.whenConnected?.(CONNECT_WAIT)) === true;
+  }
+
+  function noteStep(url, step) {
+    let host = "";
+    try {
+      host = new URL(url).hostname;
+    } catch {}
+    return chrome.storage.local.set({ lastSend: { host, step, at: now() } }).catch(() => {});
+  }
+
+  function withinTime(work, fallback) {
+    return new Promise((resolve) => {
+      const timer = timers.setTimeout(() => resolve(fallback), SCAN_TIMEOUT);
+      work.then(
+        (value) => {
+          timers.clearTimeout(timer);
+          resolve(value);
+        },
+        () => {
+          timers.clearTimeout(timer);
+          resolve(null);
+        },
+      );
+    });
+  }
+
   async function sendLink(info, tab) {
-    if (!link.isConnected()) return notify("Dowlio isn't running", "Open Dowlio to download with it.");
+    if (!(await reachable())) return notify("Dowlio isn't running", "Open Dowlio to download with it.");
     const receipt = await link.request(
       "link.send",
       { url: info.linkUrl, referrer: info.pageUrl ?? tab?.url, browser: browserName(navigator), userAgent: navigator?.userAgent, cookies: await link.cookiesFor?.(info.linkUrl) },
@@ -29,8 +59,12 @@ export function startSending({ chrome, navigator, link, watching }) {
     if (receipt?.type !== "link.received") noAnswer("link");
   }
 
+  const TIMED_OUT = Symbol("timed out");
+
   async function scan(tabId) {
-    const frames = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: scanPage }).catch(() => []);
+    const injected = Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: scanPage }));
+    const frames = await withinTime(injected, TIMED_OUT);
+    if (frames === TIMED_OUT) return { title: "", media: [], players: [], embeddedJson: [], timedOut: true };
     const media = [];
     const seen = new Set();
     const embeddedJson = [];
@@ -60,9 +94,23 @@ export function startSending({ chrome, navigator, link, watching }) {
 
   async function sendPage(tab) {
     if (!tab?.url) return;
-    if (!link.isConnected()) return notify("Dowlio isn't running", "Open Dowlio to send this page.");
+    try {
+      await deliverPage(tab);
+    } catch {
+      await noteStep(tab.url, "error");
+      notify("Dowlio couldn't send this page", "Reload the page, then send it again.");
+    }
+  }
+
+  async function deliverPage(tab) {
+    await noteStep(tab.url, "started");
+    if (!(await reachable())) {
+      await noteStep(tab.url, "notConnected");
+      return notify("Dowlio isn't running", "Open Dowlio to send this page.");
+    }
     const found = await scan(tab.id);
-    const receipt = await link.request(
+    await noteStep(tab.url, found.timedOut ? "scanTimedOut" : "scanned");
+    const sending = link.request(
       "page.send",
       {
         url: tab.url,
@@ -77,7 +125,13 @@ export function startSending({ chrome, navigator, link, watching }) {
       },
       RECEIPT_TIMEOUT,
     );
-    if (receipt?.type !== "page.received") noAnswer("page");
+    await noteStep(tab.url, found.timedOut ? "sentWithoutScan" : "sent");
+    const receipt = await sending;
+    if (receipt?.type !== "page.received") {
+      await noteStep(tab.url, "noAnswer");
+      return noAnswer("page");
+    }
+    await noteStep(tab.url, "received");
   }
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
