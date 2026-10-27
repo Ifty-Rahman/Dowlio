@@ -80,7 +80,7 @@ public struct ReaderFailure: Equatable, Sendable {
 }
 
 public enum SiteReaders {
-    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader(), RedditReader()]
+    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader()]
 }
 
 enum PostLabel {

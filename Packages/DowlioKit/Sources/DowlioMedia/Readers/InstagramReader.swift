@@ -18,9 +18,7 @@ public struct InstagramReader: SiteReader {
     }
 
     public func read(_ page: SitePage) async throws -> [SiteVideo] {
-        let posts = MetaMedia.posts(in: page.embeddedObjects, base: page.url)
-        guard let code = post(in: page.url) else { return posts.map(\.video) }
-        return posts.filter { $0.code == code }.map(\.video)
+        MetaMedia.videos(on: page, post: post(in: page.url))
     }
 }
 
@@ -34,6 +32,12 @@ enum MetaMedia {
         var key: String
         var code: String?
         var video: SiteVideo
+    }
+
+    static func videos(on page: SitePage, post code: String?) -> [SiteVideo] {
+        let posts = posts(in: page.embeddedObjects, base: page.url)
+        guard let code else { return posts.map(\.video) }
+        return posts.filter { $0.code == code }.map(\.video)
     }
 
     static func posts(in objects: [Any], base: URL) -> [MediaItem] {
@@ -74,13 +78,19 @@ enum MetaMedia {
         return PostLabel.of(text: object.object("caption")?.text("text"), author: user?.text("full_name") ?? user?.text("username"))
     }
 
+    private static func shorterSide(_ width: Any?, _ height: Any?) -> Int? {
+        guard let width = jsonNumber(width), let height = jsonNumber(height), width > 0, height > 0 else { return nil }
+        return Int(min(width, height))
+    }
+
     private static func video(in media: [String: Any], label: String?, base: URL) -> SiteVideo? {
         var versions: [Version] = []
         var seen = Set<URL>()
+        let original = shorterSide(media["original_width"], media["original_height"])
         for entry in media.objects("video_versions") {
             guard let url = URL(json: entry["url"]), seen.insert(url).inserted else { continue }
-            let sides = [jsonNumber(entry["width"]), jsonNumber(entry["height"])].compactMap { $0 }
-            versions.append(Version(source: .file(url), contentType: "video/mp4", height: sides.min().map { Int($0) }, codecs: "H.264 + AAC"))
+            let height = shorterSide(entry["width"], entry["height"]) ?? original
+            versions.append(Version(source: .file(url), contentType: "video/mp4", height: height, codecs: "H.264 + AAC"))
         }
         var duration = jsonNumber(media["video_duration"])
         if let xml = media["video_dash_manifest"] as? String,
