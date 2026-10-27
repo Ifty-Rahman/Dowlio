@@ -80,7 +80,7 @@ public struct ReaderFailure: Equatable, Sendable {
 }
 
 public enum SiteReaders {
-    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader()]
+    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), TikTokReader()]
 }
 
 enum PostLabel {
@@ -114,6 +114,10 @@ extension Dictionary where Key == String, Value == Any {
         self[key] as? [[String: Any]] ?? []
     }
 
+    func list(_ key: String) -> [Any] {
+        self[key] as? [Any] ?? []
+    }
+
     func text(_ key: String) -> String? {
         (self[key] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
@@ -135,6 +139,11 @@ extension URL {
         guard let text = value as? String, !text.isEmpty, let url = URL(string: text), url.scheme != nil else { return nil }
         self = url
     }
+}
+
+func shorterSide(_ width: Any?, _ height: Any?) -> Int? {
+    guard let width = jsonNumber(width), let height = jsonNumber(height), width > 0, height > 0 else { return nil }
+    return Int(min(width, height))
 }
 
 func jsonNumber(_ value: Any?) -> Double? {

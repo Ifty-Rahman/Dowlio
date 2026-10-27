@@ -138,7 +138,7 @@ public struct FacebookReader: SiteReader {
     private static func progressive(_ files: [URL]) -> [Version] {
         var seen = Set<URL>()
         return files.filter { seen.insert($0).inserted }.map { url in
-            Version(source: .file(url), contentType: "video/mp4", height: height(of: url), codecs: "H.264 + AAC")
+            Version(source: .file(url), contentType: "video/mp4", height: height(of: url), codecs: MediaCodecs.h264WithAAC)
         }
     }
 

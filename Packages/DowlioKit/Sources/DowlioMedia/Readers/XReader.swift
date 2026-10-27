@@ -48,7 +48,7 @@ public struct XReader: SiteReader {
                 let size = bitrate.flatMap { bits in duration.map { Int64(bits * $0 / 8) } }
                 files.append(Version(
                     source: .file(url), contentType: "video/mp4", totalBytes: size, isEstimatedSize: size != nil,
-                    height: MediaFile.height(in: url.path), codecs: MediaFile.codecs(in: url.path).map { "\($0) + AAC" } ?? "H.264 + AAC"
+                    height: MediaFile.height(in: url.path), codecs: MediaCodecs.withAAC(MediaFile.codecs(in: url.path) ?? "H.264")
                 ))
             } else if HLSVersions.isPlaylist(url, contentType: type) {
                 streams.append(url)

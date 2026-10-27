@@ -27,6 +27,12 @@ enum MediaCodecs {
         return seen.isEmpty ? nil : seen.joined(separator: " + ")
     }
 
+    static func withAAC(_ video: String) -> String {
+        "\(video) + AAC"
+    }
+
+    static let h264WithAAC = withAAC("H.264")
+
     static func hasAudio(_ codecs: [String]) -> Bool {
         codecs.isEmpty || codecs.contains(where: isAudio)
     }

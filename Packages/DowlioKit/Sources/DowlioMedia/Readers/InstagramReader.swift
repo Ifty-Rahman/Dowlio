@@ -78,11 +78,6 @@ enum MetaMedia {
         return PostLabel.of(text: object.object("caption")?.text("text"), author: user?.text("full_name") ?? user?.text("username"))
     }
 
-    private static func shorterSide(_ width: Any?, _ height: Any?) -> Int? {
-        guard let width = jsonNumber(width), let height = jsonNumber(height), width > 0, height > 0 else { return nil }
-        return Int(min(width, height))
-    }
-
     private static func video(in media: [String: Any], label: String?, base: URL) -> SiteVideo? {
         var versions: [Version] = []
         var seen = Set<URL>()
@@ -90,7 +85,7 @@ enum MetaMedia {
         for entry in media.objects("video_versions") {
             guard let url = URL(json: entry["url"]), seen.insert(url).inserted else { continue }
             let height = shorterSide(entry["width"], entry["height"]) ?? original
-            versions.append(Version(source: .file(url), contentType: "video/mp4", height: height, codecs: "H.264 + AAC"))
+            versions.append(Version(source: .file(url), contentType: "video/mp4", height: height, codecs: MediaCodecs.h264WithAAC))
         }
         var duration = jsonNumber(media["video_duration"])
         if let xml = media["video_dash_manifest"] as? String,
