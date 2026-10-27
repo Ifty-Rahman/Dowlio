@@ -35,6 +35,25 @@ struct ThreadsReaderTests {
         #expect(candidates.map(\.versions.first?.height) == [1080, 720])
     }
 
+    @Test func aCarouselPostListsItsVideoThoughEachSlideHasItsOwnCode() async throws {
+        let site = try await threads()
+        site.site.serve(html: "<title>Threads</title>", at: post)
+        let slides: [[String: Any]] = [
+            ["pk": "61", "code": "Sl1de0ne000", "video_duration": 12.5, "original_width": 720, "original_height": 1280,
+             "video_versions": [["type": 101, "url": "https://scontent.cdn.example/v/slide-one.mp4?oe=1"]]],
+            ["pk": "62", "code": "Sl1deTw0000", "image_versions2": ["candidates": []]],
+        ]
+        let carousel: [String: Any] = [
+            "pk": "60", "code": "Th12Re34Ad5", "caption": ["text": "Three angles of the new keyboard"],
+            "user": ["username": "sampleauthor"], "carousel_media": slides,
+        ]
+
+        let candidates = try await site.candidates(post) { $0.embeddedJSON = [PageFixture.json(["post": carousel])] }
+
+        #expect(candidates.map(\.label) == ["sampleauthor: Three angles of the new keyboard"])
+        #expect(candidates.flatMap(\.versions).map(\.source.url.lastPathComponent) == ["slide-one.mp4"])
+    }
+
     @Test func aPageWithoutPostDataIsLoggedAndFallsBack() async throws {
         let site = try await threads()
         site.site.serve(html: #"<title>Threads</title><video src="/media/clip.mp4"></video>"#, at: post)

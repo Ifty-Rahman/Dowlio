@@ -42,23 +42,24 @@ enum MetaMedia {
 
     static func posts(in objects: [Any], base: URL) -> [MediaItem] {
         var found: [MediaItem] = []
-        for object in objects { collect(object, post: nil, base: base, into: &found) }
+        for object in objects { collect(object, post: nil, inCarousel: false, base: base, into: &found) }
         return found
     }
 
-    private static func collect(_ value: Any, post inherited: PostContext?, base: URL, into found: inout [MediaItem]) {
+    private static func collect(_ value: Any, post inherited: PostContext?, inCarousel: Bool, base: URL, into found: inout [MediaItem]) {
         if let list = value as? [Any] {
-            for child in list { collect(child, post: inherited, base: base, into: &found) }
+            for child in list { collect(child, post: inherited, inCarousel: inCarousel, base: base, into: &found) }
             return
         }
         guard let object = value as? [String: Any] else { return }
-        let post = object.text("code").map { PostContext(code: $0, label: label(of: object)) } ?? inherited
+        let own = inCarousel ? nil : object.text("code").map { PostContext(code: $0, label: label(of: object)) }
+        let post = own ?? inherited
         guard isMedia(object) else {
-            for child in object.values { collect(child, post: post, base: base, into: &found) }
+            for child in object.values { collect(child, post: post, inCarousel: false, base: base, into: &found) }
             return
         }
         if let children = object["carousel_media"] as? [Any] {
-            for child in children { collect(child, post: post, base: base, into: &found) }
+            for child in children { collect(child, post: post, inCarousel: true, base: base, into: &found) }
         }
         guard let video = video(in: object, label: post?.label ?? label(of: object), base: base) else { return }
         let key = (object["pk"] ?? object["id"]).map { "\($0)" } ?? video.versions.first?.source.url.absoluteString ?? ""
