@@ -120,6 +120,13 @@ test("a Tumblr post is passed on whole, without the rest of the page's state", (
   assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [post]);
 });
 
+test("a Spotlight story is passed on with its metadata", () => {
+  const story = { story: { snapList: [{ snapId: { value: "W7_a" } }] }, metadata: { videoMetadata: { contentUrl: "https://cdn.example.com/v" } }, upNextThumbnailUrl: "https://cdn.example.com/t.jpg" };
+  const found = scan(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { viewerInfo: { name: "Private" }, spotlightFeed: { spotlightStories: [story] } } } })}</script>`);
+
+  assert.deepEqual(found.embeddedJson.map((text) => JSON.parse(text)), [story]);
+});
+
 test("of two media objects with one ID, the fuller is passed on", () => {
   const preview = { pk: "7", video_versions: [] };
   const full = { pk: "7", caption: { text: "Full" }, video_versions: [{ url: "https://cdn.example.com/v.mp4" }] };
