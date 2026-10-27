@@ -1,9 +1,15 @@
 import DowlioCore
 import DowlioMedia
 import Foundation
+import os
 
 #if DEBUG
 enum SentPageRecord {
+    private static let failures = OSAllocatedUnfairLock(initialState: [ReaderFailure]())
+
+    static func note(_ failure: ReaderFailure) {
+        failures.withLock { $0.append(failure) }
+    }
     static var file: URL {
         FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appending(path: "Logs/Dowlio/last-sent-page.json")
@@ -60,10 +66,15 @@ enum SentPageRecord {
     }
 
     private static func write(_ page: SentPage, _ analysis: PageAnalysis?) {
+        let readerFailures = failures.withLock { noted in
+            defer { noted = [] }
+            return noted.map { "\($0.reader) on \($0.site): \($0.reason)" }
+        }
         var record: [String: Any] = [
             "url": page.url.absoluteString,
             "title": page.title ?? "",
             "cookieCount": page.cookies.count,
+            "userAgent": page.userAgent ?? "",
             "scan": page.scan.map {
                 ["url": $0.url.absoluteString, "kind": $0.kind.rawValue, "height": $0.height ?? 0, "group": $0.group ?? -1, "codecs": $0.codecs ?? "",
                  "poster": $0.poster?.absoluteString ?? "", "duration": $0.duration ?? -1]
@@ -72,6 +83,7 @@ enum SentPageRecord {
                 ["group": $0.group, "label": $0.label ?? "", "poster": $0.poster?.absoluteString ?? "", "duration": $0.duration ?? -1,
                  "playing": $0.isPlaying, "visible": $0.visibility, "origin": $0.origin?.absoluteString ?? ""]
             },
+            "readerFailures": readerFailures,
             "watched": page.watched.map {
                 ["url": $0.url.absoluteString, "kind": $0.kind.rawValue, "contentType": $0.contentType ?? "", "referrer": $0.referrer?.absoluteString ?? ""]
             },

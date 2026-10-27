@@ -219,7 +219,12 @@ final class AppModel {
 
     private var analyzer: PageAnalyzer? {
         guard let library else { return nil }
-        return PageAnalyzer(lookAgain: { await HiddenPlayer.play($0) }) { url, options in
+        #if DEBUG
+        let readerFailed: @Sendable (ReaderFailure) -> Void = { ReaderFailure.log($0); SentPageRecord.note($0) }
+        #else
+        let readerFailed = ReaderFailure.log
+        #endif
+        return PageAnalyzer(lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
             try await library.inspect(url, options: options)
         }
     }
