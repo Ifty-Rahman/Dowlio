@@ -1,0 +1,55 @@
+{
+ "__typename": "Tweet",
+ "id_str": "1000000000000000001",
+ "lang": "en",
+ "text": "Sample post text about the match that ends with a clip of the final whistle https://t.co/AbCdEf1234",
+ "user": {
+  "id_str": "1000001",
+  "name": "Sample Author",
+  "screen_name": "sampleauthor"
+ },
+ "mediaDetails": [
+  {
+   "type": "video",
+   "media_url_https": "https://pbs.twimg.example/amplify_video_thumb/2000000000000000002/img/thumb.jpg",
+   "original_info": {
+    "focus_rects": [],
+    "height": 1920,
+    "width": 1080
+   },
+   "video_info": {
+    "aspect_ratio": [
+     9,
+     16
+    ],
+    "duration_millis": 66888,
+    "variants": [
+     {
+      "content_type": "application/x-mpegURL",
+      "url": "https://video.twimg.example/amplify_video/2000000000000000002/pl/playlist.m3u8?v=cfc"
+     },
+     {
+      "bitrate": 632000,
+      "content_type": "video/mp4",
+      "url": "https://video.twimg.example/amplify_video/2000000000000000002/vid/avc1/320x568/clip.mp4"
+     },
+     {
+      "bitrate": 950000,
+      "content_type": "video/mp4",
+      "url": "https://video.twimg.example/amplify_video/2000000000000000002/vid/avc1/480x852/clip.mp4"
+     },
+     {
+      "bitrate": 2176000,
+      "content_type": "video/mp4",
+      "url": "https://video.twimg.example/amplify_video/2000000000000000002/vid/avc1/720x1280/clip.mp4"
+     },
+     {
+      "bitrate": 10368000,
+      "content_type": "video/mp4",
+      "url": "https://video.twimg.example/amplify_video/2000000000000000002/vid/avc1/1080x1920/clip.mp4"
+     }
+    ]
+   }
+  }
+ ]
+}

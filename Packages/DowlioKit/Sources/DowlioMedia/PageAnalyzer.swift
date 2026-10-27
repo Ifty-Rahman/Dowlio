@@ -9,10 +9,20 @@ public struct PageAnalyzer: Sendable {
     private let inspect: Inspect
     private let session: URLSession
     private let play: LookAgain?
+    private let readers: [any SiteReader]
+    private let readerFailed: @Sendable (ReaderFailure) -> Void
 
-    public init(session: URLSession = .shared, lookAgain: LookAgain? = nil, inspect: @escaping Inspect) {
+    public init(
+        session: URLSession = .shared,
+        lookAgain: LookAgain? = nil,
+        readers: [any SiteReader] = SiteReaders.all,
+        readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
+        inspect: @escaping Inspect
+    ) {
         self.session = session
         self.play = lookAgain
+        self.readers = readers
+        self.readerFailed = readerFailed
         self.inspect = inspect
     }
 
@@ -69,7 +79,10 @@ public struct PageAnalyzer: Sendable {
             return report(.found([candidate.withExtractedAudio(splittable: linked.splitsIntoSegments ? [page.url] : [])]))
         }
 
-        let found = await candidates(on: page, reading: await read(page, refusals: refusals), refusals: refusals, report: report)
+        let reading = await read(page, refusals: refusals)
+        async let fromSite = readSite(page, reading: reading, refusals: refusals)
+        let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
+        let found = Self.joined(fromPage, await fromSite)
         if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
         report(.found(found))
@@ -121,7 +134,7 @@ public struct PageAnalyzer: Sendable {
             .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
             .map(\.url)
         let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams)
-        let label = reading?.title ?? page.title ?? page.url.host() ?? page.url.absoluteString
+        let label = Self.label(of: page, reading: reading)
         let context = PageContext(page: page, reading: reading, label: label, shown: shown, watchedFiles: watchedFiles)
         let placeholders = layout.buckets.map { placeholder(of: $0, in: context) }
         if !placeholders.isEmpty { report(.looking(placeholders)) }
@@ -155,6 +168,75 @@ public struct PageAnalyzer: Sendable {
             found = Self.merged(layout.buckets.indices.flatMap { probed[$0]?.candidates ?? [] })
         }
         return found.map { $0.withExtractedAudio(splittable: splittable) }
+    }
+
+    private static func label(of page: SentPage, reading: HTMLReader?) -> String {
+        reading?.title ?? page.title ?? page.url.host() ?? page.url.absoluteString
+    }
+
+    private struct SiteFinding: Sendable {
+        var candidates: [Candidate]
+        var isPost: Bool
+    }
+
+    private func readSite(_ page: SentPage, reading: HTMLReader?, refusals: Refusals) async -> SiteFinding? {
+        guard let reader = readers.first(where: { $0.recognises(page.url) }) else { return nil }
+        let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
+        let sitePage = SitePage(url: page.url, embeddedJSON: page.embeddedJSON, cookies: page.cookies) { url in
+            try await self.readerData(at: url, for: page)
+        }
+        let videos: [SiteVideo]
+        do {
+            videos = try await reader.read(sitePage)
+        } catch {
+            readerFailed(ReaderFailure(reader: reader.name, site: site, reason: String(describing: error)))
+            return nil
+        }
+        let fallback = Self.label(of: page, reading: reading)
+        var found: [Candidate] = []
+        for video in videos {
+            found += await candidates(of: video, on: page, label: video.label ?? fallback, refusals: refusals)
+        }
+        guard !found.isEmpty else {
+            readerFailed(ReaderFailure(reader: reader.name, site: site, reason: "found nothing"))
+            return nil
+        }
+        return SiteFinding(candidates: found.map { $0.withExtractedAudio(splittable: []) }, isPost: reader.post(in: page.url) != nil)
+    }
+
+    private func candidates(of video: SiteVideo, on page: SentPage, label: String, refusals: Refusals) async -> [Candidate] {
+        let streamed = await streamCandidates(video.streams, page: page, refusals: refusals, label: label, thumbnail: video.thumbnail)
+        let versions = Self.distinct(video.versions + streamed.flatMap(\.versions))
+        guard !versions.isEmpty else { return streamed.filter { $0.restriction != nil } }
+        return [Candidate(
+            label: label, thumbnail: video.thumbnail ?? streamed.lazy.compactMap(\.thumbnail).first,
+            duration: video.duration ?? streamed.compactMap(\.duration).max(), versions: versions
+        )]
+    }
+
+    private func readerData(at url: URL, for page: SentPage) async throws -> Data {
+        var request = request(for: url, options: mediaOptions(page, for: url))
+        request.httpShouldHandleCookies = false
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SiteReaderError.unreadable }
+        guard (200..<300).contains(http.statusCode) else { throw SiteReaderError.refused(status: http.statusCode) }
+        guard data.count <= Self.largestPage else { throw SiteReaderError.unreadable }
+        return data
+    }
+
+    private static func joined(_ fromPage: [Candidate], _ fromSite: SiteFinding?) -> [Candidate] {
+        guard let fromSite else { return fromPage }
+        if fromSite.isPost { return fromSite.candidates }
+        var joined = fromPage
+        for candidate in fromSite.candidates {
+            let ids = candidate.addressIDs
+            if !ids.isEmpty, let index = joined.firstIndex(where: { !$0.addressIDs.isDisjoint(with: ids) }) {
+                joined[index] = joined[index].joining(candidate)
+            } else {
+                joined.append(candidate)
+            }
+        }
+        return joined
     }
 
     private struct ProbedBucket: Sendable {
@@ -326,7 +408,7 @@ public struct PageAnalyzer: Sendable {
         }
     }
 
-    private static func distinct(_ versions: [Version]) -> [Version] {
+    static func distinct(_ versions: [Version]) -> [Version] {
         var seen = Set<String>()
         return versions.enumerated()
             .filter { seen.insert(sameFile($0.element)).inserted }
@@ -460,6 +542,20 @@ private extension SentPage {
 }
 
 private extension Candidate {
+    func joining(_ other: Candidate) -> Candidate {
+        var joined = self
+        joined.versions = PageAnalyzer.distinct(versions.filter { !$0.isExtractedAudio } + other.versions)
+        joined.thumbnail = thumbnail ?? other.thumbnail
+        joined.duration = duration ?? other.duration
+        joined.unprobed = []
+        return joined
+    }
+
+    var addressIDs: Set<String> {
+        let urls = [thumbnail].compactMap { $0 } + versions.filter { !$0.isExtractedAudio }.map(\.source.url) + unprobed.map(\.url)
+        return urls.reduce(into: Set<String>()) { $0.formUnion(PageLayout.ids(in: $1)) }
+    }
+
     func referred(by referrer: URL?) -> Candidate {
         guard let referrer else { return self }
         var referred = self

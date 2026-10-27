@@ -467,7 +467,12 @@ struct Site {
     init() async throws {
         server = try await TestServer()
         let engine = DownloadEngine(configuration: .fast)
-        analyzer = PageAnalyzer { url, options in try await engine.inspect(url, options: options) }
+        analyzer = PageAnalyzer(readers: []) { url, options in try await engine.inspect(url, options: options) }
+    }
+
+    init(server: TestServer, analyzer: PageAnalyzer) {
+        self.server = server
+        self.analyzer = analyzer
     }
 
     func url(_ path: String) -> URL { server.url(for: path) }

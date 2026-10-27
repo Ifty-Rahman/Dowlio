@@ -374,7 +374,8 @@ public final class TestServer: @unchecked Sendable {
         let request = Request(method: String(parts[0]), path: String(parts[1]), headers: headers, body: body)
         let (file, redirect): (File?, String?) = lock.withLock {
             recorded.append(request)
-            return (files[request.path], redirects[request.path])
+            let bare = String(request.path.prefix { $0 != "?" })
+            return (files[request.path] ?? files[bare], redirects[request.path])
         }
         watchClose(of: connection, for: request.path)
 
