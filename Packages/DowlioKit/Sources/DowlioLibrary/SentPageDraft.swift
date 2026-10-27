@@ -24,12 +24,14 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public let page: SentPage
     public let preference: QualityPreference
-    public private(set) var showing = Showing.video
     public private(set) var phase = Phase.looking
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
+    private var showings: [Int: Showing] = [:]
+
+    public var showing: Showing { showings[selected] ?? .video }
     private var play: PlayRun?
 
     private enum PlayRun {
@@ -71,7 +73,7 @@ public struct SentPageDraft: Equatable, Sendable {
             selected = 0
             included = found.count == 1 ? [0] : []
             picks = [:]
-            showing = .video
+            showings = [:]
             phase = Self.phase(of: found)
             return nil
         }
@@ -139,6 +141,7 @@ public struct SentPageDraft: Equatable, Sendable {
         guard candidates.indices.contains(index) else { return nil }
         let versions = candidates[index].versions
         guard !versions.isEmpty else { return nil }
+        let showing = showings[index] ?? .video
         if let pick = picks[index], versions.contains(pick), MediaText.isAudio(pick) == (showing == .audio) { return pick }
         if !versions.contains(where: MediaText.isAudio) || !versions.contains(where: { !MediaText.isAudio($0) }) {
             return preference.pick(from: versions, showing: MediaText.isAudio(versions[0]) ? .audio : .video) ?? versions.first
@@ -147,7 +150,7 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public mutating func show(_ kind: Showing) {
-        showing = kind
+        showings[selected] = kind
     }
 
     public mutating func moveChoice(by step: Int) {
@@ -160,6 +163,7 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public mutating func pick(_ version: Version) {
         picks[selected] = version
+        if hasVideoAndAudio { showings[selected] = MediaText.isAudio(version) ? .audio : .video }
     }
 
     public func isIncluded(_ index: Int) -> Bool { included.contains(index) }

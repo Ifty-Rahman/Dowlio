@@ -21,6 +21,12 @@ struct NewDownloadTests {
         #expect(lines == [.link(URL(string: "https://a.com/one.zip")!), .link(URL(string: "https://b.com/x")!)])
     }
 
+    @Test func linksTypedOnOneLineWithSpacesBetweenAreEachTheirOwnLink() {
+        let lines = PastedLinks.parse("https://a.com/one.zip https://b.com/watch  https://a.com/one.zip")
+
+        #expect(lines == [.link(URL(string: "https://a.com/one.zip")!), .link(URL(string: "https://b.com/watch")!)])
+    }
+
     @Test(arguments: [
         ("hello there", PastedLinks.Line.notALink("hello there")),
         ("example.com/file.zip", .notALink("example.com/file.zip")),

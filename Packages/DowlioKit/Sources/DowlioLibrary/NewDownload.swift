@@ -1,7 +1,7 @@
 import DowlioCore
 import Foundation
 
-/// Pasted or dropped text as the New Download sheet reads it: one link per line.
+/// Pasted or dropped text as the New Download sheet reads it: one link per line, or several on a line with spaces between.
 public enum PastedLinks {
     public enum Line: Equatable, Sendable {
         case link(URL)
@@ -30,11 +30,13 @@ public enum PastedLinks {
         for raw in text.split(whereSeparator: \.isNewline) {
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
-            let line = Self.line(trimmed)
-            if case .link(let url) = line {
-                guard seen.insert(url.absoluteString).inserted else { continue }
+            let words = trimmed.split(whereSeparator: \.isWhitespace).map { Self.line(String($0)) }
+            for line in words.allSatisfy({ $0.url != nil }) ? words : [Self.line(trimmed)] {
+                if case .link(let url) = line {
+                    guard seen.insert(url.absoluteString).inserted else { continue }
+                }
+                lines.append(line)
             }
-            lines.append(line)
         }
         return lines
     }
@@ -141,7 +143,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public var startImmediately = true
 
     private var checks: [URL: (check: Check, headers: RequestOptions)] = [:]
-    private var renamed: (url: URL, name: String)?
     private var cookiesByLink: [URL: [Cookie]] = [:]
     private var originByLink: [URL: DownloadOrigin] = [:]
 
@@ -191,13 +192,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         return options
     }
 
-    public var isSingleLink: Bool { links.count == 1 }
-
-    public var webPageToAnalyse: URL? {
-        guard isSingleLink, let url = links.first, case .inspected(let inspection) = check(for: url), inspection.isWebPage else { return nil }
-        return url
-    }
-
     public var canDownload: Bool { !links.isEmpty }
 
     /// Some link couldn't be checked, so Download adds it anyway.
@@ -215,19 +209,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         checks[url]?.check
     }
 
-    /// The single link's name: the user's edit, then the inspected name, then the link's own.
-    public var fileName: String {
-        guard isSingleLink, let url = links.first else { return "" }
-        if let renamed, renamed.url == url { return renamed.name }
-        if case .inspected(let inspection) = check(for: url) { return inspection.fileName }
-        return url.lastPathComponent
-    }
-
-    public mutating func rename(_ name: String) {
-        guard isSingleLink, let url = links.first else { return }
-        renamed = (url, name)
-    }
-
     /// The headers a check is made with. A change means every link needs checking again.
     public var inspectionOptions: RequestOptions {
         var options = RequestOptions()
@@ -242,10 +223,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public var options: RequestOptions {
         var options = inspectionOptions
         options.connections = connections
-        if isSingleLink, let url = links.first, let renamed, renamed.url == url {
-            let name = renamed.name.trimmingCharacters(in: .whitespaces)
-            options.fileName = name.isEmpty ? nil : name
-        }
         return options
     }
 
@@ -273,7 +250,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public static func == (lhs: NewDownloadDraft, rhs: NewDownloadDraft) -> Bool {
         lhs.text == rhs.text && lhs.folder == rhs.folder && lhs.connections == rhs.connections
             && lhs.referrer == rhs.referrer && lhs.userAgent == rhs.userAgent && lhs.startImmediately == rhs.startImmediately
-            && lhs.renamed?.url == rhs.renamed?.url && lhs.renamed?.name == rhs.renamed?.name
             && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check)
             && lhs.cookiesByLink == rhs.cookiesByLink && lhs.originByLink == rhs.originByLink
     }

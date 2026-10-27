@@ -177,7 +177,7 @@ final class MenuBarPanel {
     var quickAdd: NewDownloadModel?
 
     func dropEmptyQuickAdd() {
-        let waiting = quickAdd.map { !$0.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.media != nil || $0.frontPage != nil } ?? false
+        let waiting = quickAdd.map { !$0.isEmpty } ?? false
         guard !waiting else { return }
         showsQuickAdd = false
         quickAdd = nil

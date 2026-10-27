@@ -117,32 +117,6 @@ struct NewDownloadDraftTests {
         #expect(draft.check(for: zip) == nil)
     }
 
-    @Test func aSingleLinkShowsItsInspectedNameAndKeepsAnEditOnlyForThatLink() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
-        _ = draft.linksToCheck()
-        draft.record(.inspected(Self.inspection("Server Name.zip")), for: zip, checkedWith: draft.inspectionOptions)
-
-        #expect(draft.fileName == "Server Name.zip")
-        #expect(draft.options.fileName == nil)
-
-        draft.rename("Mine.zip")
-        #expect(draft.fileName == "Mine.zip")
-        #expect(draft.options.fileName == "Mine.zip")
-
-        draft.text = "https://b.com/two.iso"
-        #expect(draft.fileName == "two.iso")
-        #expect(draft.options.fileName == nil)
-    }
-
-    @Test func severalLinksNeverGetOneName() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
-        draft.rename("Mine.zip")
-        draft.text = "https://a.com/one.zip\nhttps://b.com/two.iso"
-
-        #expect(!draft.isSingleLink)
-        #expect(draft.options.fileName == nil)
-    }
-
     @Test func theOptionsCarryTheConnectionsAndOnlyUsableHeaders() {
         var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
         draft.connections = 4
@@ -181,30 +155,6 @@ struct NewDownloadDraftTests {
         #expect(LinkStatus(failure: .network(NetworkFailure(code: .cannotConnectToHost, message: "")))
             == LinkStatus(line: "Connection lost", reason: "Download Anyway still adds it, and Dowlio tries again when it starts.", tone: .problem))
         #expect(LinkStatus(failure: .tooManyRetries).reason == "Download Anyway still adds it, and Dowlio tries again when it starts.")
-    }
-
-    @Test func aSingleLinkThatIsAWebPageIsThePageToLookAtForMedia() {
-        let page = URL(string: "https://www.w3schools.com/html/html5_video.asp")!
-        var draft = NewDownloadDraft(text: page.absoluteString, folder: folder)
-        _ = draft.linksToCheck()
-        #expect(draft.webPageToAnalyse == nil)
-
-        draft.record(.inspected(Self.webPage), for: page, checkedWith: draft.inspectionOptions)
-
-        #expect(draft.webPageToAnalyse == page)
-    }
-
-    @Test func aWebPageAmongSeveralLinksOrAFileIsntLookedAtForMedia() {
-        let page = URL(string: "https://example.com/watch")!
-        var several = NewDownloadDraft(text: "\(page.absoluteString)\n\(zip.absoluteString)", folder: folder)
-        _ = several.linksToCheck()
-        several.record(.inspected(Self.webPage), for: page, checkedWith: several.inspectionOptions)
-        var file = NewDownloadDraft(text: zip.absoluteString, folder: folder)
-        _ = file.linksToCheck()
-        file.record(.inspected(Self.inspection("one.zip")), for: zip, checkedWith: file.inspectionOptions)
-
-        #expect(several.webPageToAnalyse == nil)
-        #expect(file.webPageToAnalyse == nil)
     }
 
     private static let webPage = LinkInspection(

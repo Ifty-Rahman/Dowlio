@@ -29,6 +29,22 @@ struct SentPageDraftTests {
         #expect(draft.selectedCandidate == clip)
     }
 
+    @Test func eachVideoKeepsItsOwnVideoOrAudioChoice() {
+        var draft = SentPageDraft(page: page)
+        let withAudio = Candidate(label: "Talk", versions: [mp4, m4a])
+        let other = Candidate(label: "Other talk", versions: [ogg, m4a])
+        _ = draft.update(.found([withAudio, other]))
+
+        draft.show(.audio)
+        draft.select(1)
+
+        #expect(draft.showing == .video)
+        #expect(draft.chosenVersion == ogg)
+        #expect(draft.chosenVersion(of: 0) == m4a)
+        draft.select(0)
+        #expect(draft.showing == .audio)
+    }
+
     @Test func aPageWithNoVideoSaysNothingWasFound() {
         var draft = SentPageDraft(page: page)
 

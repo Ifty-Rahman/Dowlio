@@ -37,7 +37,7 @@ public final class SentPageModel {
 
     public func lookAgain() {
         draft.lookAgain()
-        listen(to: playPage(draft.page)) { _ in }
+        listen(to: playPage(draft.page))
     }
 
     public func cancelPlaying() {
@@ -46,14 +46,17 @@ public final class SentPageModel {
         draft.cancelPlaying()
     }
 
-    func listen(to updates: AsyncStream<PageAnalysis>, handBack: @escaping (URL) -> Void) {
+    private func listen(to updates: AsyncStream<PageAnalysis>) {
         analysis?.cancel()
-        analysis = Task { [weak self] in
-            for await update in updates {
-                guard let self, !Task.isCancelled else { return }
-                if let file = draft.update(update) { return handBack(file) }
-            }
+        analysis = Task { [weak self] in _ = await self?.follow(updates) }
+    }
+
+    func follow(_ updates: AsyncStream<PageAnalysis>) async -> URL? {
+        for await update in updates {
+            guard !Task.isCancelled else { return nil }
+            if let file = draft.update(update) { return file }
         }
+        return nil
     }
 
     func stop() {
@@ -69,41 +72,4 @@ public final class SentPageModel {
     public func include(_ index: Int, _ included: Bool) { draft.include(index, included) }
     public func show(_ kind: SentPageDraft.Showing) { draft.show(kind) }
     public func moveChoice(by step: Int) { draft.moveChoice(by: step) }
-}
-
-@MainActor
-@Observable
-public final class SentPageHost {
-    public private(set) var current: SentPageModel?
-    @ObservationIgnored private let analyze: (SentPage) -> AsyncStream<PageAnalysis>
-    @ObservationIgnored private let preference: () -> QualityPreference
-    @ObservationIgnored private let lookAgain: (SentPage) -> AsyncStream<PageAnalysis>
-    @ObservationIgnored private let probe: (SentPage, Candidate) async -> Candidate
-
-    public init(
-        analyze: @escaping (SentPage) -> AsyncStream<PageAnalysis>,
-        lookAgain: @escaping (SentPage) -> AsyncStream<PageAnalysis> = { _ in .nothingFound },
-        probe: @escaping (SentPage, Candidate) async -> Candidate = { $1 },
-        preference: @escaping () -> QualityPreference = { QualityPreference() }
-    ) {
-        self.analyze = analyze
-        self.lookAgain = lookAgain
-        self.probe = probe
-        self.preference = preference
-    }
-
-    public func send(_ page: SentPage, handBack: ((URL) -> Void)? = nil) {
-        current?.stop()
-        let model = SentPageModel(page: page, preference: preference(), playPage: lookAgain, probe: probe)
-        current = model
-        model.listen(to: analyze(page)) { [weak self, weak model] file in
-            if let self, self.current === model { self.current = nil }
-            handBack?(file)
-        }
-    }
-
-    public func clear() {
-        current?.stop()
-        current = nil
-    }
 }

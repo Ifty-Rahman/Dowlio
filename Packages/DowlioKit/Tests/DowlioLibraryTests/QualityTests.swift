@@ -91,16 +91,6 @@ struct QualityTests {
         #expect(draft.chosenVersion == h264_1080)
     }
 
-    @Test func aHostStartsEachPageOnTheCurrentPreference() {
-        var preference = QualityPreference(quality: .best)
-        let host = SentPageHost(analyze: { _ in AsyncStream { $0.finish() } }, preference: { preference })
-        preference = QualityPreference(quality: .upTo(480))
-
-        host.send(SentPage(url: URL(string: "https://www.example.com/watch")!))
-
-        #expect(host.current?.draft.preference == QualityPreference(quality: .upTo(480)))
-    }
-
     @Test func downloadSettingsCarryTheQualityPreference() {
         var settings = DownloadSettings(folder: URL(filePath: "/tmp"))
         #expect(settings.qualityPreference == QualityPreference(quality: .best, prefersH264: true))

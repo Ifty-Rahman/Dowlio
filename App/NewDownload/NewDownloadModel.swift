@@ -13,34 +13,36 @@ final class NewDownloadModel: Identifiable {
     var draft: NewDownloadDraft {
         didSet {
             if draft.text != oldValue.text, !draft.text.isEmpty { frontPage = nil }
-            if let page = media?.draft.page.url, draft.links != [page] { sentPages.clear() }
             if draft.links != oldValue.links || draft.links.map(draft.inspectionOptions(for:)) != oldValue.links.map(oldValue.inspectionOptions(for:)) {
+                list.update(links: draft.links, options: draft.inspectionOptions(for:))
                 scheduleChecks()
             }
         }
     }
 
-    let sentPages: SentPageHost
+    let list: LinkList
     private let inspect: (URL, RequestOptions) async throws -> LinkInspection
     private var pending: Task<Void, Never>?
     init(
         text: String,
         folder: URL,
-        sentPages: SentPageHost,
+        list: LinkList,
         inspect: @escaping (URL, RequestOptions) async throws -> LinkInspection
     ) {
         draft = NewDownloadDraft(text: text, folder: folder)
-        self.sentPages = sentPages
+        self.list = list
         self.inspect = inspect
+        list.update(links: draft.links, options: draft.inspectionOptions(for:))
     }
 
-    var media: SentPageModel? { sentPages.current }
     private(set) var frontPage: FrontPageState?
     private var frontPageAsk: UUID?
 
+    var isEmpty: Bool {
+        draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && list.items.isEmpty && frontPage == nil
+    }
+
     func askFrontPage(of browser: String) -> UUID {
-        sentPages.clear()
-        draft.text = ""
         frontPage = .asking(browser)
         let ask = UUID()
         frontPageAsk = ask
@@ -54,7 +56,8 @@ final class NewDownloadModel: Identifiable {
 
     func useClipboard(_ text: String?) -> Bool {
         guard let link = ClipboardLink.first(in: text) else { return false }
-        draft.text = link.absoluteString
+        draft.append(link.absoluteString)
+        frontPage = nil
         return true
     }
 
@@ -64,37 +67,44 @@ final class NewDownloadModel: Identifiable {
 
     func discardSentPage() {
         frontPage = nil
-        sentPages.clear()
+        list.clear()
     }
+
     var makesDefaultQuality = false
-    private var namedFile: (version: Version, name: String)?
 
-    var mediaFileName: String {
-        get {
-            guard let media, let candidate = media.draft.selectedCandidate, let version = media.draft.chosenVersion else { return "" }
-            if let namedFile, namedFile.version == version { return namedFile.name }
-            let addsResolution = AppModel.currentSettings().nameConflictPolicy == .keepBoth
-            return MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: AppModel.nameIsTaken(in: draft.folder))
-        }
-        set {
-            guard let version = media?.draft.chosenVersion else { return }
-            namedFile = (version, newValue)
-        }
+    func fileName(of item: LinkItem) -> String {
+        list.name(of: item.id) ?? suggestedName(of: item)
     }
 
-    var chosenFileName: String? {
-        guard let namedFile, namedFile.version == media?.draft.chosenVersion else { return nil }
-        let name = namedFile.name.trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? nil : name
+    func rename(_ item: LinkItem, to name: String) {
+        list.rename(item.id, name == suggestedName(of: item) ? "" : name)
+    }
+
+    private func suggestedName(of item: LinkItem) -> String {
+        switch item.kind {
+        case .checking(let url), .file(let url, _):
+            if case .inspected(let inspection) = draft.check(for: url) { return inspection.fileName }
+            return url.lastPathComponent.isEmpty ? url.absoluteString : url.lastPathComponent
+        case .page(let page):
+            if case .inspected(let inspection) = draft.check(for: page.draft.page.url) { return inspection.fileName }
+            return page.draft.host
+        case .video(let page, let index):
+            guard let version = list.chosenVersion(of: item.id) else { return "" }
+            let addsResolution = AppModel.currentSettings().nameConflictPolicy == .keepBoth
+            return MediaNaming.fileName(
+                label: page.draft.candidates[index].label, version: version, addsResolution: addsResolution, isTaken: AppModel.nameIsTaken(in: draft.folder)
+            )
+        }
     }
 
     var canDownload: Bool {
-        guard let media else { return draft.canDownload }
-        switch media.draft.phase {
-        case .looking, .playing: return false
-        case .found: return !media.draft.downloads.isEmpty
-        case .nothingFound, .needsSignIn, .restricted: return false
-        }
+        !list.isWaiting && !list.downloads.isEmpty
+    }
+
+    var downloadTitle: String {
+        let count = list.downloads.count
+        if count > 1 { return "Download \(count)" }
+        return draft.downloadsAnyway && list.items.count == 1 ? "Download Anyway" : "Download"
     }
 
     func append(_ more: String) {
@@ -103,11 +113,8 @@ final class NewDownloadModel: Identifiable {
 
     func analyze(_ page: SentPage) {
         frontPage = nil
-        makesDefaultQuality = false
-        sentPages.clear()
-        draft.text = ""
         draft.addSent(page.url, referrer: nil, cookies: page.cookies, browser: page.browser, userAgent: page.userAgent)
-        sentPages.send(page)
+        list.send(page)
     }
 
     /// Checks every link that needs it, now.
@@ -131,8 +138,8 @@ final class NewDownloadModel: Identifiable {
 
     private func record(_ check: NewDownloadDraft.Check, for url: URL, checkedWith headers: RequestOptions) {
         draft.record(check, for: url, checkedWith: headers)
-        guard draft.webPageToAnalyse == url, media?.draft.page.url != url else { return }
-        sentPages.send(SentPage(url: url, cookies: headers.cookies, userAgent: headers.userAgent))
+        guard draft.check(for: url) == check else { return }
+        list.checked(url, check)
     }
 
     private func scheduleChecks() {

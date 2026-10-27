@@ -19,12 +19,18 @@ struct NewDownloadSheet: View {
                 }
             }
             linkField
-            if let media = sheet.media {
-                mediaBlock(media)
-            } else if let state = sheet.frontPage {
+            if let state = sheet.frontPage {
                 FrontPageBody(sheet: sheet, state: state)
             }
-            if !sheet.draft.lines.isEmpty, sheet.media == nil { cards }
+            let items = sheet.list.items
+            if items.count > 1 {
+                LinkPager(sheet: sheet, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
+                Text(sheet.list.includedLine).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+            } else if let item = items.first {
+                singleItem(item)
+                    .showsInList(item, of: sheet.list)
+            }
+            skippedLines
             if let explanation = sheet.draft.explanation {
                 Text(explanation).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
             }
@@ -72,7 +78,7 @@ struct NewDownloadSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel, action: close)
                     .keyboardShortcut(.cancelAction)
-                Button(downloadTitle, action: download)
+                Button(sheet.downloadTitle, action: download)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!sheet.canDownload)
@@ -86,7 +92,16 @@ struct NewDownloadSheet: View {
         }
     }
 
-    @ViewBuilder private func mediaBlock(_ media: SentPageModel) -> some View {
+    @ViewBuilder private func singleItem(_ item: LinkItem) -> some View {
+        switch item.kind {
+        case .checking(let url), .file(let url, _):
+            FileCard(line: .link(url), sheet: sheet, item: item)
+        case .page(let page), .video(let page, _):
+            mediaBlock(page, item: item)
+        }
+    }
+
+    @ViewBuilder private func mediaBlock(_ media: SentPageModel, item: LinkItem) -> some View {
         switch media.draft.phase {
         case .looking, .playing:
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
@@ -97,19 +112,17 @@ struct NewDownloadSheet: View {
         case .found, .restricted:
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
                 MediaHeader(media: media, subtitle: versionsLine(media))
-                if media.draft.candidates.count > 1 { VideoStrip(media: media) }
                 MediaChoices(media: media, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
-                if media.draft.downloads.count == 1 {
+                if item.savesAFile {
                     VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                         Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
-                        TextField("File name", text: $sheet.mediaFileName).textFieldStyle(.roundedBorder)
+                        TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
+                            .textFieldStyle(.roundedBorder)
                     }
                 }
             }
         case .nothingFound:
-            HStack(alignment: .top, spacing: DowlioDesign.Spacing.md) {
-                MediaHeader(media: media)
-            }
+            MediaHeader(media: media)
             NothingFoundBody(media: media)
         case .needsSignIn:
             MediaHeader(media: media)
@@ -128,23 +141,8 @@ struct NewDownloadSheet: View {
         return "Sent from \(origin.browser ?? "your browser")" + (signedIn ? ", signed in" : "")
     }
 
-    private var downloadTitle: String {
-        if let media = sheet.media {
-            let count = media.draft.downloads.count
-            return count > 1 ? "Download \(count)" : "Download"
-        }
-        return sheet.draft.downloadsAnyway ? "Download Anyway" : "Download"
-    }
-
     private func download() {
-        if let media = sheet.media, media.draft.phase == .found {
-            let draft = sheet.draft
-            let fileName = sheet.chosenFileName
-            let makesDefault = sheet.makesDefaultQuality
-            Task { await model.addMedia(draft, media: media, fileName: fileName, makesDefaultQuality: makesDefault) }
-        } else {
-            model.add(sheet.draft)
-        }
+        model.addList(sheet)
         close()
     }
 
@@ -165,16 +163,9 @@ struct NewDownloadSheet: View {
         }
     }
 
-    @ViewBuilder private var cards: some View {
-        let list = VStack(spacing: DowlioDesign.Spacing.sm) {
-            ForEach(Array(sheet.draft.lines.enumerated()), id: \.offset) { _, line in
-                FileCard(line: line, sheet: sheet)
-            }
-        }
-        if sheet.draft.lines.count > 3 {
-            ScrollView { list }.frame(height: 260)
-        } else {
-            list
+    @ViewBuilder private var skippedLines: some View {
+        ForEach(Array(sheet.draft.lines.enumerated()), id: \.offset) { _, line in
+            if line.problem != nil { FileCard(line: line, sheet: sheet, item: nil) }
         }
     }
 }
@@ -182,6 +173,7 @@ struct NewDownloadSheet: View {
 private struct FileCard: View {
     let line: PastedLinks.Line
     @Bindable var sheet: NewDownloadModel
+    let item: LinkItem?
 
     var body: some View {
         HStack(alignment: .top, spacing: DowlioDesign.Spacing.md) {
@@ -217,8 +209,8 @@ private struct FileCard: View {
     }
 
     @ViewBuilder private var name: some View {
-        if sheet.draft.isSingleLink, line.problem == nil {
-            TextField("File name", text: Binding(get: { sheet.draft.fileName }, set: { sheet.draft.rename($0) }))
+        if let item, line.problem == nil {
+            TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
                 .textFieldStyle(.plain)
                 .font(DowlioDesign.TypeRole.heading)
         } else {

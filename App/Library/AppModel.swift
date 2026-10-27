@@ -277,7 +277,7 @@ final class AppModel {
 
     func continueInWindow(_ quickAdd: NewDownloadModel) {
         showLibraryWindow()
-        if let newDownload, quickAdd.media == nil {
+        if let newDownload, !quickAdd.list.hasPages {
             newDownload.draft.merge(quickAdd.draft)
         } else {
             newDownload?.discardSentPage()
@@ -286,10 +286,10 @@ final class AppModel {
     }
 
     /// A draft for the New Download sheet or Quick add, checking links through the library.
-    func makeNewDownload(_ text: String = "", sentPages: SentPageHost? = nil) -> NewDownloadModel? {
+    func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
         guard let library else { return nil }
-        let host = sentPages ?? SentPageHost(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
-        let model = NewDownloadModel(text: text, folder: downloadsFolder, sentPages: host) { url, options in
+        let list = LinkList(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
+        let model = NewDownloadModel(text: text, folder: downloadsFolder, list: list) { url, options in
             try await library.inspect(url, options: options)
         }
         model.draft.connections = settings.connections
@@ -351,40 +351,42 @@ final class AppModel {
         NSWorkspace.shared.open(ProblemReport.url(appVersion: app, macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
     }
 
-    @discardableResult
-    func addMedia(
-        _ draft: NewDownloadDraft, media: SentPageModel, fileName: String? = nil, makesDefaultQuality: Bool = false
-    ) async -> [DownloadID] {
-        guard let library else { return [] }
+    func addList(_ sheet: NewDownloadModel) {
         notifier.askPermissionIfNeeded()
         let settings = settings
+        let draft = sheet.draft
+        let list = sheet.list
         let destination = settings.destination(in: draft.folder)
-        let page = media.draft.page.url
-        let chosen = draft.options(for: page)
-        let origin = draft.origin(for: page)
-        let downloads = media.draft.downloads
-        if makesDefaultQuality, let height = media.draft.chosenVersion?.height {
+        if sheet.makesDefaultQuality, let shown = list.current, let height = list.chosenVersion(of: shown.id)?.height {
             UserDefaults.standard.setVideoQualityCap(height)
         }
         let isTaken = Self.nameIsTaken(in: draft.folder)
         let addsResolution = settings.nameConflictPolicy == .keepBoth
-        var ids: [DownloadID] = []
-        for download in downloads {
-            var options = settings.options(connections: chosen.connections)
-            options.referrer = chosen.referrer ?? download.version.referrer ?? page
-            options.userAgent = chosen.userAgent ?? download.version.userAgent
-            options.cookies = chosen.cookies
-            let named = downloads.count == 1 ? fileName : nil
-            options.fileName = named ?? MediaNaming.fileName(
-                label: download.candidate.label, version: download.version, addsResolution: addsResolution, isTaken: isTaken
-            )
-            let id = await library.add(
-                download.version.source, destination: destination, options: options,
-                startImmediately: draft.startImmediately, origin: origin
-            )
-            ids.append(id)
+        let added = list.downloads.map { download -> (DownloadSource, RequestOptions, DownloadOrigin?) in
+            switch download {
+            case let .media(page, candidate, version, name):
+                let chosen = draft.options(for: page.url)
+                var options = settings.options(connections: chosen.connections)
+                options.referrer = chosen.referrer ?? version.referrer ?? page.url
+                options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
+                options.cookies = chosen.cookies.isEmpty ? page.cookies : chosen.cookies
+                options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)
+                return (version.source, options, draft.origin(for: page.url))
+            case let .file(url, name):
+                let chosen = draft.options(for: url)
+                var options = settings.options(connections: chosen.connections)
+                options.referrer = chosen.referrer
+                options.userAgent = chosen.userAgent
+                options.cookies = chosen.cookies
+                options.fileName = name
+                return (.file(url), options, draft.origin(for: url))
+            }
         }
-        return ids
+        perform { library in
+            for (source, options, origin) in added {
+                await library.add(source, destination: destination, options: options, startImmediately: draft.startImmediately, origin: origin)
+            }
+        }
     }
 
     nonisolated static func nameIsTaken(in folder: URL) -> (String) -> Bool {
