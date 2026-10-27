@@ -184,6 +184,12 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
         if (!tab) throw new Error(`No tab with id: ${tabId}`);
         return tab;
       },
+      active: null,
+      queries: [],
+      async query(query) {
+        chrome.tabs.queries.push(query);
+        return chrome.tabs.active ? [chrome.tabs.active] : [];
+      },
     },
     cookies: {
       jar: {},

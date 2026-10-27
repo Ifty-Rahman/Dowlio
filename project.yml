@@ -14,6 +14,9 @@ settings:
 packages:
   DowlioKit:
     path: Packages/DowlioKit
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 3.1.0
 targets:
   Dowlio:
     type: application
@@ -33,6 +36,7 @@ targets:
         product: DowlioConnect
       - package: DowlioKit
         product: DowlioMedia
+      - package: KeyboardShortcuts
     postCompileScripts:
       - name: Bundle Dowlio Connect
         basedOnDependencyAnalysis: false

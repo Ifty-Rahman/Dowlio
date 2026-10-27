@@ -54,6 +54,11 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     return requestId;
   }
 
+  function reply(type, requestId, fields = {}) {
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ v: PROTOCOL, type, requestId, ...fields }));
+  }
+
   function request(type, fields, timeout) {
     return new Promise((resolve) => {
       const requestId = send(type, fields);
@@ -141,6 +146,9 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
         break;
       case "browser.download":
         await catching.downloadInBrowser(message.url, typeof message.reason === "string" ? message.reason : undefined);
+        break;
+      case "page.scan":
+        if (typeof message.requestId === "string") await sending.scanFront(message.requestId);
         break;
     }
   }
@@ -247,6 +255,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
     isConnected,
     whenConnected,
     request,
+    reply,
     release: (requestId) => send("catch.released", { requestId }),
     preferences: () => loaded.then(() => preferences),
     preferencesNow: () => (preferencesLoaded ? preferences : null),
@@ -255,7 +264,7 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
   const catching = startCatching({ chrome, navigator, now, link: connection });
 
   const watching = startWatching({ chrome });
-  startSending({ chrome, navigator, link: connection, watching, timers, now });
+  const sending = startSending({ chrome, navigator, link: connection, watching, timers, now });
 
   connect();
 }

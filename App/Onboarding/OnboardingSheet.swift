@@ -13,6 +13,7 @@ struct OnboardingSheet: View {
         case welcome
         case setup
         case browsers
+        case shortcut
     }
 
     var body: some View {
@@ -33,6 +34,7 @@ struct OnboardingSheet: View {
         case .welcome: WelcomePage()
         case .setup: SetupPage(model: model)
         case .browsers: BrowsersPage(model: model)
+        case .shortcut: ShortcutPage()
         }
     }
 
@@ -44,7 +46,7 @@ struct OnboardingSheet: View {
             if let previous = Page(rawValue: page.rawValue - 1) {
                 Button("Back") { page = previous }
             }
-            Button(page == .browsers ? "Get Started" : "Continue") {
+            Button(page == Page.allCases.last ? "Get Started" : "Continue") {
                 if let next = Page(rawValue: page.rawValue + 1) { page = next } else { finish() }
             }
             .buttonStyle(.borderedProminent)
@@ -151,6 +153,23 @@ private struct BrowsersPage: View {
                 }
             } header: {
                 PageHeader(symbol: "puzzlepiece.extension.fill", title: "Catch downloads from your browser", subtitle: "Add Dowlio Connect to a browser, and files you download there finish in Dowlio.")
+            }
+        }
+        .onboardingForm()
+    }
+}
+
+private struct ShortcutPage: View {
+    var body: some View {
+        Form {
+            Section {
+                SendShortcutRecorder()
+            } header: {
+                PageHeader(symbol: "keyboard.fill", title: "Your shortcut", subtitle: "Press it on a page with a video, and Dowlio lists what it finds there.")
+            } footer: {
+                Text("Try it now: open a page with a video in a browser with Dowlio Connect, then press the shortcut.")
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
             }
         }
         .onboardingForm()

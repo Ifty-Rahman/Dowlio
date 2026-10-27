@@ -12,6 +12,7 @@ enum Incoming: Equatable {
     case settingsChange(CatchPreferenceChange)
     case linkSend(url: URL, referrer: URL?, browser: String?, cookies: [Cookie], userAgent: String?)
     case pageSend(SentPage)
+    case pageNone
     case unknown(type: String)
 }
 
@@ -129,6 +130,9 @@ struct Envelope {
                 userAgent: text("userAgent", limit: Self.maximumHeaderValue), scan: Array(media), players: Array(players), embeddedJSON: Array(embedded),
                 watched: Array(watched), throughDowlioConnect: true
             ))
+        case "page.none":
+            guard requestID != nil else { return nil }
+            message = .pageNone
         case "settings.change":
             let catches = object["catches"] as? Bool
             let site = text("neverCatchSite")
@@ -198,6 +202,7 @@ struct Outgoing: Encodable {
     static let catchAccepted = Outgoing(type: "catch.accepted")
     static let linkReceived = Outgoing(type: "link.received")
     static let pageReceived = Outgoing(type: "page.received")
+    static let pageScan = Outgoing(type: "page.scan")
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(
             type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch

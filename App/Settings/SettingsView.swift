@@ -281,6 +281,9 @@ private struct BrowsersSettings: View {
                 }
             }
             Section {
+                SendShortcutRecorder()
+            }
+            Section {
                 Toggle(isOn: $model.catchPreferences.catches) {
                     HStack(spacing: DowlioDesign.Spacing.xs) {
                         Text("Catch downloads")

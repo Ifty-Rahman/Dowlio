@@ -25,6 +25,13 @@ public struct SentLink: Sendable {
     public var userAgent: String?
 }
 
+public enum PageScanResult: Equatable, Sendable {
+    case sent
+    case noPage
+    case notConnected
+    case noAnswer
+}
+
 public enum ConnectServerError: Error, Equatable {
     case noFreePort
 }
@@ -49,6 +56,8 @@ public actor ConnectServer {
     private var recentPairingRequests: [Date] = []
     private var listenFailed = false
     private let testTimeout: Duration
+    private let scanTimeout: Duration
+    private var waitingScans: [String: (session: UUID, answer: CheckedContinuation<PageScanResult, Never>)] = [:]
     private let nameBrowser: @Sendable (String) -> String
     private let extensionVersion: String?
     private let peerApp: @Sendable (NWConnection) -> String?
@@ -82,6 +91,7 @@ public actor ConnectServer {
         releaseWait: Duration = .seconds(2),
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
+        scanTimeout: Duration = .seconds(8),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
         extensionVersion: String? = nil,
         peerApp: @escaping @Sendable (NWConnection) -> String? = { PeerProcess.appName(of: $0) },
@@ -96,6 +106,7 @@ public actor ConnectServer {
         self.now = now
         self.approve = approve
         self.testTimeout = testTimeout
+        self.scanTimeout = scanTimeout
         self.nameBrowser = nameBrowser
         self.extensionVersion = extensionVersion
         self.peerApp = peerApp
@@ -247,6 +258,10 @@ public actor ConnectServer {
             page.browser = session.appName ?? page.browser ?? (try? store.browserPairing(pairing))?.browserName
             sentPage.yield(page)
             send(.pageReceived.replying(to: requestID), to: session)
+            if let requestID { answerScan(requestID, from: session, with: .sent) }
+        case .pageNone:
+            guard session.pairing != nil else { return close(session) }
+            if let requestID { answerScan(requestID, from: session, with: .noPage) }
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)
@@ -337,6 +352,29 @@ public actor ConnectServer {
         }
     }
 
+    public func scanPage(in app: String) async -> PageScanResult {
+        let browser = sessions.values.first {
+            $0.isOpen && $0.pairing != nil && $0.appName?.caseInsensitiveCompare(app) == .orderedSame
+        }
+        guard let browser else { return .notConnected }
+        let requestID = "scan-\(UUID().uuidString)"
+        let deadline = scanTimeout
+        Task {
+            try? await Task.sleep(for: deadline)
+            self.answerScan(requestID, with: .noAnswer)
+        }
+        return await withCheckedContinuation { continuation in
+            waitingScans[requestID] = (browser.id, continuation)
+            send(Outgoing.pageScan.replying(to: requestID), to: browser)
+        }
+    }
+
+    private func answerScan(_ requestID: String, from session: Session? = nil, with result: PageScanResult) {
+        guard let waiting = waitingScans[requestID], session.map({ $0.id == waiting.session }) ?? true else { return }
+        waitingScans[requestID] = nil
+        waiting.answer.resume(returning: result)
+    }
+
     private func giveUp(on requestID: String) {
         waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .noAnswer)
     }
@@ -345,6 +383,9 @@ public actor ConnectServer {
         browserChange.yield()
         for (requestID, waiting) in waitingPongs where waiting.session == session.id {
             waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .notConnected)
+        }
+        for (requestID, waiting) in waitingScans where waiting.session == session.id {
+            answerScan(requestID, with: .notConnected)
         }
     }
 

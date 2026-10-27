@@ -102,6 +102,20 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     }
   }
 
+  async function pageFields(tab, found) {
+    return {
+      url: tab.url,
+      title: tab.title || found.title,
+      browser: browserName(navigator),
+      userAgent: navigator?.userAgent,
+      cookies: await link.cookiesFor?.(tab.url),
+      media: found.media,
+      players: found.players,
+      requests: watching?.requestsFor(tab.id) ?? [],
+      embeddedJson: found.embeddedJson,
+    };
+  }
+
   async function deliverPage(tab) {
     await noteStep(tab.url, "started");
     if (!(await reachable())) {
@@ -110,21 +124,7 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     }
     const found = await scan(tab.id);
     await noteStep(tab.url, found.timedOut ? "scanTimedOut" : "scanned");
-    const sending = link.request(
-      "page.send",
-      {
-        url: tab.url,
-        title: tab.title || found.title,
-        browser: browserName(navigator),
-        userAgent: navigator?.userAgent,
-        cookies: await link.cookiesFor?.(tab.url),
-        media: found.media,
-        players: found.players,
-        requests: watching?.requestsFor(tab.id) ?? [],
-        embeddedJson: found.embeddedJson,
-      },
-      RECEIPT_TIMEOUT,
-    );
+    const sending = link.request("page.send", await pageFields(tab, found), RECEIPT_TIMEOUT);
     await noteStep(tab.url, found.timedOut ? "sentWithoutScan" : "sent");
     const receipt = await sending;
     if (receipt?.type !== "page.received") {
@@ -132,6 +132,17 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
       return noAnswer("page");
     }
     await noteStep(tab.url, "received");
+  }
+
+  async function scanFront(requestId) {
+    const [tab] = await Promise.resolve()
+      .then(() => chrome.tabs.query({ active: true, lastFocusedWindow: true }))
+      .catch(() => []);
+    if (!/^https?:/i.test(tab?.url ?? "")) return link.reply("page.none", requestId, { reason: "noTab" });
+    await noteStep(tab.url, "asked");
+    const found = await scan(tab.id);
+    link.reply("page.send", requestId, await pageFields(tab, found));
+    await noteStep(tab.url, "sent");
   }
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -143,4 +154,6 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     if (message?.type !== "page.send" || typeof message.tabId !== "number") return;
     chrome.tabs.get(message.tabId).then(sendPage, () => {});
   });
+
+  return { scanFront };
 }

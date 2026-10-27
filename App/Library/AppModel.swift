@@ -5,6 +5,7 @@ import DowlioEngine
 import DowlioLibrary
 import DowlioMedia
 import DowlioStore
+import KeyboardShortcuts
 import Observation
 
 @MainActor
@@ -67,6 +68,7 @@ final class AppModel {
             return
         }
         Task { await follow() }
+        KeyboardShortcuts.onKeyDown(for: .sendPage) { [weak self] in self?.sendFrontPage() }
         DebugLaunch.addLinks { [weak self] links in
             guard let self else { return }
             var draft = NewDownloadDraft(text: links, folder: downloadsFolder)
@@ -140,6 +142,16 @@ final class AppModel {
             for await preferences in updates {
                 await server.publish(preferences)
             }
+        }
+    }
+
+    func sendFrontPage() {
+        let front = NSWorkspace.shared.frontmostApplication
+        guard let server = connectServer, let front, front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              let app = front.bundleURL.flatMap({ PeerProcess.appName(forExecutable: $0.path) })
+        else { return NSSound.beep() }
+        Task {
+            if await server.scanPage(in: app) != .sent { NSSound.beep() }
         }
     }
 
