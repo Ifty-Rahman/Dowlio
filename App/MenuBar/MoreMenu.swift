@@ -31,8 +31,9 @@ final class MoreMenu {
         let x = min(button.minX, screen.maxX - size.width - DowlioDesign.Spacing.sm)
         let y = button.minY - DowlioDesign.Spacing.xs - size.height
         panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        panel.level = window.level
         window.addChildWindow(panel, ordered: .above)
-        panel.orderFront(nil)
+        panel.orderFrontRegardless()
         panel.invalidateShadow()
         watchClicks()
     }

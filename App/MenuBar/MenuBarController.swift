@@ -6,22 +6,22 @@ import DowlioMedia
 import Observation
 import SwiftUI
 
-/// Dowlio's menu bar item: an icon whose bar shows progress while downloading, and a popover.
+/// Dowlio's menu bar item: an icon whose bar shows progress while downloading, and a panel under it.
 /// AppKit owns it, because SwiftUI's menu bar extra can't be opened from code, and later phases
 /// open the catch toast and the Send panel from it.
 @MainActor
-final class MenuBarController: NSObject, NSPopoverDelegate {
+final class MenuBarController: NSObject {
     private let model: AppModel
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let popover = NSPopover()
     private let panel = MenuBarPanel()
+    private var menuWindow: MenuBarWindow?
     private var drawnIcon: (fraction: Double?, needsAttention: Bool)?
     private var returnTo: NSRunningApplication?
     private var openedAt = Date()
     private lazy var dismissal = PopoverDismissal(hooks: .init(
-        popoverWindow: { [weak self] in self?.popover.contentViewController?.view.window },
+        popoverWindow: { [weak self] in self?.menuWindow?.window },
         isPointerOnIcon: { [weak self] in self?.isPointerOnIcon ?? false },
-        isPopoverShown: { [weak self] in self?.popover.isShown ?? false },
+        isPopoverShown: { [weak self] in self?.menuWindow?.isShown ?? false },
         isMoreShown: { [weak self] in self?.moreMenu.isShown ?? false },
         hideMore: { [weak self] in self?.moreMenu.hide() },
         close: { [weak self] in self?.close() }
@@ -36,10 +36,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     init(model: AppModel) {
         self.model = model
         super.init()
-        popover.behavior = .applicationDefined
-        popover.animates = false
-        popover.delegate = self
-        popover.contentViewController = FirstClickHostingController(rootView: MenuBarPopover(
+        menuWindow = MenuBarWindow(content: MenuBarPopover(
             model: model, panel: panel,
             close: { [weak self] in self?.close() },
             toggleMore: { [weak self] in self?.toggleMore() }
@@ -75,12 +72,12 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     func showSent(_ link: SentLink) {
-        if !popover.isShown { open() }
+        if menuWindow?.isShown != true { open() }
         showQuickAdd()?.addSent(link)
     }
 
     func sendTarget(activating: Bool = true) -> NewDownloadModel? {
-        if !popover.isShown { open(activating: activating) }
+        if menuWindow?.isShown != true { open(activating: activating) }
         return showQuickAdd()
     }
 
@@ -94,7 +91,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     @objc private func toggle() {
-        if popover.isShown { close() } else { open() }
+        if menuWindow?.isShown == true { close() } else { open() }
     }
 
     private func toggleMore() {
@@ -112,8 +109,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     private func close() {
         moreMenu.hide()
-        guard popover.isShown else { return }
-        popover.performClose(nil)
+        guard let menuWindow, menuWindow.isShown else { return }
+        menuWindow.hide()
+        didClose()
     }
 
     private func open(activating: Bool = true) {
@@ -123,17 +121,11 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let front = NSWorkspace.shared.frontmostApplication
         returnTo = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
         openedAt = Date()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        let window = popover.contentViewController?.view.window
-        window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
-        if activating {
-            NSApp.activate()
-            window?.makeKey()
-        }
+        menuWindow?.show(under: button, makingKey: activating)
         dismissal.start()
     }
 
-    func popoverDidClose(_ notification: Notification) {
+    private func didClose() {
         moreMenu.hide()
         panel.dropEmptyQuickAdd()
         dismissal.stop()
@@ -167,16 +159,6 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         drawnIcon = (fraction, summary.needsAttention)
         item.button?.image = StatusIcon.image(progress: fraction, needsAttention: summary.needsAttention)
     }
-}
-
-final class FirstClickHostingController<Content: View>: NSHostingController<Content> {
-    override func loadView() {
-        view = FirstClickHostingView(rootView: rootView)
-    }
-}
-
-private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// The popover goes back to the list each time it opens.
