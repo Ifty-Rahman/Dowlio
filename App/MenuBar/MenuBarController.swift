@@ -39,7 +39,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .applicationDefined
         popover.animates = false
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
+        popover.contentViewController = FirstClickHostingController(rootView: MenuBarPopover(
             model: model, panel: panel,
             close: { [weak self] in self?.close() },
             toggleMore: { [weak self] in self?.toggleMore() }
@@ -167,6 +167,16 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         drawnIcon = (fraction, summary.needsAttention)
         item.button?.image = StatusIcon.image(progress: fraction, needsAttention: summary.needsAttention)
     }
+}
+
+final class FirstClickHostingController<Content: View>: NSHostingController<Content> {
+    override func loadView() {
+        view = FirstClickHostingView(rootView: rootView)
+    }
+}
+
+private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// The popover goes back to the list each time it opens.

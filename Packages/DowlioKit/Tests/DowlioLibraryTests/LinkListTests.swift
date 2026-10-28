@@ -117,6 +117,32 @@ struct LinkListTests {
         #expect(describe(list) == ["file report.pdf", "page a.example looking"])
     }
 
+    @Test func aSentPageIsShownFirstAndTheEarlierItemsAreBehindIt() async throws {
+        let analyses = Analyses()
+        let list = try await threeItems(analyses)
+        list.show(0)
+
+        list.send(SentPage(url: pageB, browser: "Dia"))
+        #expect(list.positionLine == "4 of 4")
+        analyses.finish(pageB, with: .found([three]))
+        try await waitUntil { describe(list).last == "video Three" }
+
+        #expect(list.positionLine == "4 of 4")
+        list.previous()
+        #expect(list.positionLine == "3 of 4")
+    }
+
+    @Test func aLinkSentFromTheBrowserIsShownFirst() async throws {
+        let analyses = Analyses()
+        let list = try await threeItems(analyses)
+        list.show(0)
+
+        list.update(links: [pageA, file, pageB])
+        list.showLink(pageB)
+
+        #expect(list.positionLine == "4 of 4")
+    }
+
     @Test func aLinkTakenOutOfTheFieldLeavesTheList() async throws {
         let analyses = Analyses()
         let list = list(analyses)

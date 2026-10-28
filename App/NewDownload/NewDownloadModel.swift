@@ -63,6 +63,7 @@ final class NewDownloadModel: Identifiable {
 
     func addSent(_ link: SentLink) {
         draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+        list.showLink(link.url)
     }
 
     func discardSentPage() {

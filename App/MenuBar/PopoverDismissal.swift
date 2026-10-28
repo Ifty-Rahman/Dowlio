@@ -48,17 +48,28 @@ final class PopoverDismissal {
             }
             return closed ? nil : event
         }) { eventMonitors.append(monitor) }
-        let opened = ContinuousClock.now
+        let lastFocusChange = LastFocusChange()
+        let becameActive = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { lastFocusChange.at = .now }
+        }
+        observers.append((NotificationCenter.default, becameActive))
         for (center, name) in [
             (NotificationCenter.default, NSApplication.didResignActiveNotification),
             (NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification),
         ] {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                guard ContinuousClock.now - opened > Self.settling else { return }
-                MainActor.assumeIsolated { hooks.close() }
+                MainActor.assumeIsolated {
+                    guard ContinuousClock.now - lastFocusChange.at > Self.settling else { return }
+                    hooks.close()
+                }
             }
             observers.append((center, token))
         }
+    }
+
+    @MainActor
+    private final class LastFocusChange {
+        var at = ContinuousClock.now
     }
 
     func stop() {

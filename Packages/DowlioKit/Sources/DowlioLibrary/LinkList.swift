@@ -108,6 +108,7 @@ public final class LinkList {
         } else {
             entries.append(makeEntry(page.url, options: RequestOptions(), state: .waiting(makeModel(page))))
         }
+        showLink(page.url)
         startWaiting()
     }
 
@@ -203,6 +204,11 @@ public final class LinkList {
         currentID = items[index].id
         lastPosition = index
         if case .video(let model, let candidate) = items[index].kind { model.select(candidate) }
+    }
+
+    public func showLink(_ url: URL) {
+        guard let entry = entries.first(where: { $0.url == url }) else { return }
+        currentID = LinkItem.ID(entry: entry.id, candidate: nil)
     }
 
     public func next() { show(position + 1) }
