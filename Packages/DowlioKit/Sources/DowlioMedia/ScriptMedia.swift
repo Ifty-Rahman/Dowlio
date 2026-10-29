@@ -45,7 +45,7 @@ enum ScriptMedia {
         return scripts
     }
 
-    private static func unescaped(_ text: String) -> String {
+    static func unescaped(_ text: String) -> String {
         var text = text.replacingOccurrences(of: #"\/"#, with: "/")
         for (escape, character) in [("\\u002F", "/"), ("\\u002f", "/"), ("\\u0026", "&"), ("\\u003A", ":"), ("\\u003a", ":"), ("\\u003D", "="), ("\\u003d", "=")] {
             text = text.replacingOccurrences(of: escape, with: character)

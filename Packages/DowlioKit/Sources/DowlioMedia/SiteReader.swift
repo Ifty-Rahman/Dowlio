@@ -7,6 +7,11 @@ public protocol SiteReader: Sendable {
     func recognises(_ page: URL) -> Bool
     func post(in page: URL) -> String?
     func read(_ page: SitePage) async throws -> [SiteVideo]
+    func recognisesPlayer(in html: String) -> Bool
+}
+
+extension SiteReader {
+    public func recognisesPlayer(in html: String) -> Bool { false }
 }
 
 public struct SitePage: Sendable {
@@ -110,7 +115,10 @@ public struct ReaderFailure: Equatable, Sendable {
 }
 
 public enum SiteReaders {
-    public static let all: [any SiteReader] = [XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(), LinkedInReader(), SnapchatReader()]
+    public static let all: [any SiteReader] = [
+        XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(),
+        LinkedInReader(), SnapchatReader(),
+    ] + WebPlayerReader.all
 }
 
 enum PostLabel {

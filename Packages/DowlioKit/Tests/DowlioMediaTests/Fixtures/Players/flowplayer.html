@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><title>Match highlights</title></head>
+<body>
+<div id="highlights"></div>
+<script>
+flowplayer("#highlights", {
+  clip: {
+    title: "Match highlights",
+    sources: [
+      { type: "application/x-mpegurl", src: "//{{host}}/hls/highlights/playlist.m3u8" },
+      { type: "video/mp4", src: "/mp4/highlights.mp4" }
+    ]
+  }
+});
+</script>
+</body></html>

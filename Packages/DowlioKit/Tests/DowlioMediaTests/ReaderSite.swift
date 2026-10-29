@@ -21,10 +21,14 @@ struct ReaderSite {
     let log = ReaderLog()
 
     init(_ makeReader: (TestServer) -> any SiteReader) async throws {
+        try await self.init(readers: { [makeReader($0)] })
+    }
+
+    init(readers makeReaders: (TestServer) -> [any SiteReader]) async throws {
         let server = try await TestServer()
         let engine = DownloadEngine(configuration: .fast)
         let log = log
-        let analyzer = PageAnalyzer(readers: [makeReader(server)], readerFailed: { log.note($0) }) { url, options in
+        let analyzer = PageAnalyzer(readers: makeReaders(server), readerFailed: { log.note($0) }) { url, options in
             try await engine.inspect(url, options: options)
         }
         site = Site(server: server, analyzer: analyzer)
