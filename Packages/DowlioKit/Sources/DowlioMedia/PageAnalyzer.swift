@@ -66,8 +66,11 @@ public struct PageAnalyzer: Sendable {
         let played = await play(page)
         guard !Task.isCancelled else { return }
         let refusals = Refusals()
-        let seen = page.played(played)
-        let found = await candidates(on: seen, reading: nil, refusals: refusals) { _ in }
+        let seen = page.played(played).withoutControlLabels
+        let reading = played.html.map { HTMLReader($0, base: page.url) }
+        async let fromSite = readSite(seen, reading: reading, refusals: refusals)
+        let fromPage = await candidates(on: seen, reading: reading, refusals: refusals) { _ in }
+        let found = Self.joined(fromPage, await fromSite, on: seen)
         guard !Task.isCancelled else { return }
         let agent = page.userAgent == nil ? seen.userAgent : nil
         report(found.isEmpty && refusals.any ? .needsSignIn : .found(found.map { $0.requested(by: agent) }))
