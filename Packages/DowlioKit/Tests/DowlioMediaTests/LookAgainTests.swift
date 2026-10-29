@@ -64,13 +64,16 @@ struct LookAgainTests {
         #expect(versions.allSatisfy { $0.userAgent == "HiddenPlayer/1" })
     }
 
-    @Test func aPageWithVideoIsNotPlayed() async throws {
+    @Test func aSentPageWithVideoIsNotPlayed() async throws {
         let site = try await Site()
         site.serve(html: #"<title>Clip</title><video src="/media/clip.mp4"></video>"#, at: "/watch")
         site.serve(video: 50, at: "/media/clip.mp4")
         let plays = Plays()
+        let sent = SentPage(
+            url: site.url("/watch"), scan: [ScannedMedia(url: site.url("/media/clip.mp4"), kind: .video)], throughDowlioConnect: true
+        )
 
-        let updates = await updates(analyzer(on: site, plays: plays, finding: []).analyze(SentPage(url: site.url("/watch"))))
+        let updates = await updates(analyzer(on: site, plays: plays, finding: []).analyze(sent))
 
         #expect(!updates.contains(.playing))
         #expect(plays.count == 0)

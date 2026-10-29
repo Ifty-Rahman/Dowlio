@@ -182,6 +182,7 @@ public struct Version: Equatable, Sendable {
 
 public enum PageAnalysis: Equatable, Sendable {
     case looking([Candidate])
+    case checkingForMore([Candidate])
     case playing
     case needsSignIn
     case plainFile(URL)

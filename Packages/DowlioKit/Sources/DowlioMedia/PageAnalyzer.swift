@@ -9,6 +9,7 @@ public struct PageAnalyzer: Sendable {
     private let inspect: Inspect
     private let session: URLSession
     private let play: LookAgain?
+    private let longestLooking: Duration
     private let readers: [any SiteReader]
     private let readerFailed: @Sendable (ReaderFailure) -> Void
     private let sizes: SizeCheck
@@ -18,6 +19,7 @@ public struct PageAnalyzer: Sendable {
         session: URLSession = .shared,
         identity: BrowserIdentity = BrowserIdentity(userAgent: nil),
         lookAgain: LookAgain? = nil,
+        lookingFor longestLooking: Duration = .seconds(15),
         readers: [any SiteReader] = SiteReaders.all,
         readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
         inspect: @escaping Inspect
@@ -25,6 +27,7 @@ public struct PageAnalyzer: Sendable {
         self.session = session
         self.identity = identity
         self.play = lookAgain
+        self.longestLooking = longestLooking
         self.readers = readers
         self.readerFailed = readerFailed
         self.inspect = inspect
@@ -61,22 +64,46 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func playAndRead(_ page: SentPage, report: (PageAnalysis) -> Void) async {
-        guard let play else { return report(.found([])) }
+        guard play != nil else { return report(.found([])) }
         report(.playing)
-        let played = await play(page)
-        guard !Task.isCancelled else { return }
+        guard let found = await lookedAgain(page, within: nil) else { return }
+        let agent = page.userAgent == nil ? found.agent : nil
+        report(found.candidates.isEmpty && found.refusals.any ? .needsSignIn : .found(found.candidates.map { $0.requested(by: agent) }))
+    }
+
+    private struct LookAgainResult {
+        var candidates: [Candidate]
+        var agent: String?
+        var refusals: Refusals
+    }
+
+    private func lookedAgain(_ page: SentPage, within limit: Duration?) async -> LookAgainResult? {
+        guard let play else { return nil }
+        let played = await Self.played(page, by: play, within: limit)
+        guard !Task.isCancelled else { return nil }
         let refusals = Refusals()
         let seen = page.played(played).withoutControlLabels
         let reading = played.html.map { HTMLReader($0, base: page.url) }
         async let fromSite = readSite(seen, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: seen, reading: reading, refusals: refusals) { _ in }
         let found = Self.joined(fromPage, await fromSite, on: seen)
-        guard !Task.isCancelled else { return }
-        let agent = page.userAgent == nil ? seen.userAgent : nil
-        report(found.isEmpty && refusals.any ? .needsSignIn : .found(found.map { $0.requested(by: agent) }))
+        guard !Task.isCancelled else { return nil }
+        return LookAgainResult(candidates: found, agent: seen.userAgent, refusals: refusals)
+    }
+
+    private static func played(_ page: SentPage, by play: @escaping LookAgain, within limit: Duration?) async -> PlayedPage {
+        guard let limit else { return await play(page) }
+        let playing = Task { await play(page) }
+        let timer = Task {
+            try? await Task.sleep(for: limit)
+            playing.cancel()
+        }
+        defer { timer.cancel() }
+        return await withTaskCancellationHandler { await playing.value } onCancel: { playing.cancel() }
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+        let start = ContinuousClock.now
         if DASHVersions.isStream(page.url) {
             return report(await linkedPlaylist(page, label: page.url.lastPathComponent))
         }
@@ -101,10 +128,42 @@ public struct PageAnalyzer: Sendable {
         let reading = await read(page, refusals: refusals)
         async let fromSite = readSite(page, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
-        let found = Self.joined(fromPage, await fromSite, on: page)
+        let site = await fromSite
+        let found = Self.joined(fromPage, site, on: page)
         if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
-        report(.found(found))
+        guard play != nil, !page.hasDataFromDowlioConnect, isThin(found, readerFound: site != nil, on: page) else { return report(.found(found)) }
+        let left = longestLooking - (ContinuousClock.now - start)
+        guard left > .seconds(1) else { return report(.found(found)) }
+        report(.checkingForMore(found))
+        guard let more = await lookedAgain(page, within: left) else { return }
+        report(.found(Self.added(more.candidates, to: found)))
+    }
+
+    private func isThin(_ found: [Candidate], readerFound: Bool, on page: SentPage) -> Bool {
+        if readers.contains(where: { $0.recognises(page.url) }), !readerFound { return true }
+        let videos = found.flatMap(\.versions).filter { !$0.isAudio && !$0.isExtractedAudio }
+        let streams = videos.filter { if case .media = $0.source { true } else { false } }
+        return streams.isEmpty && videos.count <= 1
+    }
+
+    private static func added(_ more: [Candidate], to shown: [Candidate]) -> [Candidate] {
+        var rows = shown.map(\.withoutExtractedAudio)
+        var rest: [Candidate] = []
+        for candidate in more.map(\.withoutExtractedAudio) {
+            let urls = Set(candidate.versions.map(\.source.url))
+            if let index = rows.firstIndex(where: { !Set($0.versions.map(\.source.url)).isDisjoint(with: urls) }) {
+                rows[index] = rows[index].joining(candidate)
+            } else {
+                rest.append(candidate)
+            }
+        }
+        if rows.count == 1, rest.count == 1, rest[0].restriction == nil, rows[0].restriction == nil,
+           rows[0].duration == nil || rest[0].duration == nil || sameLength(rows[0].duration, rest[0].duration) {
+            rows[0] = rows[0].joining(rest[0])
+            rest = []
+        }
+        return merged(rows + rest).map { $0.withExtractedAudio(splittable: []) }
     }
 
     private func linkedPlaylist(_ page: SentPage, label: String) async -> PageAnalysis {
@@ -674,12 +733,25 @@ private extension PageAnalysis {
         switch self {
         case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
         case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
+        case .checkingForMore(let candidates): return .checkingForMore(candidates.map { $0.requested(by: agent) })
         case .playing, .needsSignIn, .plainFile: return self
         }
     }
 }
 
+private extension SentPage {
+    var hasDataFromDowlioConnect: Bool {
+        throughDowlioConnect && !(scan.isEmpty && watched.isEmpty)
+    }
+}
+
 private extension Candidate {
+    var withoutExtractedAudio: Candidate {
+        var stripped = self
+        stripped.versions.removeAll(where: \.isExtractedAudio)
+        return stripped
+    }
+
     func joining(_ other: Candidate) -> Candidate {
         var joined = self
         joined.versions = PageAnalyzer.distinct(versions.filter { !$0.isExtractedAudio } + other.versions)

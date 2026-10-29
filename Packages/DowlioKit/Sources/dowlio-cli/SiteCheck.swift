@@ -30,7 +30,7 @@ enum SiteCheck {
             case .found(let candidates) where !candidates.isEmpty: .found
             case .needsSignIn: .needsSignIn
             case .plainFile: .plainFile
-            case .found, .looking, .playing: error == nil ? .nothingFound : .failed
+            case .found, .looking, .checkingForMore, .playing: error == nil ? .nothingFound : .failed
             }
         }
 

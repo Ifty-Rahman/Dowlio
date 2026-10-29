@@ -12,6 +12,7 @@ public final class SentPageModel {
     @ObservationIgnored private let probeCandidate: (SentPage, Candidate) async -> Candidate
     @ObservationIgnored private var probes: [Task<Void, Never>] = []
     @ObservationIgnored private var probing: [Candidate] = []
+    @ObservationIgnored private var following: Task<URL?, Never>?
 
     init(
         page: SentPage, preference: QualityPreference, playPage: @escaping (SentPage) -> AsyncStream<PageAnalysis>,
@@ -52,15 +53,26 @@ public final class SentPageModel {
     }
 
     func follow(_ updates: AsyncStream<PageAnalysis>) async -> URL? {
-        for await update in updates {
-            guard !Task.isCancelled else { return nil }
-            if let file = draft.update(update) { return file }
+        let task = Task { [weak self] () -> URL? in
+            for await update in updates {
+                guard let self, !Task.isCancelled else { return nil }
+                if let file = draft.update(update) { return file }
+            }
+            return nil
         }
-        return nil
+        following = task
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+    }
+
+    public func stopChecking() {
+        guard draft.isCheckingForMore else { return }
+        following?.cancel()
+        draft.stopChecking()
     }
 
     func stop() {
         analysis?.cancel()
+        following?.cancel()
         probes.forEach { $0.cancel() }
     }
 

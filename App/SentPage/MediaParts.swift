@@ -136,6 +136,7 @@ struct MediaChoices: View {
                 .foregroundStyle(.secondary)
         } else {
             choices
+            if media.draft.isCheckingForMore { CheckingForMoreLine(media: media) }
         }
     }
 
@@ -316,6 +317,22 @@ struct LookingLine: View {
                 Button("Cancel") { media.cancelPlaying() }
                     .controlSize(.small)
             }
+        }
+        .font(DowlioDesign.TypeRole.detail)
+        .foregroundStyle(.secondary)
+    }
+}
+
+struct CheckingForMoreLine: View {
+    let media: SentPageModel
+
+    var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.xs) {
+            ProgressView().controlSize(.small)
+            Text(media.draft.checkingLine)
+            Spacer(minLength: DowlioDesign.Spacing.sm)
+            Button("Cancel") { media.stopChecking() }
+                .controlSize(.small)
         }
         .font(DowlioDesign.TypeRole.detail)
         .foregroundStyle(.secondary)

@@ -27,6 +27,7 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var phase = Phase.looking
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
+    public private(set) var isCheckingForMore = false
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
@@ -58,6 +59,10 @@ public struct SentPageDraft: Equatable, Sendable {
         switch analysis {
         case .looking:
             return nil
+        case .checkingForMore(let found):
+            show(found)
+            isCheckingForMore = true
+            return nil
         case .playing:
             phase = .playing
             if play == nil { play = .byItself }
@@ -69,15 +74,45 @@ public struct SentPageDraft: Equatable, Sendable {
         case .plainFile(let url):
             return url
         case .found(let found):
-            candidates = found
-            selected = 0
-            included = found.count == 1 ? [0] : []
-            picks = [:]
-            showings = [:]
-            phase = Self.phase(of: found)
+            show(found)
             return nil
         }
     }
+
+    private mutating func show(_ found: [Candidate]) {
+        let refreshing = isCheckingForMore
+        isCheckingForMore = false
+        let previous = candidates
+        let previousSelected = selected
+        let previousIncluded = included
+        let previousPicks = picks
+        let previousShowings = showings
+        candidates = found
+        selected = 0
+        included = found.count == 1 ? [0] : []
+        picks = [:]
+        showings = [:]
+        phase = Self.phase(of: found)
+        guard refreshing else { return }
+        func moved(_ index: Int) -> Int? {
+            let urls = Set(previous[index].versions.map(\.source.url))
+            return found.firstIndex { !Set($0.versions.map(\.source.url)).isDisjoint(with: urls) }
+        }
+        if previous.indices.contains(previousSelected), let index = moved(previousSelected) { selected = index }
+        if previous.count != 1 || found.count != 1 { included = Set(previousIncluded.compactMap(moved)) }
+        for (index, version) in previousPicks {
+            if let to = moved(index), found[to].versions.contains(version) { picks[to] = version }
+        }
+        for (index, showing) in previousShowings {
+            if let to = moved(index) { showings[to] = showing }
+        }
+    }
+
+    public mutating func stopChecking() {
+        isCheckingForMore = false
+    }
+
+    public var checkingLine: String { "Checking for more versions" }
 
     private static func phase(of found: [Candidate]) -> Phase {
         guard !found.isEmpty else { return .nothingFound }

@@ -513,11 +513,17 @@ struct Site {
 
 extension PageAnalysis {
     var withoutExtractedAudio: PageAnalysis {
-        guard case .found(let candidates) = self else { return self }
-        return .found(candidates.map { candidate in
-            var candidate = candidate
-            candidate.versions.removeAll(where: \.isExtractedAudio)
-            return candidate
-        })
+        func stripped(_ candidates: [Candidate]) -> [Candidate] {
+            candidates.map { candidate in
+                var candidate = candidate
+                candidate.versions.removeAll(where: \.isExtractedAudio)
+                return candidate
+            }
+        }
+        switch self {
+        case .found(let candidates): return .found(stripped(candidates))
+        case .checkingForMore(let candidates): return .checkingForMore(stripped(candidates))
+        default: return self
+        }
     }
 }

@@ -108,7 +108,7 @@ enum SentPageRecord {
             record["plainFile"] = url.absoluteString
         case .needsSignIn:
             record["needsSignIn"] = true
-        case .looking, .playing, nil:
+        case .looking, .checkingForMore, .playing, nil:
             record["unfinished"] = true
         }
         guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys]) else { return }

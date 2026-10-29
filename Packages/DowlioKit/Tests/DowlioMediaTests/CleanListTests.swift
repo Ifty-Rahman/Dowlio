@@ -71,6 +71,20 @@ struct CleanListTests {
         #expect(candidates.map(\.label) == ["Holiday clip"])
     }
 
+    @Test func aLabelThatIsOnlyAControlsPhraseIsDropped() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Launch day</title>", at: "/watch")
+        site.serve(video: 2_000_000, at: "/clip.mp4")
+
+        let found = try await site.analyze("/watch") {
+            $0.players = [ScannedPlayer(group: 1, label: "Audio is muted", visibility: 1)]
+            $0.scan = [ScannedMedia(url: site.url("/clip.mp4"), kind: .video, group: 1)]
+        }
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == ["Launch day"])
+    }
+
     @Test func aTitleWithOneControlWordAndATimeIsKept() async throws {
         let site = try await Site()
         site.serve(html: "<title>Page</title>", at: "/watch")
