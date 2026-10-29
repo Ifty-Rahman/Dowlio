@@ -126,18 +126,71 @@ public struct PageAnalyzer: Sendable {
         }
 
         let reading = await read(page, refusals: refusals)
-        async let fromSite = readSite(page, reading: reading, refusals: refusals)
-        let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
-        let site = await fromSite
-        let found = Self.joined(fromPage, site, on: page)
+        async let fromFrames = frameCandidates(on: page, reading: reading, within: longestLooking - (ContinuousClock.now - start))
+        let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
+        let framed = await fromFrames
+        let found = framed.isEmpty ? steps.found : Self.merged(steps.found + framed)
         if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
-        guard play != nil, !page.hasDataFromDowlioConnect, isThin(found, readerFound: site != nil, on: page) else { return report(.found(found)) }
+        guard play != nil, !page.hasDataFromDowlioConnect, isThin(found, readerFound: steps.readerFound, on: page) else { return report(.found(found)) }
         let left = longestLooking - (ContinuousClock.now - start)
         guard left > .seconds(1) else { return report(.found(found)) }
         report(.checkingForMore(found))
         guard let more = await lookedAgain(page, within: left) else { return }
         report(.found(Self.added(more.candidates, to: found)))
+    }
+
+    static let mostFramesRead = 3
+
+    private func frameCandidates(on page: SentPage, reading: HTMLReader?, within limit: Duration) async -> [Candidate] {
+        guard page.framedBy == nil, !page.hasDataFromDowlioConnect, let reading else { return [] }
+        let picked = Array(reading.playerFrames(recognisedBy: readers).prefix(Self.mostFramesRead))
+        guard !picked.isEmpty else { return [] }
+        let parentLabel = Self.label(of: page, reading: reading)
+        return await withTaskGroup(of: (Int, [Candidate])?.self) { group in
+            for (index, frame) in picked.enumerated() {
+                group.addTask {
+                    let framed = SentPage(url: frame.url, userAgent: page.userAgent, framedBy: page.url)
+                    return (index, await self.quickCandidates(on: framed, labelledAs: parentLabel))
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            var found: [Int: [Candidate]] = [:]
+            while found.count < picked.count, let next = await group.next() {
+                guard let (index, candidates) = next else { break }
+                found[index] = candidates
+            }
+            group.cancelAll()
+            return picked.indices.flatMap { found[$0] ?? [] }
+        }
+    }
+
+    private struct QuickSteps {
+        var found: [Candidate]
+        var readerFound: Bool
+    }
+
+    private func quickSteps(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> QuickSteps {
+        async let fromSite = readSite(page, reading: reading, refusals: refusals)
+        let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
+        let site = await fromSite
+        return QuickSteps(found: Self.joined(fromPage, site, on: page), readerFound: site != nil)
+    }
+
+    private func quickCandidates(on page: SentPage, labelledAs fallback: String) async -> [Candidate] {
+        let refusals = Refusals()
+        let reading = await read(page, refusals: refusals)
+        let steps = await quickSteps(on: page, reading: reading, refusals: refusals) { _ in }
+        let ownLabel = Self.label(of: page, reading: reading)
+        let titled = reading?.title != nil
+        return steps.found.map { candidate in
+            var labelled = candidate
+            if !titled, candidate.label == ownLabel { labelled.label = fallback }
+            return labelled
+        }
     }
 
     private func isThin(_ found: [Candidate], readerFound: Bool, on page: SentPage) -> Bool {
@@ -660,6 +713,7 @@ public struct PageAnalyzer: Sendable {
     }
 
     private static func looksLikeAnAd(_ version: Version, on page: URL) -> Bool {
+        if AdSites.hosts(version.source.url) { return true }
         guard let size = version.totalBytes, size < smallestWatchedFileFromAnotherSite else { return false }
         return site(of: version.source.url) != site(of: page)
     }
@@ -685,9 +739,11 @@ public struct PageAnalyzer: Sendable {
     private func read(_ page: SentPage, refusals: Refusals) async -> HTMLReader? {
         var request = URLRequest(url: page.url)
         request.setValue("text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        for (name, value) in ["Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document", "Sec-Fetch-Site": "none"] {
+        let fetchSite = page.framedBy.map { Self.site(of: $0) == Self.site(of: page.url) ? "same-site" : "cross-site" } ?? "none"
+        for (name, value) in ["Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": page.framedBy == nil ? "document" : "iframe", "Sec-Fetch-Site": fetchSite] {
             request.setValue(value, forHTTPHeaderField: name)
         }
+        if let parent = page.framedBy { request.setValue(parent.absoluteString, forHTTPHeaderField: "Referer") }
         if let agent = page.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         identify(&request)
         if !page.cookies.isEmpty {

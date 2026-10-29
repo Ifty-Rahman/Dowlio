@@ -12,6 +12,7 @@ public struct SentPage: Equatable, Sendable {
     public var embeddedJSON: [String]
     public var watched: [WatchedRequest]
     public var throughDowlioConnect: Bool
+    public var framedBy: URL?
 
     public init(
         url: URL,
@@ -23,7 +24,8 @@ public struct SentPage: Equatable, Sendable {
         players: [ScannedPlayer] = [],
         embeddedJSON: [String] = [],
         watched: [WatchedRequest] = [],
-        throughDowlioConnect: Bool = false
+        throughDowlioConnect: Bool = false,
+        framedBy: URL? = nil
     ) {
         self.url = url
         self.title = title
@@ -35,6 +37,7 @@ public struct SentPage: Equatable, Sendable {
         self.embeddedJSON = embeddedJSON
         self.watched = watched
         self.throughDowlioConnect = throughDowlioConnect
+        self.framedBy = framedBy
     }
 }
 

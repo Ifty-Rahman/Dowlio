@@ -7,6 +7,8 @@ struct HTMLReader {
     private(set) var duration: Double?
     private(set) var embeddedJSON: [String] = []
     private(set) var scriptMedia: [URL] = []
+    private(set) var frames: [Frame] = []
+    private(set) var hasVideoElement = false
     let html: String
 
     init(_ html: String, base: URL) {
@@ -21,6 +23,7 @@ struct HTMLReader {
             switch tag.name {
             case "video", "audio":
                 openMedia = tag.name == "audio" ? .audio : .video
+                if openMedia == .video { hasVideoElement = true }
                 players += 1
                 player = players
                 if let url = link("src") {
@@ -35,6 +38,10 @@ struct HTMLReader {
                 player = nil
             case "a":
                 continue
+            case "iframe":
+                if let url = link("src"), !frames.contains(where: { $0.url == url }) {
+                    frames.append(Frame(url: url, width: Self.pixels(attributes["width"]), height: Self.pixels(attributes["height"])))
+                }
             case "meta":
                 readMeta(attributes, base: base)
             default:
@@ -107,12 +114,37 @@ struct HTMLReader {
         return own + entry.values.flatMap { value in value is [Any] || value is [String: Any] ? mediaObjects(in: value) : [] }
     }
 
+    func playerFrames(recognisedBy readers: [any SiteReader]) -> [Frame] {
+        let usable = frames.filter { !AdSites.hosts($0.url) }
+        let recognised = usable.filter { frame in readers.contains { $0.recognises(frame.url) } }
+        guard recognised.isEmpty, !hasVideoElement else { return recognised }
+        let players = usable.filter(\.canHoldAPlayer)
+        return players.count == 1 ? players : []
+    }
+
+    struct Frame {
+        static let smallestPlayer = (width: 300, height: 150)
+
+        var url: URL
+        var width: Int?
+        var height: Int?
+
+        var canHoldAPlayer: Bool {
+            (width ?? Self.smallestPlayer.width) >= Self.smallestPlayer.width && (height ?? Self.smallestPlayer.height) >= Self.smallestPlayer.height
+        }
+    }
+
+    private static func pixels(_ value: String?) -> Int? {
+        guard let value, let match = value.firstMatch(of: /^\s*(\d+)(px)?\s*$/) else { return nil }
+        return Int(match.1)
+    }
+
     struct Tag {
         var name: String
         var attributes: [String: String]
     }
 
-    static func tags(in html: String, named names: [String] = ["/?video", "/?audio", "meta", "source", "a"]) -> [Tag] {
+    static func tags(in html: String, named names: [String] = ["/?video", "/?audio", "meta", "source", "a", "iframe"]) -> [Tag] {
         let pattern = try! NSRegularExpression(pattern: #"<("# + names.joined(separator: "|") + #")(?![-\w])([^>]*)>"#, options: [.caseInsensitive])
         let attribute = try! NSRegularExpression(pattern: #"([A-Za-z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#)
         let text = html as NSString
