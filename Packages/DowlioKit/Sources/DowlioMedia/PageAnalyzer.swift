@@ -336,7 +336,7 @@ public struct PageAnalyzer: Sendable {
         let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
         let sitePage = SitePage(
             url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), html: reading?.html, cookies: page.cookies,
-            framedBy: page.framedBy, post: { url, body in try await self.readerData(at: url, for: page, posting: body) }
+            framedBy: page.framedBy, send: { url, body, headers in try await self.readerData(at: url, for: page, sending: body, headers: headers) }
         ) { url in
             try await self.readerData(at: url, for: page)
         }
@@ -397,15 +397,15 @@ public struct PageAnalyzer: Sendable {
         )]
     }
 
-    private func readerData(at url: URL, for page: SentPage, posting body: Data? = nil) async throws -> Data {
+    private func readerData(at url: URL, for page: SentPage, sending body: Data? = nil, headers: [String: String] = [:]) async throws -> Data {
         var options = mediaOptions(page, for: url)
         if let parent = page.framedBy { options.referrer = parent }
         var request = request(for: url, options: options)
         request.httpShouldHandleCookies = false
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         if let body {
             request.httpMethod = "POST"
             request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SiteReaderError.unreadable }

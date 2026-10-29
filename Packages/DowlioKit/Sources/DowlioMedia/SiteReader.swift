@@ -31,7 +31,7 @@ enum EmbedAddresses {
 
 public struct SitePage: Sendable {
     public typealias Fetch = @Sendable (URL) async throws -> Data
-    public typealias Post = @Sendable (URL, Data) async throws -> Data
+    public typealias Send = @Sendable (URL, Data?, [String: String]) async throws -> Data
 
     public var url: URL
     public var embeddedJSON: [String]
@@ -39,10 +39,10 @@ public struct SitePage: Sendable {
     public var cookies: [Cookie]
     public var framedBy: URL?
     private let fetch: Fetch
-    private let post: Post?
+    private let send: Send?
 
     public init(
-        url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], framedBy: URL? = nil, post: Post? = nil,
+        url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], framedBy: URL? = nil, send: Send? = nil,
         fetch: @escaping Fetch
     ) {
         self.url = url
@@ -50,7 +50,7 @@ public struct SitePage: Sendable {
         self.html = html
         self.cookies = cookies
         self.framedBy = framedBy
-        self.post = post
+        self.send = send
         self.fetch = fetch
     }
 
@@ -63,9 +63,18 @@ public struct SitePage: Sendable {
     }
 
     public func json(posting body: [String: Any], to url: URL) async throws -> Any {
-        guard let post else { throw SiteReaderError.unreadable }
+        guard let send else { throw SiteReaderError.unreadable }
         let sent = try JSONSerialization.data(withJSONObject: body)
-        return try JSONSerialization.jsonObject(with: try await post(url, sent), options: [.fragmentsAllowed])
+        return try JSONSerialization.jsonObject(with: try await send(url, sent, ["Content-Type": "application/json"]), options: [.fragmentsAllowed])
+    }
+
+    public func json(at url: URL, headers: [String: String]) async throws -> Any {
+        guard let send else { throw SiteReaderError.unreadable }
+        return try JSONSerialization.jsonObject(with: try await send(url, nil, headers), options: [.fragmentsAllowed])
+    }
+
+    public func text(at url: URL) async throws -> String {
+        String(decoding: try await fetch(url), as: UTF8.self)
     }
 }
 
@@ -147,6 +156,7 @@ public enum SiteReaders {
     public static let all: [any SiteReader] = [
         XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(),
         LinkedInReader(), SnapchatReader(), VimeoReader(), DailymotionReader(), StreamableReader(), LoomReader(),
+        WistiaReader(), BrightcoveReader(), KalturaReader(), VidyardReader(),
     ] + WebPlayerReader.all
 }
 

@@ -1,0 +1,1 @@
+/*! trimmed player script */ !function(){var e={"account_id":"1752604059001","player":{"template":{"name":"single-video-template"}},"video_cloud":{"policy_key":"BCpkTESTpolicyKey00000000000000000000","video":null},"policyKey":"BCpkTESTpolicyKey00000000000000000000"};window.bcPlayerConfig=e}();
