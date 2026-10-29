@@ -11,6 +11,7 @@ public struct PageAnalyzer: Sendable {
     private let play: LookAgain?
     private let readers: [any SiteReader]
     private let readerFailed: @Sendable (ReaderFailure) -> Void
+    private let sizes: SizeCheck
 
     public init(
         session: URLSession = .shared,
@@ -24,6 +25,7 @@ public struct PageAnalyzer: Sendable {
         self.readers = readers
         self.readerFailed = readerFailed
         self.inspect = inspect
+        self.sizes = SizeCheck(inspect: inspect)
     }
 
     public func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
@@ -90,7 +92,7 @@ public struct PageAnalyzer: Sendable {
 
     private func linkedPlaylist(_ page: SentPage, label: String) async -> PageAnalysis {
         let refusals = Refusals()
-        let candidates = await streamCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil, fragments: StreamFragments())
+        let candidates = await sized(await streamCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil, fragments: StreamFragments()), on: page)
         return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates.map { $0.withExtractedAudio(splittable: []) })
     }
 
@@ -100,7 +102,8 @@ public struct PageAnalyzer: Sendable {
         let streams = candidate.unprobed.filter { $0.kind == .manifest }.map(\.url)
         let context = PageContext(page: page, reading: nil, label: candidate.label, shown: Set(files.map(\.url)), watchedFiles: [])
         let probed = await probe(PageLayout.Bucket(files: files, streams: streams), in: context, refusals: Refusals())
-        var found = Self.merged(context.fragments.withoutListedFragments(in: probed.candidates)).first?.withExtractedAudio(splittable: probed.splittable) ?? candidate
+        let merged = Self.merged(context.fragments.withoutListedFragments(in: probed.candidates))
+        var found = await sized(merged, on: page).first?.withExtractedAudio(splittable: probed.splittable) ?? candidate
         found.label = candidate.label
         found.thumbnail = candidate.thumbnail ?? found.thumbnail
         found.isOnScreen = candidate.isOnScreen
@@ -170,7 +173,7 @@ public struct PageAnalyzer: Sendable {
         } else {
             found = Self.merged(layout.buckets.indices.flatMap { probed[$0]?.candidates ?? [] })
         }
-        return fragments.withoutListedFragments(in: found).map { $0.withExtractedAudio(splittable: splittable) }
+        return await sized(fragments.withoutListedFragments(in: found), on: page).map { $0.withExtractedAudio(splittable: splittable) }
     }
 
     private static func label(of page: SentPage, reading: HTMLReader?) -> String {
@@ -197,9 +200,7 @@ public struct PageAnalyzer: Sendable {
         }
         let fallback = Self.label(of: page, reading: reading)
         var found: [Candidate] = []
-        for (index, video) in videos.enumerated() {
-            var video = video
-            if index < PageLayout.probedAtOnce { video.versions = await sized(video.versions, on: page) }
+        for video in videos {
             let label = video.label ?? Self.player(lasting: video.duration, on: page)?.label ?? fallback
             found += await candidates(of: video, on: page, label: label, refusals: refusals)
         }
@@ -207,18 +208,15 @@ public struct PageAnalyzer: Sendable {
             readerFailed(ReaderFailure(reader: reader.name, site: site, reason: "found nothing"))
             return nil
         }
-        return SiteFinding(candidates: found.map { $0.withExtractedAudio(splittable: []) }, isPost: reader.post(in: page.url) != nil)
+        return SiteFinding(candidates: await sized(found, on: page).map { $0.withExtractedAudio(splittable: []) }, isPost: reader.post(in: page.url) != nil)
     }
 
-    private func sized(_ versions: [Version], on page: SentPage) async -> [Version] {
-        await withTaskGroup(of: (Int, Int64?).self) { group in
-            for (index, version) in versions.enumerated() where version.totalBytes == nil {
-                guard case .file(let url) = version.source else { continue }
-                group.addTask { [inspect] in (index, try? await inspect(url, mediaOptions(page, for: url)).totalBytes) }
-            }
-            var sized = versions
-            for await (index, size) in group { sized[index].totalBytes = size }
-            return sized
+    private func sized(_ candidates: [Candidate], on page: SentPage) async -> [Candidate] {
+        await sizes.sized(candidates) { url, version in
+            var options = mediaOptions(page, for: url)
+            if let referrer = version.referrer { options.referrer = referrer }
+            if let agent = version.userAgent { options.userAgent = agent }
+            return options
         }
     }
 
