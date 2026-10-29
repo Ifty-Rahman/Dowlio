@@ -334,7 +334,10 @@ public struct PageAnalyzer: Sendable {
         }
         guard !chosen.isEmpty else { return nil }
         let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
-        let sitePage = SitePage(url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), html: reading?.html, cookies: page.cookies) { url in
+        let sitePage = SitePage(
+            url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), html: reading?.html, cookies: page.cookies,
+            framedBy: page.framedBy, post: { url, body in try await self.readerData(at: url, for: page, posting: body) }
+        ) { url in
             try await self.readerData(at: url, for: page)
         }
         let fallback = Self.label(of: page, reading: reading)
@@ -394,9 +397,16 @@ public struct PageAnalyzer: Sendable {
         )]
     }
 
-    private func readerData(at url: URL, for page: SentPage) async throws -> Data {
-        var request = request(for: url, options: mediaOptions(page, for: url))
+    private func readerData(at url: URL, for page: SentPage, posting body: Data? = nil) async throws -> Data {
+        var options = mediaOptions(page, for: url)
+        if let parent = page.framedBy { options.referrer = parent }
+        var request = request(for: url, options: options)
         request.httpShouldHandleCookies = false
+        if let body {
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SiteReaderError.unreadable }
         guard (200..<300).contains(http.statusCode) else { throw SiteReaderError.refused(status: http.statusCode) }

@@ -136,6 +136,7 @@ enum SiteCheck {
         switch restriction {
         case .protected: "protected"
         case .live: "live"
+        case .needsPassword: "needs password"
         }
     }
 

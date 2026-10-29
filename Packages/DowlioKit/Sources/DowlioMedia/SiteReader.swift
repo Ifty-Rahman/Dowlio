@@ -8,26 +8,49 @@ public protocol SiteReader: Sendable {
     func post(in page: URL) -> String?
     func read(_ page: SitePage) async throws -> [SiteVideo]
     func recognisesPlayer(in html: String) -> Bool
+    func embeds(in html: String) -> [URL]
 }
 
 extension SiteReader {
     public func recognisesPlayer(in html: String) -> Bool { false }
+    public func embeds(in html: String) -> [URL] { [] }
+}
+
+enum EmbedAddresses {
+    static func found(_ pattern: NSRegularExpression, in html: String, address: (String) -> URL?) -> [URL] {
+        let text = ScriptMedia.unescaped(html)
+        let ns = text as NSString
+        var found: [URL] = []
+        for match in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            guard let url = address(ns.substring(with: match.range(at: 1))), !found.contains(url) else { continue }
+            found.append(url)
+        }
+        return found
+    }
 }
 
 public struct SitePage: Sendable {
     public typealias Fetch = @Sendable (URL) async throws -> Data
+    public typealias Post = @Sendable (URL, Data) async throws -> Data
 
     public var url: URL
     public var embeddedJSON: [String]
     public var html: String?
     public var cookies: [Cookie]
+    public var framedBy: URL?
     private let fetch: Fetch
+    private let post: Post?
 
-    public init(url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], fetch: @escaping Fetch) {
+    public init(
+        url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], framedBy: URL? = nil, post: Post? = nil,
+        fetch: @escaping Fetch
+    ) {
         self.url = url
         self.embeddedJSON = embeddedJSON
         self.html = html
         self.cookies = cookies
+        self.framedBy = framedBy
+        self.post = post
         self.fetch = fetch
     }
 
@@ -37,6 +60,12 @@ public struct SitePage: Sendable {
 
     public func json(at url: URL) async throws -> Any {
         try JSONSerialization.jsonObject(with: try await fetch(url), options: [.fragmentsAllowed])
+    }
+
+    public func json(posting body: [String: Any], to url: URL) async throws -> Any {
+        guard let post else { throw SiteReaderError.unreadable }
+        let sent = try JSONSerialization.data(withJSONObject: body)
+        return try JSONSerialization.jsonObject(with: try await post(url, sent), options: [.fragmentsAllowed])
     }
 }
 
@@ -117,7 +146,7 @@ public struct ReaderFailure: Equatable, Sendable {
 public enum SiteReaders {
     public static let all: [any SiteReader] = [
         XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(),
-        LinkedInReader(), SnapchatReader(),
+        LinkedInReader(), SnapchatReader(), VimeoReader(), DailymotionReader(), StreamableReader(), LoomReader(),
     ] + WebPlayerReader.all
 }
 
@@ -162,6 +191,10 @@ extension Dictionary where Key == String, Value == Any {
 }
 
 extension URL {
+    func queryValue(_ name: String) -> String? {
+        URLComponents(url: self, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == name }?.value
+    }
+
     func pathComponent(after markers: Set<String>) -> String? {
         let parts = Array(pathComponents.dropFirst())
         guard let index = parts.firstIndex(where: markers.contains), index + 1 < parts.count else { return nil }

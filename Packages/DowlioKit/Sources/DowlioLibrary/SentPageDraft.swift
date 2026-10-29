@@ -118,13 +118,14 @@ public struct SentPageDraft: Equatable, Sendable {
         guard !found.isEmpty else { return .nothingFound }
         let restrictions = Set(found.map(\.restriction))
         guard restrictions.count == 1, let only = restrictions.first, let restriction = only else { return .found }
-        return .restricted(restriction)
+        return restriction == .needsPassword ? .needsSignIn : .restricted(restriction)
     }
 
     public var restrictionLine: String? {
         switch selectedCandidate?.restriction {
         case .protected: "This video is protected and can't be downloaded"
         case .live: "Live stream, not supported yet"
+        case .needsPassword: Self.passwordLine
         case nil: nil
         }
     }
@@ -140,7 +141,10 @@ public struct SentPageDraft: Equatable, Sendable {
         play = nil
     }
 
+    static let passwordLine = "This video needs a password. Open it in your browser, enter the password, then send the page."
+
     public var signIn: [String] {
+        if !candidates.isEmpty, candidates.allSatisfy({ $0.restriction == .needsPassword }) { return [Self.passwordLine] }
         let next = "This site only shows this video to signed-in visitors. Sign in to it in your browser, then send the page again."
         return page.throughDowlioConnect ? [next] : [next, "Install Dowlio Connect so Dowlio can use your sign-in."]
     }

@@ -116,6 +116,7 @@ public struct Candidate: Equatable, Sendable {
     public enum Restriction: Hashable, Sendable {
         case protected
         case live
+        case needsPassword
     }
 
     public var label: String

@@ -116,7 +116,10 @@ struct HTMLReader {
 
     func playerFrames(recognisedBy readers: [any SiteReader]) -> [Frame] {
         let usable = frames.filter { !AdSites.hosts($0.url) }
-        let recognised = usable.filter { frame in readers.contains { $0.recognises(frame.url) } }
+        var recognised = usable.filter { frame in readers.contains { $0.recognises(frame.url) } }
+        for url in readers.flatMap({ $0.embeds(in: html) }) where !recognised.contains(where: { $0.url == url }) {
+            recognised.append(Frame(url: url))
+        }
         guard recognised.isEmpty, !hasVideoElement else { return recognised }
         let players = usable.filter(\.canHoldAPlayer)
         return players.count == 1 ? players : []

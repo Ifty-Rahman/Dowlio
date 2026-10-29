@@ -37,3 +37,14 @@ struct NeedsSignInDraftTests {
         #expect(draft.downloads.isEmpty)
     }
 }
+
+struct NeedsPasswordDraftTests {
+    @Test func aVideoThatNeedsAPasswordSaysHowToGetIt() {
+        var draft = SentPageDraft(page: SentPage(url: URL(string: "https://vimeo.com/11111111")!))
+
+        _ = draft.update(.found([Candidate(label: "Private Video", versions: [], restriction: .needsPassword)]))
+
+        #expect(draft.phase == .needsSignIn)
+        #expect(draft.signIn == ["This video needs a password. Open it in your browser, enter the password, then send the page."])
+    }
+}
