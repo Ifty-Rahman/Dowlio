@@ -1,0 +1,33 @@
+{
+  "page": "/video-1/clip/",
+  "html": "<html><head><title>Holiday clip - TUBE</title><meta property=\"og:duration\" content=\"1298\"></head><body><div id=\"player\"></div></body></html>",
+  "players": [
+    { "group": 1, "label": "Video Player is loading.Current Time 0:00Duration 21:37Load…", "duration": 1297.998, "visibility": 1, "poster": "{{server}}/thumbs/1/5_360.jpg", "origin": "{{server}}" }
+  ],
+  "scan": [
+    "{{server}}/dload/1/240/1-240p-av1.mp4",
+    "{{server}}/dload/1/240/1-240p.mp4",
+    "{{server}}/dload/1/360/1-360p-av1.mp4",
+    "{{server}}/dload/1/360/1-360p.mp4"
+  ],
+  "watched": [
+    { "kind": "manifest", "type": "application/vnd.apple.mpegurl", "url": "{{server}}/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/master.m3u8?hash=h&expires=1&ip=x" },
+    { "kind": "manifest", "type": "application/vnd.apple.mpegurl", "url": "{{server}}/cdn/1-,240p-av1,360p-av1,.mp4.urlset/index-f2-v1-a1.m3u8?hash=h&expires=1&ip=x&id=1" },
+    { "kind": "file", "type": "video/mp4", "url": "{{server}}/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/init-f2-v1-a1.mp4?hash=h&expires=1&ip=x&id=1" },
+    { "kind": "file", "type": "video/mp4", "url": "{{server}}/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/init-f1-v1-a1.mp4?hash=h&expires=1&ip=x&id=1" },
+    { "kind": "file", "type": "video/mp4", "url": "{{server}}/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/seg-1-f2-v1-a1.m4s?hash=h&expires=1&ip=x&id=1" }
+  ],
+  "files": [
+    { "path": "/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/master.m3u8", "type": "application/vnd.apple.mpegurl", "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=230000,RESOLUTION=426x240,CODECS=\"av01.0.04M.08,mp4a.40.2\"\nindex-f1-v1-a1.m3u8?hash=h&expires=1\n#EXT-X-STREAM-INF:BANDWIDTH=336000,RESOLUTION=640x360,CODECS=\"av01.0.05M.08,mp4a.40.2\"\nindex-f2-v1-a1.m3u8?hash=h&expires=1\n" },
+    { "path": "/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/index-f1-v1-a1.m3u8", "type": "application/vnd.apple.mpegurl", "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:649\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"init-f1-v1-a1.mp4?hash=h\"\n#EXTINF:649.0,\nseg-1-f1-v1-a1.m4s?hash=h\n#EXTINF:649.0,\nseg-2-f1-v1-a1.m4s?hash=h\n#EXT-X-ENDLIST\n" },
+    { "path": "/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/index-f2-v1-a1.m3u8", "type": "application/vnd.apple.mpegurl", "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:649\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"init-f2-v1-a1.mp4?hash=h\"\n#EXTINF:649.0,\nseg-1-f2-v1-a1.m4s?hash=h\n#EXTINF:649.0,\nseg-2-f2-v1-a1.m4s?hash=h\n#EXT-X-ENDLIST\n" },
+    { "path": "/cdn/1-,240p-av1,360p-av1,.mp4.urlset/index-f2-v1-a1.m3u8", "type": "application/vnd.apple.mpegurl", "text": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:649\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"init-f2-v1-a1.mp4?hash=h\"\n#EXTINF:649.0,\nseg-1-f2-v1-a1.m4s?hash=h\n#EXTINF:649.0,\nseg-2-f2-v1-a1.m4s?hash=h\n#EXT-X-ENDLIST\n" },
+    { "path": "/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/init-f1-v1-a1.mp4", "type": "video/mp4", "bytes": 1180 },
+    { "path": "/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/init-f2-v1-a1.mp4", "type": "video/mp4", "bytes": 1180 },
+    { "path": "/hls/v3/1-,240p-av1,360p-av1,.mp4.urlset/seg-1-f2-v1-a1.m4s", "type": "video/mp4", "bytes": 90000 },
+    { "path": "/dload/1/240/1-240p-av1.mp4", "type": "video/mp4", "bytes": 3858336 },
+    { "path": "/dload/1/240/1-240p.mp4", "type": "video/mp4", "bytes": 4991687 },
+    { "path": "/dload/1/360/1-360p-av1.mp4", "type": "video/mp4", "bytes": 5572755 },
+    { "path": "/dload/1/360/1-360p.mp4", "type": "video/mp4", "bytes": 9388900 }
+  ]
+}

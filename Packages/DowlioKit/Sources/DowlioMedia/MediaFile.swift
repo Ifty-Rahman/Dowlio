@@ -17,11 +17,12 @@ public enum MediaFile {
 
     public static func height(in text: String) -> Int? {
         let lowered = text.lowercased()
-        if let match = lowered.firstMatch(of: /(\d{3,4})x(\d{3,4})/), let width = Int(match.1), let height = Int(match.2) {
-            return min(width, height)
-        }
-        if let match = lowered.firstMatch(of: /(?:^|[^\d])(\d{3,4})p(?![a-z])/), let height = Int(match.1) { return height }
-        return nil
+        let sizes = Set(lowered.matches(of: /(\d{3,4})x(\d{3,4})/).compactMap { match in
+            Int(match.1).flatMap { width in Int(match.2).map { min(width, $0) } }
+        })
+        if !sizes.isEmpty { return sizes.count == 1 ? sizes.first : nil }
+        let named = Set(lowered.matches(of: /(?:^|[^\d])(\d{3,4})p(?![a-z])/).compactMap { Int($0.1) })
+        return named.count == 1 ? named.first : nil
     }
 
     public static func codecs(in text: String) -> String? {

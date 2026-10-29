@@ -27,11 +27,11 @@ public struct PageAnalyzer: Sendable {
     }
 
     public func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
-        stream { await run(page, report: $0) }
+        stream { await run(page.withoutControlLabels, report: $0) }
     }
 
     public func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
-        stream { await playAndRead(page, report: $0) }
+        stream { await playAndRead(page.withoutControlLabels, report: $0) }
     }
 
     private func stream(_ work: @escaping @Sendable (@escaping @Sendable (PageAnalysis) -> Void) async -> Void) -> AsyncStream<PageAnalysis> {
@@ -90,16 +90,17 @@ public struct PageAnalyzer: Sendable {
 
     private func linkedPlaylist(_ page: SentPage, label: String) async -> PageAnalysis {
         let refusals = Refusals()
-        let candidates = await streamCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil)
+        let candidates = await streamCandidates([page.url], page: page, refusals: refusals, label: label, thumbnail: nil, fragments: StreamFragments())
         return candidates.isEmpty && refusals.any ? .needsSignIn : .found(candidates.map { $0.withExtractedAudio(splittable: []) })
     }
 
-    public func probe(_ candidate: Candidate, on page: SentPage) async -> Candidate {
+    public func probe(_ candidate: Candidate, on sent: SentPage) async -> Candidate {
+        let page = sent.withoutControlLabels
         let files = candidate.unprobed.filter { $0.kind == .file }.map { ScannedMedia(url: $0.url, kind: MediaFile.kind(of: $0.url, contentType: $0.contentType) ?? .video) }
         let streams = candidate.unprobed.filter { $0.kind == .manifest }.map(\.url)
         let context = PageContext(page: page, reading: nil, label: candidate.label, shown: Set(files.map(\.url)), watchedFiles: [])
         let probed = await probe(PageLayout.Bucket(files: files, streams: streams), in: context, refusals: Refusals())
-        var found = Self.merged(probed.candidates).first?.withExtractedAudio(splittable: probed.splittable) ?? candidate
+        var found = Self.merged(context.fragments.withoutListedFragments(in: probed.candidates)).first?.withExtractedAudio(splittable: probed.splittable) ?? candidate
         found.label = candidate.label
         found.thumbnail = candidate.thumbnail ?? found.thumbnail
         found.isOnScreen = candidate.isOnScreen
@@ -114,15 +115,19 @@ public struct PageAnalyzer: Sendable {
         var label: String
         var shown: Set<URL>
         var watchedFiles: Set<URL>
+        var fragments = StreamFragments()
     }
 
     private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
         for media in reading?.media ?? [] { players.add(media, from: "html") }
+        let streams = page.watched
+            .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
+            .map(\.url)
         let shown = Set(players.list.flatMap(\.sources).map(\.url))
         let watchedFiles = Set(page.watched.filter { $0.kind == .file }.map(\.url)).subtracting(shown)
-        for request in page.watched where request.kind == .file {
+        for request in page.watched where request.kind == .file && !StreamFragments.isNamedLikeAFragment(request.url, nextTo: streams) {
             let kind = MediaFile.kind(of: request.url, contentType: request.contentType) ?? .video
             if let group = PageLayout.matchingPlayer(for: request.url, in: page.players) {
                 players.add(ScannedMedia(url: request.url, kind: kind, group: group), from: "page")
@@ -130,12 +135,10 @@ public struct PageAnalyzer: Sendable {
                 players.add(ScannedMedia(url: request.url, kind: kind), from: "watched")
             }
         }
-        let streams = page.watched
-            .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
-            .map(\.url)
         let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams)
         let label = Self.label(of: page, reading: reading)
-        let context = PageContext(page: page, reading: reading, label: label, shown: shown, watchedFiles: watchedFiles)
+        let fragments = StreamFragments()
+        let context = PageContext(page: page, reading: reading, label: label, shown: shown, watchedFiles: watchedFiles, fragments: fragments)
         let placeholders = layout.buckets.map { placeholder(of: $0, in: context) }
         if !placeholders.isEmpty { report(.looking(placeholders)) }
 
@@ -167,7 +170,7 @@ public struct PageAnalyzer: Sendable {
         } else {
             found = Self.merged(layout.buckets.indices.flatMap { probed[$0]?.candidates ?? [] })
         }
-        return found.map { $0.withExtractedAudio(splittable: splittable) }
+        return fragments.withoutListedFragments(in: found).map { $0.withExtractedAudio(splittable: splittable) }
     }
 
     private static func label(of page: SentPage, reading: HTMLReader?) -> String {
@@ -228,7 +231,7 @@ public struct PageAnalyzer: Sendable {
         if let restriction = video.restriction {
             return [Candidate(label: label, thumbnail: video.thumbnail, duration: video.duration, versions: [], restriction: restriction)]
         }
-        let streamed = await streamCandidates(video.streams, page: page, refusals: refusals, label: label, thumbnail: video.thumbnail)
+        let streamed = await streamCandidates(video.streams, page: page, refusals: refusals, label: label, thumbnail: video.thumbnail, fragments: StreamFragments())
         let versions = Self.distinct(video.versions + streamed.flatMap(\.versions))
         guard !versions.isEmpty else { return streamed.filter { $0.restriction != nil } }
         return [Candidate(
@@ -335,7 +338,7 @@ public struct PageAnalyzer: Sendable {
             result.candidates.append(files)
         }
         let thumbnail = bucket.player?.poster ?? place.reading?.image ?? place.page.scan.lazy.compactMap(\.poster).first
-        let streamed = await streamCandidates(bucket.streams, page: place.page, refusals: refusals, label: shell.label, thumbnail: thumbnail)
+        let streamed = await streamCandidates(bucket.streams, page: place.page, refusals: refusals, label: shell.label, thumbnail: thumbnail, fragments: place.fragments)
         result.candidates += streamed.map { candidate in
             var placed = candidate
             if let duration = bucket.player?.duration, placed.duration == nil { placed.duration = duration }
@@ -344,7 +347,9 @@ public struct PageAnalyzer: Sendable {
         return result
     }
 
-    private func streamCandidates(_ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?) async -> [Candidate] {
+    private func streamCandidates(
+        _ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?, fragments: StreamFragments
+    ) async -> [Candidate] {
         var parsed: [(URL, Playlist)] = []
         var candidates: [Candidate] = []
         var seen = Set<URL>()
@@ -362,7 +367,9 @@ public struct PageAnalyzer: Sendable {
             master.variants.forEach { covered.insert(Self.withoutQuery($0.url)) }
             master.audio.compactMap(\.url).forEach { covered.insert(Self.withoutQuery($0)) }
         }
-        for (url, playlist) in parsed {
+        var coveredStreams = Set<String>()
+        let mastersFirst = parsed.filter { $0.1.isMaster } + parsed.filter { !$0.1.isMaster }
+        for (url, playlist) in mastersFirst {
             let options = mediaOptions(page, for: url)
             let referrer = page.referrer(of: url)
             switch playlist {
@@ -387,6 +394,8 @@ public struct PageAnalyzer: Sendable {
                     return results.sorted { $0.index < $1.index }
                 }
                 let playlists = found.compactMap(\.media) + audioPlaylists.values
+                playlists.forEach(fragments.note)
+                playlists.forEach { coveredStreams.insert($0.fragmentNames) }
                 let audio = Self.audioVersions(of: master, playlists: audioPlaylists)
                 let videos = found.compactMap(\.version)
                 let candidate = Candidate(
@@ -395,7 +404,8 @@ public struct PageAnalyzer: Sendable {
                 )
                 if let shown = candidate.offeredOrRestricted(by: playlists) { candidates.append(shown.referred(by: referrer)) }
             case .media(let media):
-                guard !covered.contains(Self.withoutQuery(url)) else { continue }
+                fragments.note(media)
+                guard !covered.contains(Self.withoutQuery(url)), !coveredStreams.contains(media.fragmentNames) else { continue }
                 let versions = HLSVersions.version(of: media, variant: nil).map { [$0] } ?? []
                 let candidate = Candidate(label: label, thumbnail: thumbnail, duration: media.duration, versions: versions)
                 if let shown = candidate.offeredOrRestricted(by: [media]) { candidates.append(shown.referred(by: referrer)) }
@@ -425,7 +435,7 @@ public struct PageAnalyzer: Sendable {
         }
     }
 
-    private static func withoutQuery(_ url: URL) -> String {
+    static func withoutQuery(_ url: URL) -> String {
         var parts = URLComponents(url: url, resolvingAgainstBaseURL: true)
         parts?.query = nil
         parts?.fragment = nil
@@ -460,10 +470,29 @@ public struct PageAnalyzer: Sendable {
 
     static func distinct(_ versions: [Version]) -> [Version] {
         var seen = Set<String>()
-        return versions.enumerated()
-            .filter { seen.insert(sameFile($0.element)).inserted }
+        var rows: [Version] = []
+        var rowOf: [String: Int] = [:]
+        for version in versions where seen.insert(sameFile(version)).inserted {
+            guard let key = sameRow(version) else {
+                rows.append(version)
+                continue
+            }
+            if let index = rowOf[key] {
+                if case .media = rows[index].source, case .file = version.source { rows[index] = version }
+            } else {
+                rowOf[key] = rows.count
+                rows.append(version)
+            }
+        }
+        return rows.enumerated()
             .sorted { ($0.element.height ?? 0, $0.offset) < ($1.element.height ?? 0, $1.offset) }
             .map(\.element)
+    }
+
+    private static func sameRow(_ version: Version) -> String? {
+        guard !version.isAudio, !version.isExtractedAudio, let height = version.height,
+              let codec = MediaCodecs.videoCodec(in: version.codecs) else { return nil }
+        return "\(height) \(codec) \(version.container)"
     }
 
     private static func sameFile(_ version: Version) -> String {
@@ -591,6 +620,22 @@ private struct VariantPlaylist: Sendable {
 private extension SentPage {
     func referrer(of url: URL) -> URL? {
         watched.first { $0.url == url }?.referrer
+    }
+}
+
+private extension Version {
+    var container: String {
+        switch source {
+        case .file(let url): url.pathExtension.lowercased()
+        case .media(let media): media.fileExtension
+        }
+    }
+}
+
+private extension Playlist {
+    var isMaster: Bool {
+        if case .master = self { return true }
+        return false
     }
 }
 

@@ -27,6 +27,12 @@ enum MediaCodecs {
         return seen.isEmpty ? nil : seen.joined(separator: " + ")
     }
 
+    static let videoNames: Set<String> = ["H.264", "HEVC", "AV1", "VP9"]
+
+    static func videoCodec(in names: String?) -> String? {
+        names?.components(separatedBy: " + ").first(where: videoNames.contains)
+    }
+
     static func withAAC(_ video: String) -> String {
         "\(video) + AAC"
     }

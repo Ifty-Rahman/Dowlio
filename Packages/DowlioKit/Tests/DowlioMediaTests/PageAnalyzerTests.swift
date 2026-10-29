@@ -241,9 +241,9 @@ struct PageAnalyzerTests {
         guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
         #expect(candidates.count == 1)
         let versions = try #require(candidates.first).versions
-        #expect(versions.map(\.height) == [240, 240, 720, 720, 720, 2160])
+        #expect(versions.map(\.height) == [240, 720, 720, 2160])
         #expect(versions.map { $0.source.url.pathComponents.suffix(2).joined(separator: "/") } == [
-            "240/1-240p.mp4", "240p/seg0.ts", "720/1-720p.mp4", "720/1-720p-av1.mp4", "720p/seg0.ts", "2160p/seg0.ts",
+            "240/1-240p.mp4", "720/1-720p.mp4", "720/1-720p-av1.mp4", "2160p/seg0.ts",
         ])
     }
 
