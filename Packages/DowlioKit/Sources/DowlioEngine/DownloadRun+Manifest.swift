@@ -19,6 +19,7 @@ extension DownloadRun {
             connections: options.connections,
             referrer: options.referrer,
             userAgent: options.userAgent,
+            origin: options.origin,
             segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) },
             layout: layout,
             nameConflictPolicy: options.nameConflictPolicy

@@ -8,6 +8,7 @@ struct ConnectionOpener: Sendable {
     let now: @Sendable () -> Date
     let shared: SharedSession?
     let readsLikeAPlayer: Bool
+    let identity: BrowserIdentity
 
     init(
         originalURL: URL,
@@ -15,8 +16,10 @@ struct ConnectionOpener: Sendable {
         idleTimeout: Duration,
         sessions: SessionMode,
         readsLikeAPlayer: Bool = false,
+        identity: BrowserIdentity,
         now: @escaping @Sendable () -> Date
     ) {
+        self.identity = identity
         self.originalURL = originalURL
         self.readsLikeAPlayer = readsLikeAPlayer
         self.options = options
@@ -81,8 +84,13 @@ struct ConnectionOpener: Sendable {
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
-        if readsLikeAPlayer, let origin = url.crossOrigin(from: options.referrer) { request.setValue(origin, forHTTPHeaderField: "Origin") }
-        if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        if let origin = options.origin ?? (readsLikeAPlayer ? url.crossOrigin(from: options.referrer) : nil) {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+        if let userAgent = options.userAgent ?? identity.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        if request.value(forHTTPHeaderField: "Accept-Language") == nil, let languages = identity.acceptLanguage {
+            request.setValue(languages, forHTTPHeaderField: "Accept-Language")
+        }
         // Cookies came from the link's own site, and a redirect may lead to another one.
         if !options.cookies.isEmpty, fromLinkSite {
             let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")

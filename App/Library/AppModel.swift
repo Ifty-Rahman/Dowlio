@@ -59,7 +59,7 @@ final class AppModel {
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let library = Library(engine: DownloadEngine(remux: AVRemuxer.remux), store: store)
+            let library = Library(engine: DownloadEngine(remux: AVRemuxer.remux, identity: { WebKitIdentity.shared.current }), store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
         } catch {
@@ -68,6 +68,7 @@ final class AppModel {
             return
         }
         Task { await follow() }
+        Task { await WebKitIdentity.shared.read() }
         KeyboardShortcuts.onKeyDown(for: .sendPage) { [weak self] in self?.sendFrontPage() }
         DebugLaunch.addLinks { [weak self] links in
             guard let self else { return }
@@ -224,7 +225,7 @@ final class AppModel {
         #else
         let readerFailed = ReaderFailure.log
         #endif
-        return PageAnalyzer(lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
+        return PageAnalyzer(identity: WebKitIdentity.shared.current, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
             try await library.inspect(url, options: options)
         }
     }
@@ -368,6 +369,7 @@ final class AppModel {
                 let chosen = draft.options(for: page.url)
                 var options = settings.options(connections: chosen.connections)
                 options.referrer = chosen.referrer ?? version.referrer ?? page.url
+                options.origin = version.origin
                 options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
                 options.cookies = chosen.cookies.isEmpty ? page.cookies : chosen.cookies
                 options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)

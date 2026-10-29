@@ -29,6 +29,7 @@ struct PartialFileManifest: Codable, Equatable, Sendable {
     var connections: Int
     var referrer: URL?
     var userAgent: String?
+    var origin: String?
     var segments: [Segment]
     /// Whether the server supports ranges. `nil` in a format 1 manifest, which didn't record it,
     /// so the download is read as whole and starts over on resume.

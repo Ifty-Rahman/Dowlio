@@ -7,7 +7,7 @@ import Foundation
 let usage = """
 usage: dowlio-cli get <url> [-c <connections>] [-o <folder>] [--shared-session]
        dowlio-cli resume <partial file>
-       dowlio-cli check-sites <file> [--json]
+       dowlio-cli check-sites <file> [--json] [--user-agent <value>]
 
   get     Download <url> into <folder> (default: the current folder) over up to
           <connections> connections (default: 8, at most 16).
@@ -18,6 +18,8 @@ usage: dowlio-cli get <url> [-c <connections>] [-o <folder>] [--shared-session]
           Analyse each link in <file>, one per line, as a pasted link with no
           browser and no Look Again, and print what each found. Blank lines and
           lines starting with # are skipped. --json prints the same as JSON.
+          --user-agent asks for every link with that user agent, as the app does
+          with its WebKit's own.
 
   Ctrl-C pauses the download and prints its partial file, for resume.
 """

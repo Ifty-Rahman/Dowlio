@@ -108,6 +108,9 @@ public struct RequestOptions: Equatable, Sendable {
     /// Sent as `Referer` on every request. Some servers only give the file to visitors who come
     /// from their own page.
     public var referrer: URL?
+    /// Sent as `Origin` on every request when set, for media a site's player reads from another
+    /// origin. Otherwise a player's request takes the referrer's origin.
+    public var origin: String?
     /// Sent as `User-Agent` on every request when set. Otherwise the system's default is sent.
     public var userAgent: String?
     /// Sent as one `Cookie` header on every request, for servers that only give the file to a

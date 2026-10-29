@@ -12,15 +12,18 @@ public struct PageAnalyzer: Sendable {
     private let readers: [any SiteReader]
     private let readerFailed: @Sendable (ReaderFailure) -> Void
     private let sizes: SizeCheck
+    private let identity: BrowserIdentity
 
     public init(
         session: URLSession = .shared,
+        identity: BrowserIdentity = BrowserIdentity(userAgent: nil),
         lookAgain: LookAgain? = nil,
         readers: [any SiteReader] = SiteReaders.all,
         readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
         inspect: @escaping Inspect
     ) {
         self.session = session
+        self.identity = identity
         self.play = lookAgain
         self.readers = readers
         self.readerFailed = readerFailed
@@ -29,17 +32,28 @@ public struct PageAnalyzer: Sendable {
     }
 
     public func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
-        stream { await run(page.withoutControlLabels, report: $0) }
+        let (identified, agent) = identified(page)
+        return stream(stampingVersionsWith: agent) { await run(identified, report: $0) }
     }
 
     public func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
-        stream { await playAndRead(page.withoutControlLabels, report: $0) }
+        let (identified, agent) = identified(page)
+        return stream(stampingVersionsWith: agent) { await playAndRead(identified, report: $0) }
     }
 
-    private func stream(_ work: @escaping @Sendable (@escaping @Sendable (PageAnalysis) -> Void) async -> Void) -> AsyncStream<PageAnalysis> {
+    private func identified(_ page: SentPage) -> (page: SentPage, addedAgent: String?) {
+        var identified = page.withoutControlLabels
+        guard identified.userAgent == nil, let agent = identity.userAgent else { return (identified, nil) }
+        identified.userAgent = agent
+        return (identified, agent)
+    }
+
+    private func stream(
+        stampingVersionsWith agent: String?, _ work: @escaping @Sendable (@escaping @Sendable (PageAnalysis) -> Void) async -> Void
+    ) -> AsyncStream<PageAnalysis> {
         AsyncStream { continuation in
             let task = Task {
-                await work { continuation.yield($0) }
+                await work { continuation.yield($0.requested(by: agent)) }
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
@@ -97,7 +111,7 @@ public struct PageAnalyzer: Sendable {
     }
 
     public func probe(_ candidate: Candidate, on sent: SentPage) async -> Candidate {
-        let page = sent.withoutControlLabels
+        let (page, agent) = identified(sent)
         let files = candidate.unprobed.filter { $0.kind == .file }.map { ScannedMedia(url: $0.url, kind: MediaFile.kind(of: $0.url, contentType: $0.contentType) ?? .video) }
         let streams = candidate.unprobed.filter { $0.kind == .manifest }.map(\.url)
         let context = PageContext(page: page, reading: nil, label: candidate.label, shown: Set(files.map(\.url)), watchedFiles: [])
@@ -109,7 +123,7 @@ public struct PageAnalyzer: Sendable {
         found.isOnScreen = candidate.isOnScreen
         found.isOther = candidate.isOther
         found.unprobed = []
-        return found
+        return found.requested(by: agent)
     }
 
     private struct PageContext: Sendable {
@@ -215,6 +229,7 @@ public struct PageAnalyzer: Sendable {
         await sizes.sized(candidates) { url, version in
             var options = mediaOptions(page, for: url)
             if let referrer = version.referrer { options.referrer = referrer }
+            if let origin = version.origin { options.origin = origin }
             if let agent = version.userAgent { options.userAgent = agent }
             return options
         }
@@ -229,8 +244,11 @@ public struct PageAnalyzer: Sendable {
         if let restriction = video.restriction {
             return [Candidate(label: label, thumbnail: video.thumbnail, duration: video.duration, versions: [], restriction: restriction)]
         }
-        let streamed = await streamCandidates(video.streams, page: page, refusals: refusals, label: label, thumbnail: video.thumbnail, fragments: StreamFragments())
-        let versions = Self.distinct(video.versions + streamed.flatMap(\.versions))
+        let streamed = await streamCandidates(
+            video.streams, page: page, refusals: refusals, label: label, thumbnail: video.thumbnail, fragments: StreamFragments(), rules: video.rules
+        )
+        let found = video.versions + streamed.flatMap(\.versions)
+        let versions = Self.distinct(video.rules.map { rules in found.map(rules.applied(to:)) } ?? found)
         guard !versions.isEmpty else { return streamed.filter { $0.restriction != nil } }
         return [Candidate(
             label: label, thumbnail: video.thumbnail ?? streamed.lazy.compactMap(\.thumbnail).first,
@@ -346,13 +364,17 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func streamCandidates(
-        _ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?, fragments: StreamFragments
+        _ urls: [URL], page: SentPage, refusals: Refusals, label: String, thumbnail: URL?, fragments: StreamFragments, rules: RequestRules? = nil
     ) async -> [Candidate] {
         var parsed: [(URL, Playlist)] = []
         var candidates: [Candidate] = []
         var seen = Set<URL>()
+        func options(for url: URL) -> RequestOptions {
+            let options = mediaOptions(page, for: url)
+            return rules?.applied(to: options) ?? options
+        }
         for url in urls where seen.insert(url).inserted {
-            guard let (data, http) = await fetch(request(for: url, options: mediaOptions(page, for: url)), refusals: refusals) else { continue }
+            guard let (data, http) = await fetch(request(for: url, options: options(for: url)), refusals: refusals) else { continue }
             if let playlist = Self.playlist(in: data, from: http, at: url) {
                 parsed.append((url, playlist))
             } else if let manifest = try? MPDParser.parse(data, base: http.url ?? url),
@@ -368,7 +390,7 @@ public struct PageAnalyzer: Sendable {
         var coveredStreams = Set<String>()
         let mastersFirst = parsed.filter { $0.1.isMaster } + parsed.filter { !$0.1.isMaster }
         for (url, playlist) in mastersFirst {
-            let options = mediaOptions(page, for: url)
+            let options = options(for: url)
             let referrer = page.referrer(of: url)
             switch playlist {
             case .master(let master):
@@ -511,11 +533,16 @@ public struct PageAnalyzer: Sendable {
         var request = URLRequest(url: url)
         if let agent = options.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
-        if let origin = url.crossOrigin(from: options.referrer) { request.setValue(origin, forHTTPHeaderField: "Origin") }
+        if let origin = options.origin ?? url.crossOrigin(from: options.referrer) { request.setValue(origin, forHTTPHeaderField: "Origin") }
+        identify(&request)
         if !options.cookies.isEmpty {
             request.setValue(options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
         return request
+    }
+
+    private func identify(_ request: inout URLRequest) {
+        if let languages = identity.acceptLanguage { request.setValue(languages, forHTTPHeaderField: "Accept-Language") }
     }
 
     private func fetch(_ request: URLRequest, refusals: Refusals) async -> (Data, HTTPURLResponse)? {
@@ -586,6 +613,7 @@ public struct PageAnalyzer: Sendable {
             request.setValue(value, forHTTPHeaderField: name)
         }
         if let agent = page.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
+        identify(&request)
         if !page.cookies.isEmpty {
             request.setValue(page.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
@@ -637,6 +665,17 @@ private extension Playlist {
     }
 }
 
+private extension PageAnalysis {
+    func requested(by agent: String?) -> PageAnalysis {
+        guard let agent else { return self }
+        switch self {
+        case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
+        case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
+        case .playing, .needsSignIn, .plainFile: return self
+        }
+    }
+}
+
 private extension Candidate {
     func joining(_ other: Candidate) -> Candidate {
         var joined = self
@@ -668,7 +707,7 @@ private extension Candidate {
         var requested = self
         requested.versions = versions.map { version in
             var version = version
-            version.userAgent = agent
+            version.userAgent = version.userAgent ?? agent
             return version
         }
         return requested

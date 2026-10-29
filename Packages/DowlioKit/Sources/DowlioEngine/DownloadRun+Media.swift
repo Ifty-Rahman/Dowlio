@@ -272,6 +272,7 @@ extension DownloadRun {
             connections: options.connections,
             referrer: options.referrer,
             userAgent: options.userAgent,
+            origin: options.origin,
             segments: [],
             layout: nil,
             nameConflictPolicy: options.nameConflictPolicy,

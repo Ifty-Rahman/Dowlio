@@ -35,11 +35,13 @@ public actor DownloadEngine {
     /// An engine whose learned host limits live in `hostLimits`. The default keeps them in memory.
     public init(
         hostLimits: any HostLimitStore = InMemoryHostLimitStore(),
-        remux: (@Sendable ([URL], URL) async throws -> Void)? = nil
+        remux: (@Sendable ([URL], URL) async throws -> Void)? = nil,
+        identity: @escaping @Sendable () -> BrowserIdentity = { BrowserIdentity(userAgent: nil) }
     ) {
         var configuration = EngineConfiguration()
         configuration.hostLimits = hostLimits
         configuration.remux = remux
+        configuration.identity = identity
         self.init(configuration: configuration)
     }
 
@@ -223,6 +225,7 @@ public actor DownloadEngine {
         options.connections = min(max(manifest.connections, 1), SegmentPlanner.maximumConnections)
         options.referrer = manifest.referrer
         options.userAgent = manifest.userAgent
+        options.origin = manifest.origin
         options.nameConflictPolicy = manifest.nameConflictPolicy ?? .keepBoth
         options.maximumFailures = maximumFailures
         options.allowsWorkStealing = allowsWorkStealing

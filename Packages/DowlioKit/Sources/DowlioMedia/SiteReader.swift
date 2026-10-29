@@ -42,10 +42,11 @@ public struct SiteVideo: Equatable, Sendable {
     public var versions: [Version]
     public var streams: [URL]
     public var restriction: Candidate.Restriction?
+    public var rules: RequestRules?
 
     public init(
         label: String? = nil, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version] = [], streams: [URL] = [],
-        restriction: Candidate.Restriction? = nil
+        restriction: Candidate.Restriction? = nil, rules: RequestRules? = nil
     ) {
         self.label = label
         self.thumbnail = thumbnail
@@ -53,6 +54,35 @@ public struct SiteVideo: Equatable, Sendable {
         self.versions = versions
         self.streams = streams
         self.restriction = restriction
+        self.rules = rules
+    }
+}
+
+public struct RequestRules: Equatable, Sendable {
+    public var referrer: URL?
+    public var origin: String?
+    public var userAgent: String?
+
+    public init(referrer: URL? = nil, origin: String? = nil, userAgent: String? = nil) {
+        self.referrer = referrer
+        self.origin = origin
+        self.userAgent = userAgent
+    }
+
+    func applied(to options: RequestOptions) -> RequestOptions {
+        var options = options
+        if let referrer { options.referrer = referrer }
+        if let origin { options.origin = origin }
+        if let userAgent { options.userAgent = userAgent }
+        return options
+    }
+
+    func applied(to version: Version) -> Version {
+        var version = version
+        version.referrer = version.referrer ?? referrer
+        version.origin = version.origin ?? origin
+        version.userAgent = version.userAgent ?? userAgent
+        return version
     }
 }
 

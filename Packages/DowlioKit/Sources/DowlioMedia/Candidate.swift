@@ -152,6 +152,7 @@ public struct Version: Equatable, Sendable {
     public var codecs: String?
     public var language: String?
     public var referrer: URL?
+    public var origin: String?
     public var userAgent: String?
 
     public init(
@@ -163,6 +164,7 @@ public struct Version: Equatable, Sendable {
         codecs: String? = nil,
         language: String? = nil,
         referrer: URL? = nil,
+        origin: String? = nil,
         userAgent: String? = nil
     ) {
         self.source = source
@@ -173,6 +175,7 @@ public struct Version: Equatable, Sendable {
         self.codecs = codecs
         self.language = language
         self.referrer = referrer
+        self.origin = origin
         self.userAgent = userAgent
     }
 }

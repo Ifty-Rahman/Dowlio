@@ -40,6 +40,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var nameConflictPolicy: NameConflictPolicy
     public var referrer: URL?
     public var userAgent: String?
+    public var requestOrigin: String?
     public var maximumFailures: Int?
     /// The name the user typed in the New Download sheet, kept so a download that starts later
     /// still gets it.
@@ -113,6 +114,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         nameConflictPolicy = options.nameConflictPolicy
         referrer = options.referrer
         userAgent = options.userAgent
+        requestOrigin = options.origin
         maximumFailures = options.maximumFailures
         usedCookies = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
     }
@@ -129,6 +131,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         options.nameConflictPolicy = nameConflictPolicy
         options.referrer = referrer
         options.userAgent = userAgent
+        options.origin = requestOrigin
         options.maximumFailures = maximumFailures
         options.fileName = chosenName
         options.allowsWorkStealing = allowsWorkStealing ?? true
@@ -245,6 +248,11 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("media source") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "mediaSource", .text)
+            }
+        }
+        migrator.registerMigration("request origin") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "requestOrigin", .text)
             }
         }
         return migrator

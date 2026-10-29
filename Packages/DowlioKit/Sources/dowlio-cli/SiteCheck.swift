@@ -40,8 +40,19 @@ enum SiteCheck {
     }
 
     static func run(_ arguments: [String]) async {
-        let asJSON = arguments.contains("--json")
-        let paths = arguments.filter { $0 != "--json" }
+        var rest = arguments[...]
+        var asJSON = false
+        var agent: String?
+        var paths: [String] = []
+        while let argument = rest.popFirst() {
+            switch argument {
+            case "--json": asJSON = true
+            case "--user-agent":
+                guard let value = rest.popFirst() else { fail(usage) }
+                agent = value
+            default: paths.append(argument)
+            }
+        }
         guard paths.count == 1 else { fail(usage) }
         let text: String
         do {
@@ -49,7 +60,7 @@ enum SiteCheck {
         } catch {
             fail("Can't read \(paths[0]).")
         }
-        let outcomes = await analyze(links(in: text))
+        let outcomes = await analyze(links(in: text), identity: BrowserIdentity(userAgent: agent))
         print(asJSON ? json(outcomes) : report(outcomes))
     }
 
@@ -62,22 +73,22 @@ enum SiteCheck {
         }
     }
 
-    static func analyze(_ links: [URL]) async -> [Outcome] {
-        let engine = DownloadEngine()
+    static func analyze(_ links: [URL], identity: BrowserIdentity) async -> [Outcome] {
+        let engine = DownloadEngine(identity: { identity })
         return await withTaskGroup(of: (Int, Outcome).self) { group in
             var found: [Int: Outcome] = [:]
             for (index, url) in links.enumerated() {
                 if index >= pagesAtOnce, let (done, outcome) = await group.next() { found[done] = outcome }
-                group.addTask { (index, await analyze(url, engine: engine)) }
+                group.addTask { (index, await analyze(url, engine: engine, identity: identity)) }
             }
             for await (done, outcome) in group { found[done] = outcome }
             return links.indices.compactMap { found[$0] }
         }
     }
 
-    private static func analyze(_ url: URL, engine: DownloadEngine) async -> Outcome {
+    private static func analyze(_ url: URL, engine: DownloadEngine, identity: BrowserIdentity) async -> Outcome {
         let pageError = PageError()
-        let analyzer = PageAnalyzer(readerFailed: { _ in }) { inspected, options in
+        let analyzer = PageAnalyzer(identity: identity, readerFailed: { _ in }) { inspected, options in
             do {
                 return try await engine.inspect(inspected, options: options)
             } catch {
