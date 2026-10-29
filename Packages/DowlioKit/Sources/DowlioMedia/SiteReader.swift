@@ -157,6 +157,8 @@ public enum SiteReaders {
         XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(),
         LinkedInReader(), SnapchatReader(), VimeoReader(), DailymotionReader(), StreamableReader(), LoomReader(),
         WistiaReader(), BrightcoveReader(), KalturaReader(), VidyardReader(),
+        ImgurReader(), TelegramReader(), AnimatedPostReader.nineGag(), AnimatedPostReader.tenor(), AnimatedPostReader.giphy(), VKReader(), OKReader(),
+        MastodonReader(),
     ] + WebPlayerReader.all
 }
 
