@@ -85,6 +85,17 @@ struct CleanListTests {
         #expect(candidates.map(\.label) == ["Launch day"])
     }
 
+    @Test func aTitleIsReadWithItsNumberedCharacters() async throws {
+        let site = try await Site()
+        site.serve(html: #"<title>She&#039;s here &#x2014; part&nbsp;2</title><video src="/clip.mp4"></video>"#, at: "/watch")
+        site.serve(video: 2_000_000, at: "/clip.mp4")
+
+        let found = try await site.analyze("/watch")
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == ["She's here — part 2"])
+    }
+
     @Test func aTitleWithOneControlWordAndATimeIsKept() async throws {
         let site = try await Site()
         site.serve(html: "<title>Page</title>", at: "/watch")

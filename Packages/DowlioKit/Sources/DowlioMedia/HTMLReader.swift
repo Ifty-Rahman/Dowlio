@@ -6,6 +6,7 @@ struct HTMLReader {
     private(set) var image: URL?
     private(set) var duration: Double?
     private(set) var embeddedJSON: [String] = []
+    private(set) var scriptMedia: [URL] = []
     let html: String
 
     init(_ html: String, base: URL) {
@@ -52,6 +53,7 @@ struct HTMLReader {
         }
         for block in Self.jsonLD(in: html) { readJSONLD(block, base: base) }
         embeddedJSON = Self.scripts(ofType: "application/json", in: html)
+        scriptMedia = ScriptMedia.addresses(in: html, base: base).filter { url in !media.contains { $0.url == url } }
         if title == nil, let pageTitle, !pageTitle.isEmpty { title = pageTitle }
     }
 
@@ -162,9 +164,26 @@ struct HTMLReader {
     }
 
     static func decode(_ text: String) -> String {
-        text.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&#x27;", with: "'").replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&amp;", with: "&")
+        let named = text.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&nbsp;", with: " ")
+        return numbered(named).replacingOccurrences(of: "&amp;", with: "&")
+    }
+
+    private static let numberedEntity = try! NSRegularExpression(pattern: #"&#(x[0-9a-fA-F]{1,6}|[0-9]{1,7});"#)
+
+    private static func numbered(_ text: String) -> String {
+        guard text.contains("&#") else { return text }
+        let ns = text as NSString
+        var result = ""
+        var last = 0
+        for match in numberedEntity.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: last, length: match.range.location - last))
+            let body = ns.substring(with: match.range(at: 1))
+            let value = body.hasPrefix("x") ? UInt32(body.dropFirst(), radix: 16) : UInt32(body)
+            result += value.flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? ns.substring(with: match.range)
+            last = match.range.location + match.range.length
+        }
+        return result + ns.substring(from: last)
     }
 
     static func isoDuration(_ text: String) -> Double? {

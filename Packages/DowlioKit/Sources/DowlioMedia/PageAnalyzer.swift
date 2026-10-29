@@ -194,18 +194,23 @@ public struct PageAnalyzer: Sendable {
         var label: String
         var shown: Set<URL>
         var watchedFiles: Set<URL>
+        var scriptedFiles: Set<URL> = []
         var fragments = StreamFragments()
     }
 
     private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
-        for media in reading?.media ?? [] { players.add(media, from: "html") }
-        let streams = page.watched
+        let readMedia = reading?.media ?? []
+        for media in readMedia where !DASHVersions.isStream(media.url) { players.add(media, from: "html") }
+        let scripted = readers.contains(where: { $0.recognises(page.url) }) ? [] : reading?.scriptMedia ?? []
+        var streams = page.watched
             .filter { $0.kind == .manifest || DASHVersions.isStream($0.url, contentType: $0.contentType) }
             .map(\.url)
+        for url in readMedia.map(\.url) + scripted where DASHVersions.isStream(url) && !streams.contains(url) { streams.append(url) }
         let shown = Set(players.list.flatMap(\.sources).map(\.url))
-        let watchedFiles = Set(page.watched.filter { $0.kind == .file }.map(\.url)).subtracting(shown)
+        let scriptedFiles = scripted.filter { !DASHVersions.isStream($0) && !shown.contains($0) }
+        let watchedFiles = Set(page.watched.filter { $0.kind == .file }.map(\.url) + scriptedFiles).subtracting(shown)
         for request in page.watched where request.kind == .file && !StreamFragments.isNamedLikeAFragment(request.url, nextTo: streams) {
             let kind = MediaFile.kind(of: request.url, contentType: request.contentType) ?? .video
             if let group = PageLayout.matchingPlayer(for: request.url, in: page.players) {
@@ -214,10 +219,13 @@ public struct PageAnalyzer: Sendable {
                 players.add(ScannedMedia(url: request.url, kind: kind), from: "watched")
             }
         }
+        for url in scriptedFiles { players.add(ScannedMedia(url: url, kind: MediaFile.kind(of: url) ?? .video), from: "watched") }
         let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams)
         let label = Self.label(of: page, reading: reading)
         let fragments = StreamFragments()
-        let context = PageContext(page: page, reading: reading, label: label, shown: shown, watchedFiles: watchedFiles, fragments: fragments)
+        let context = PageContext(
+            page: page, reading: reading, label: label, shown: shown, watchedFiles: watchedFiles, scriptedFiles: Set(scriptedFiles), fragments: fragments
+        )
         let placeholders = layout.buckets.map { placeholder(of: $0, in: context) }
         if !placeholders.isEmpty { report(.looking(placeholders)) }
 
@@ -408,7 +416,8 @@ public struct PageAnalyzer: Sendable {
         let shell = placeholder(of: bucket, in: place)
         var result = ProbedBucket(splittable: Set(probes.filter(\.value.splitsIntoSegments).keys))
         let versions = Self.distinct(bucket.files.compactMap { probes[$0.url]?.version }.filter { version in
-            place.shown.contains(version.source.url) || !Self.looksLikeAnAd(version, on: place.page.url)
+            place.shown.contains(version.source.url)
+                || !(Self.looksLikeAnAd(version, on: place.page.url) || Self.isShortScriptedFile(version, in: place))
         })
         if !versions.isEmpty {
             var files = shell
@@ -644,6 +653,11 @@ public struct PageAnalyzer: Sendable {
     }
 
     private static let smallestWatchedFileFromAnotherSite: Int64 = 1_000_000
+
+    private static func isShortScriptedFile(_ version: Version, in place: PageContext) -> Bool {
+        guard place.scriptedFiles.contains(version.source.url), let size = version.totalBytes else { return false }
+        return size < smallestWatchedFileFromAnotherSite
+    }
 
     private static func looksLikeAnAd(_ version: Version, on page: URL) -> Bool {
         guard let size = version.totalBytes, size < smallestWatchedFileFromAnotherSite else { return false }
