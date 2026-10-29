@@ -113,6 +113,68 @@ extension CommandLineToolTests {
     }
 }
 
+extension CommandLineToolTests {
+    @Test func checkSitesPrintsWhatEachLinkFoundAndCountsTheLinksThatFoundSomething() async throws {
+        let server = try await SiteCheckPages()
+        let list = try server.list(["# sample links", "", "/watch", "/empty", "/missing", ""])
+
+        let result = try await runTool(["check-sites", list.path])
+
+        #expect(result.status == 0)
+        let lines = result.output.split(separator: "\n").map(String.init)
+        #expect(lines.contains(server.url("/watch").absoluteString))
+        #expect(lines.contains("  Holiday clip"))
+        #expect(lines.contains("    file, no resolution, 1,000 bytes"))
+        #expect(lines.contains(server.url("/empty").absoluteString))
+        #expect(lines.contains("  nothing found, would need Look Again"))
+        #expect(lines.contains("  error: notFound"))
+        #expect(lines.last == "Found something on 1 of 3 links")
+    }
+
+    @Test func checkSitesPrintsJSONToCompareTwoRuns() async throws {
+        let server = try await SiteCheckPages()
+        let list = try server.list(["/watch", "/empty"])
+
+        let result = try await runTool(["check-sites", list.path, "--json"])
+
+        #expect(result.status == 0)
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [String: Any])
+        let links = try #require(report["links"] as? [[String: Any]])
+        #expect(links.map { $0["url"] as? String } == [server.url("/watch").absoluteString, server.url("/empty").absoluteString])
+        #expect(links.map { $0["result"] as? String } == ["found", "nothing found"])
+        let candidates = try #require(links[0]["candidates"] as? [[String: Any]])
+        #expect(candidates.map { $0["label"] as? String } == ["Holiday clip"])
+        let versions = try #require(candidates[0]["versions"] as? [[String: Any]])
+        #expect(versions.map { $0["kind"] as? String } == ["file", "extracted audio"])
+        #expect(versions[0]["bytes"] as? Int == 1000)
+        #expect(versions[0]["estimated"] as? Bool == false)
+        #expect(links[1]["needsLookAgain"] as? Bool == true)
+        #expect(report["found"] as? Int == 1)
+        #expect(report["total"] as? Int == 2)
+    }
+}
+
+private struct SiteCheckPages {
+    let server: TestServer
+
+    init() async throws {
+        server = try await TestServer()
+        let page = #"<html><head><title>Holiday clip</title></head><body><video src="/clip.mp4"></video></body></html>"#
+        server.serve(.init(data: Data(page.utf8), headers: ["Content-Type": "text/html; charset=utf-8"]), at: "/watch")
+        server.serve(.init(data: Data("<title>Nothing here</title>".utf8), headers: ["Content-Type": "text/html; charset=utf-8"]), at: "/empty")
+        server.serve(.init(data: Data(repeating: 7, count: 1000), headers: ["Content-Type": "video/mp4"]), at: "/clip.mp4")
+    }
+
+    func url(_ path: String) -> URL { server.url(for: path) }
+
+    func list(_ lines: [String]) throws -> URL {
+        let file = try TestFiles.makeFolder().appending(path: "sites.txt")
+        let text = lines.map { $0.hasPrefix("/") ? url($0).absoluteString : $0 }.joined(separator: "\n")
+        try Data(text.utf8).write(to: file)
+        return file
+    }
+}
+
 private final class BundleMarker {}
 
 private struct ToolResult {

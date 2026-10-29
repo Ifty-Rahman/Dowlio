@@ -7,12 +7,17 @@ import Foundation
 let usage = """
 usage: dowlio-cli get <url> [-c <connections>] [-o <folder>] [--shared-session]
        dowlio-cli resume <partial file>
+       dowlio-cli check-sites <file> [--json]
 
   get     Download <url> into <folder> (default: the current folder) over up to
           <connections> connections (default: 8, at most 16).
           --shared-session runs all connections in one URLSession instead of one
           session each, for the benchmark.
   resume  Continue the download held by a .dowlio partial file.
+  check-sites
+          Analyse each link in <file>, one per line, as a pasted link with no
+          browser and no Look Again, and print what each found. Blank lines and
+          lines starting with # are skipped. --json prints the same as JSON.
 
   Ctrl-C pauses the download and prints its partial file, for resume.
 """
@@ -23,6 +28,11 @@ setvbuf(stdout, nil, _IOLBF, 0)
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(64)
+}
+
+if CommandLine.arguments.dropFirst().first == "check-sites" {
+    await SiteCheck.run(Array(CommandLine.arguments.dropFirst(2)))
+    exit(0)
 }
 
 enum Command {
