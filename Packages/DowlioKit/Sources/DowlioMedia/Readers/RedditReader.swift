@@ -9,7 +9,7 @@ public struct RedditReader: SiteReader {
     public init(
         hosts: Set<String> = ["reddit.com", "redd.it"],
         videos: URL = URL(string: "https://v.redd.it")!,
-        redgifs: URL = URL(string: "https://api.redgifs.com/v2/gifs")!
+        redgifs: URL = URL(string: "https://api.redgifs.com/v2/")!
     ) {
         self.hosts = hosts
         self.videos = videos
@@ -27,11 +27,18 @@ public struct RedditReader: SiteReader {
 
     public func read(_ page: SitePage) async throws -> [SiteVideo] {
         let posts = Self.posts(in: page.html ?? "")
-        guard let id = post(in: page.url) else { return posts.compactMap(video(of:)) }
+        guard let id = post(in: page.url) else { return await listed(posts, on: page) }
         let own = posts.filter { $0.id == "t3_\(id.lowercased())" }
-        guard own.isEmpty, page.url.pathComponent(after: ["s"]) != nil else { return own.compactMap(video(of:)) }
-        let shared = posts.filter(\.isPageMain).prefix(1)
-        return shared.compactMap(video(of:))
+        guard own.isEmpty, page.url.pathComponent(after: ["s"]) != nil else { return await listed(own, on: page) }
+        return await listed(Array(posts.filter(\.isPageMain).prefix(1)), on: page)
+    }
+
+    private func listed(_ posts: [Post], on page: SitePage) async -> [SiteVideo] {
+        var videos: [SiteVideo] = []
+        for post in posts {
+            if let video = await video(of: post, on: page) { videos.append(video) }
+        }
+        return videos
     }
 
     private struct Post {
@@ -69,14 +76,17 @@ public struct RedditReader: SiteReader {
         return posts
     }
 
-    private func video(of post: Post) -> SiteVideo? {
+    private func video(of post: Post, on page: SitePage) async -> SiteVideo? {
         let streams: [URL]
         if let player = post.player {
             streams = [player]
         } else if let link = post.link, link.isOn(["v.redd.it"]), let id = link.pathComponents.dropFirst().first {
             streams = [videos.appending(path: id).appending(path: "HLSPlaylist.m3u8")]
         } else if let id = [post.link, post.embedded].compactMap(Self.redgifsID).first {
-            streams = ["hd", "sd"].map { redgifs.appending(path: id).appending(path: "\($0).m3u8") }
+            guard var gif = try? await RedGifsReader.video(id: id, api: redgifs, page: page) else { return nil }
+            gif.label = PostLabel.of(text: post.title, author: post.author) ?? gif.label
+            gif.thumbnail = post.poster ?? gif.thumbnail
+            return gif
         } else {
             return nil
         }
@@ -85,6 +95,6 @@ public struct RedditReader: SiteReader {
 
     private static func redgifsID(_ url: URL?) -> String? {
         guard let url, url.isOn(["redgifs.com"]) else { return nil }
-        return url.pathComponent(after: ["watch", "ifr"])?.lowercased()
+        return RedGifsReader.id(in: url)
     }
 }

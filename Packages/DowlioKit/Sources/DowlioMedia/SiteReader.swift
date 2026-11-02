@@ -154,7 +154,7 @@ public struct ReaderFailure: Equatable, Sendable {
 
 public enum SiteReaders {
     public static let all: [any SiteReader] = [
-        XReader(), InstagramReader(), FacebookReader(), RedditReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(),
+        XReader(), InstagramReader(), FacebookReader(), RedditReader(), RedGifsReader(), ThreadsReader(), BlueskyReader(), TumblrReader(), PinterestReader(),
         LinkedInReader(), SnapchatReader(), VimeoReader(), DailymotionReader(), StreamableReader(), LoomReader(),
         WistiaReader(), BrightcoveReader(), KalturaReader(), VidyardReader(),
         ImgurReader(), TelegramReader(), AnimatedPostReader.nineGag(), AnimatedPostReader.tenor(), AnimatedPostReader.giphy(), VKReader(), OKReader(),
