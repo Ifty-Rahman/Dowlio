@@ -127,7 +127,7 @@ final class NewDownloadModel: Identifiable {
         for url in draft.linksToCheck() {
             let headers = draft.inspectionOptions(for: url)
             Task { [weak self, inspect] in
-                if await self?.borrowsSignIn(for: url, checkedWith: headers) == true { return }
+                if await self?.applyBrowserSignIn(for: url, checkedWith: headers) == true { return }
                 let check: NewDownloadDraft.Check
                 do {
                     check = .inspected(try await inspect(url, headers))
@@ -141,7 +141,7 @@ final class NewDownloadModel: Identifiable {
         }
     }
 
-    private func borrowsSignIn(for url: URL, checkedWith headers: RequestOptions) async -> Bool {
+    private func applyBrowserSignIn(for url: URL, checkedWith headers: RequestOptions) async -> Bool {
         guard headers.cookies.isEmpty, draft.origin(for: url) == nil, askedSignIn.insert(url).inserted,
               let found = await signIn(url), !found.cookies.isEmpty else { return false }
         draft.addSignIn(for: url, cookies: found.cookies, userAgent: found.userAgent)

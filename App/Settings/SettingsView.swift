@@ -290,7 +290,7 @@ private struct BrowsersSettings: View {
                         Text("Use my browser's sign-in for pasted links")
                         InfoButton(
                             topic: "Browser sign-in",
-                            text: "When you paste a link, Dowlio asks the browser with Dowlio Connect for that site's cookies, so videos behind a sign-in work without sending the page. The cookies stay in memory for that link and its download. Dowlio doesn't save them."
+                            text: "When you paste a link, Dowlio asks the browser in front, or the one you used with Dowlio last, for that site's cookies, so videos behind a sign-in work without sending the page. The cookies stay in memory for that link and its download. Dowlio doesn't save them."
                         )
                     }
                 }

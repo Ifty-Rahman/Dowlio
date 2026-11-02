@@ -242,7 +242,7 @@ public actor ConnectServer {
                 return false
             }
             session.pairing = pairing
-            session.connectedAt = now()
+            session.lastActive = now()
             rename(pairing, to: session.appName)
             justAllowed[pairing] = nil
             browserChange.yield()
@@ -259,7 +259,7 @@ public actor ConnectServer {
         case var .catchOffer(offer):
             guard let pairing = session.pairing else { return close(session) }
             offer.browser = (try? store.browserPairing(pairing))?.browserName
-            session.lastSent = now()
+            session.lastActive = now()
             Task { await take(offer, from: session, replyingTo: requestID) }
         case .catchReleased:
             guard session.pairing != nil else { return close(session) }
@@ -267,13 +267,13 @@ public actor ConnectServer {
         case let .linkSend(url, referrer, browser, cookies, userAgent):
             guard let pairing = session.pairing else { return close(session) }
             let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
-            session.lastSent = now()
+            session.lastActive = now()
             sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, userAgent: userAgent))
             send(.linkReceived.replying(to: requestID), to: session)
         case var .pageSend(page):
             guard let pairing = session.pairing else { return close(session) }
             page.browser = session.appName ?? page.browser ?? (try? store.browserPairing(pairing))?.browserName
-            session.lastSent = now()
+            session.lastActive = now()
             sentPage.yield(page)
             send(.pageReceived.replying(to: requestID), to: session)
             if let requestID { answerScan(requestID, from: session, with: .sent) }
@@ -396,7 +396,7 @@ public actor ConnectServer {
     public func signIn(for link: URL, frontBrowser app: String?) async -> SiteSignIn? {
         let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
         let front = app.flatMap { name in connected.first { $0.appName?.caseInsensitiveCompare(name) == .orderedSame } }
-        let recent = connected.max { ($0.lastSent ?? $0.connectedAt ?? .distantPast) < ($1.lastSent ?? $1.connectedAt ?? .distantPast) }
+        let recent = connected.max { ($0.lastActive ?? .distantPast) < ($1.lastActive ?? .distantPast) }
         guard let browser = front ?? recent else { return nil }
         let requestID = "signin-\(UUID().uuidString)"
         let deadline = signInTimeout
@@ -563,8 +563,7 @@ final class Session: @unchecked Sendable {
     let connection: NWConnection
     var appName: String?
     var resolvedApp = false
-    var lastSent: Date?
-    var connectedAt: Date?
+    var lastActive: Date?
     private let lock = NSLock()
     private var open = true
     var pairing: UUID?
