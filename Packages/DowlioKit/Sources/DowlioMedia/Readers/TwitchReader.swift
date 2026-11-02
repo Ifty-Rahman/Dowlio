@@ -64,7 +64,7 @@ public struct TwitchReader: SiteReader {
         return reply?.object("data") ?? [:]
     }
 
-    private static func literal(_ text: String) -> String {
+    private static func quotedIdentifier(_ text: String) -> String {
         let allowed = text.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
         return "\"\(allowed)\""
     }
@@ -74,7 +74,7 @@ public struct TwitchReader: SiteReader {
     private func clip(_ slug: String, page: SitePage) async throws -> [SiteVideo] {
         let data = try await query(
             """
-            { clip(slug: \(Self.literal(slug))) { title durationSeconds thumbnailURL broadcaster { displayName } \
+            { clip(slug: \(Self.quotedIdentifier(slug))) { title durationSeconds thumbnailURL broadcaster { displayName } \
             playbackAccessToken(\(Self.tokenParameters)) { signature value } videoQualities { quality sourceURL } } }
             """,
             page: page
@@ -88,15 +88,14 @@ public struct TwitchReader: SiteReader {
             return Version(source: .file(url), contentType: "video/mp4", height: quality.text("quality").flatMap { Int($0) })
         }
         guard !versions.isEmpty else { return [] }
-        let label = clip.text("title")
-        return [SiteVideo(label: label, thumbnail: URL(json: clip["thumbnailURL"]), duration: jsonNumber(clip["durationSeconds"]), versions: versions)]
+        return [SiteVideo(label: clip.text("title"), thumbnail: URL(json: clip["thumbnailURL"]), duration: jsonNumber(clip["durationSeconds"]), versions: versions)]
     }
 
     private func broadcast(_ id: String, page: SitePage) async throws -> [SiteVideo] {
         let data = try await query(
             """
-            { videoPlaybackAccessToken(id: \(Self.literal(id)), \(Self.tokenParameters)) { signature value } \
-            video(id: \(Self.literal(id))) { title lengthSeconds previewThumbnailURL } }
+            { videoPlaybackAccessToken(id: \(Self.quotedIdentifier(id)), \(Self.tokenParameters)) { signature value } \
+            video(id: \(Self.quotedIdentifier(id))) { title lengthSeconds previewThumbnailURL } }
             """,
             page: page
         )
@@ -113,7 +112,7 @@ public struct TwitchReader: SiteReader {
     }
 
     private func channel(_ login: String, page: SitePage) async throws -> [SiteVideo] {
-        let data = try await query("{ user(login: \(Self.literal(login))) { displayName stream { id title } } }", page: page)
+        let data = try await query("{ user(login: \(Self.quotedIdentifier(login))) { displayName stream { id title } } }", page: page)
         guard let user = data.object("user"), let stream = user.object("stream") else { return [] }
         return [SiteVideo(label: stream.text("title") ?? user.text("displayName"), restriction: .live)]
     }

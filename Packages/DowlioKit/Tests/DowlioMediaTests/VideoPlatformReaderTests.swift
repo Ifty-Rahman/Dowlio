@@ -83,7 +83,7 @@ struct VideoPlatformReaderTests {
         #expect(site.log.failures.contains { $0.reader == "Twitch" })
     }
 
-    @Test func twitchAddressesAreSorted() {
+    @Test func twitchAddressesAreRecognisedByKind() {
         let reader = TwitchReader()
         #expect(reader.post(in: URL(string: "https://www.twitch.tv/somebody/clip/FamousSlug-abc")!) == "FamousSlug-abc")
         #expect(reader.post(in: URL(string: "https://clips.twitch.tv/FamousSlug-abc")!) == "FamousSlug-abc")
@@ -138,8 +138,21 @@ struct VideoPlatformReaderTests {
         #expect(candidates.map(\.restriction) == [.live])
     }
 
-    @Test func kickAddressesAreSorted() {
+    @Test func anOfflineKickChannelFindsNothing() async throws {
+        let site = try await kick()
+        try site.serve(fixture: "kick-channel-offline.json", at: "/api/v2/channels/samplechannel")
+        site.site.serve(html: "<title>Kick</title>", at: "/samplechannel")
+
+        let found = try await site.site.analyze("/samplechannel")
+
+        if case .found(let candidates) = found.withoutExtractedAudio { #expect(candidates.isEmpty) }
+        #expect(site.log.failures.contains { $0.reader == "Kick" })
+    }
+
+    @Test func kickAddressesAreRecognisedByKind() {
         let reader = KickReader()
+        #expect(reader.post(in: URL(string: "https://kick.com/somebody/clips/clip_01ABC")!) == "clip_01ABC")
+        #expect(reader.post(in: URL(string: "https://kick.com/somebody/videos/6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f")!) == "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f")
         #expect(reader.post(in: URL(string: "https://kick.com/somebody?clip=clip_01ABC")!) == "clip_01ABC")
         #expect(reader.post(in: URL(string: "https://kick.com/video/6F1C2D3E-4A5B-4C6D-8E7F-0A1B2C3D4E5F")!) == "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f")
         #expect(reader.recognises(URL(string: "https://kick.com/somebody")!))

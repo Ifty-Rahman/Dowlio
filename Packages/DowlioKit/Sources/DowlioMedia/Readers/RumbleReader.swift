@@ -40,7 +40,7 @@ public struct RumbleReader: SiteReader {
         address?.queryItems = [URLQueryItem(name: "request", value: "video"), URLQueryItem(name: "ver", value: "2"), URLQueryItem(name: "v", value: id)]
         guard let url = address?.url, let video = try await page.json(at: url) as? [String: Any] else { return [] }
         let label = video.text("title")
-        if jsonNumber(video["live"]).map({ $0 != 0 }) == true { return [SiteVideo(label: label, restriction: .live)] }
+        if (jsonNumber(video["live"]) ?? 0) != 0 { return [SiteVideo(label: label, restriction: .live)] }
         let sources = video.object("ua") ?? [:]
         let files = sources.object("mp4") ?? [:]
         let versions = files.keys.sorted().compactMap { key -> Version? in
@@ -57,18 +57,16 @@ public struct RumbleReader: SiteReader {
         )]
     }
 
-    private static let pageEmbed = try! NSRegularExpression(pattern: #"rumble\.com/embed/(v[a-zA-Z0-9]+)"#)
-
     private func embed(of page: SitePage) async throws -> String? {
         if let id = Self.embedID(in: page.url) { return id }
         let html: String
         if let known = page.html { html = known } else { html = try await page.text(at: page.url) }
-        return Self.embedAddress(in: html)
+        return Self.firstEmbedID(in: html)
     }
 
-    private static func embedAddress(in html: String) -> String? {
+    private static func firstEmbedID(in html: String) -> String? {
         let text = ScriptMedia.unescaped(html).replacingOccurrences(of: #"\/"#, with: "/")
         let ns = text as NSString
-        return pageEmbed.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) }
+        return embedAddress.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) }
     }
 }

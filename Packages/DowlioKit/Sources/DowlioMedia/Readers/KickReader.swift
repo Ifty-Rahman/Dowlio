@@ -5,7 +5,7 @@ public struct KickReader: SiteReader {
     private let hosts: Set<String>
     private let api: URL
 
-    private static let reserved: Set<String> = ["video", "categories", "browse", "following", "search", "dashboard", "settings", "terms-of-service", "privacy-policy", "emotes"]
+    private static let reserved: Set<String> = ["video", "categories", "browse", "following", "search", "dashboard", "settings", "terms-of-service", "privacy-policy", "emotes", "community-guidelines"]
 
     public init(hosts: Set<String> = ["kick.com"], api: URL = URL(string: "https://kick.com/api/")!) {
         self.hosts = hosts
@@ -36,7 +36,7 @@ public struct KickReader: SiteReader {
         if parts.count == 3, parts[1] == "clips", parts[2].hasPrefix("clip_") { return .clip(parts[2]) }
         if parts.count == 2, parts[0] == "video", isUUID(parts[1]) { return .broadcast(parts[1].lowercased()) }
         if parts.count == 3, parts[1] == "videos", isUUID(parts[2]) { return .broadcast(parts[2].lowercased()) }
-        if parts.count == 1, !reserved.contains(parts[0].lowercased()) { return .channel(parts[0].lowercased()) }
+        if parts.count == 1, !reserved.contains(parts[0].lowercased()), parts[0].allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }) { return .channel(parts[0].lowercased()) }
         return nil
     }
 
@@ -56,10 +56,11 @@ public struct KickReader: SiteReader {
     private func clip(_ id: String, page: SitePage) async throws -> [SiteVideo] {
         guard let clip = (try await page.json(at: api.appending(path: "v2/clips/\(id)")) as? [String: Any])?.object("clip"),
               let url = URL(json: clip["clip_url"]) ?? URL(json: clip["video_url"]) else { return [] }
-        let thumbnail = URL(json: clip["thumbnail_url"])
-        let duration = jsonNumber(clip["duration"])
-        if DASHVersions.isStream(url) { return [SiteVideo(label: clip.text("title"), thumbnail: thumbnail, duration: duration, streams: [url])] }
-        return [SiteVideo(label: clip.text("title"), thumbnail: thumbnail, duration: duration, versions: [Version(source: .file(url), contentType: "video/mp4")])]
+        let isStream = DASHVersions.isStream(url)
+        return [SiteVideo(
+            label: clip.text("title"), thumbnail: URL(json: clip["thumbnail_url"]), duration: jsonNumber(clip["duration"]),
+            versions: isStream ? [] : [Version(source: .file(url), contentType: "video/mp4")], streams: isStream ? [url] : []
+        )]
     }
 
     private func broadcast(_ id: String, page: SitePage) async throws -> [SiteVideo] {
