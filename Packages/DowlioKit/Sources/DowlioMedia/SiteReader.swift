@@ -68,6 +68,14 @@ public struct SitePage: Sendable {
         return try JSONSerialization.jsonObject(with: try await send(url, sent, ["Content-Type": "application/json"]), options: [.fragmentsAllowed])
     }
 
+    public func json(posting body: [String: Any], to url: URL, headers: [String: String]) async throws -> Any {
+        guard let send else { throw SiteReaderError.unreadable }
+        let sent = try JSONSerialization.data(withJSONObject: body)
+        return try JSONSerialization.jsonObject(
+            with: try await send(url, sent, headers.merging(["Content-Type": "application/json"]) { first, _ in first }), options: [.fragmentsAllowed]
+        )
+    }
+
     public func json(at url: URL, headers: [String: String]) async throws -> Any {
         guard let send else { throw SiteReaderError.unreadable }
         return try JSONSerialization.jsonObject(with: try await send(url, nil, headers), options: [.fragmentsAllowed])
@@ -158,7 +166,7 @@ public enum SiteReaders {
         LinkedInReader(), SnapchatReader(), VimeoReader(), DailymotionReader(), StreamableReader(), LoomReader(),
         WistiaReader(), BrightcoveReader(), KalturaReader(), VidyardReader(),
         ImgurReader(), TelegramReader(), AnimatedPostReader.nineGag(), AnimatedPostReader.tenor(), AnimatedPostReader.giphy(), VKReader(), OKReader(),
-        MastodonReader(),
+        MastodonReader(), TwitchReader(), KickReader(), RumbleReader(),
     ] + WebPlayerReader.all
 }
 

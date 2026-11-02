@@ -32,3 +32,12 @@ Trimmed replies from the endpoints the site readers call. Text, names, IDs and h
 | ninegag-gag.html | Written by hand on 2026-10-29 in the shape of 9GAG's post page, because 9GAG refused requests from this machine | `window._config = JSON.parse("…")` with `data.post.images.image460sv` (MP4, H.265 and AV1 addresses) and a related post |
 | imgur-album.html | Written by hand on 2026-10-29 in the shape of Imgur's post page, because no public post was at hand | `window.postDataJSON` as an escaped JSON string with an album's `media`: two videos with size and length, and an image |
 | vk-video-ext.html | Written by hand on 2026-10-29 in the shape of VK's `video_ext.php` embed page, because VK asked for sign-in | `playerParams.params[0]` with `md_title`, `md_author`, `duration`, `jpg`, `url240` to `url720` and `hls` |
+| twitch-clip.json | Written by hand on 2026-11-02 in the shape of Twitch's GraphQL `clip` reply | The clip's title, length, thumbnail, access token and `videoQualities` with 720 and 360 MP4 addresses on `{{server}}` |
+| twitch-broadcast.json | Written by hand in the shape of Twitch's `videoPlaybackAccessToken` and `video` reply | The VOD's access token, title, length and a `previewThumbnailURL` with `{width}` and `{height}` |
+| twitch-channel-live.json, twitch-channel-offline.json | Written by hand in the shape of Twitch's `user` reply | A channel with a `stream`, and one with `stream` null |
+| kick-clip.json | Written by hand in the shape of Kick's `api/v2/clips/<id>` | The clip's title, MP4 address, thumbnail and length |
+| kick-video.json | Written by hand in the shape of Kick's `api/v1/video/<uuid>` | The HLS `source` and the `livestream` block with the title, thumbnail and length in milliseconds |
+| kick-channel-live.json, kick-channel-offline.json | Written by hand in the shape of Kick's `api/v2/channels/<slug>` | A channel with a `livestream`, and one with `livestream` null |
+| rumble-embed.json | Written by hand in the shape of Rumble's `embedJS/u3/?request=video&ver=2` | Title, thumbnail, length, `live` 0 and `ua` with 360 and 720 MP4 files carrying `meta.size`, `w` and `h`, and an HLS `auto` playlist |
+| rumble-live.json | Written by hand in the same shape | `live` 1 and only an HLS playlist |
+| rumble-page.html | Written by hand | A video page whose JSON-LD names its embed ID in an escaped `embedUrl` |
