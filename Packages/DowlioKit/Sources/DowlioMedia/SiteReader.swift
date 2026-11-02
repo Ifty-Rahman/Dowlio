@@ -166,7 +166,7 @@ public enum SiteReaders {
         LinkedInReader(), SnapchatReader(), VimeoReader(), DailymotionReader(), StreamableReader(), LoomReader(),
         WistiaReader(), BrightcoveReader(), KalturaReader(), VidyardReader(),
         ImgurReader(), TelegramReader(), AnimatedPostReader.nineGag(), AnimatedPostReader.tenor(), AnimatedPostReader.giphy(), VKReader(), OKReader(),
-        MastodonReader(), TwitchReader(), KickReader(), RumbleReader(),
+        MastodonReader(), TwitchReader(), KickReader(), RumbleReader(), SoundCloudReader(), BandcampReader(), MixcloudReader(),
     ] + WebPlayerReader.all
 }
 

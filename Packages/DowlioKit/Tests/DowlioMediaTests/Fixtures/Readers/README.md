@@ -41,3 +41,10 @@ Trimmed replies from the endpoints the site readers call. Text, names, IDs and h
 | rumble-embed.json | Written by hand in the shape of Rumble's `embedJS/u3/?request=video&ver=2` | Title, thumbnail, length, `live` 0 and `ua` with 360 and 720 MP4 files carrying `meta.size`, `w` and `h`, and an HLS `auto` playlist |
 | rumble-live.json | Written by hand in the same shape | `live` 1 and only an HLS playlist |
 | rumble-page.html | Written by hand | A video page whose JSON-LD names its embed ID in an escaped `embedUrl` |
+| soundcloud-page.html | Written by hand on 2026-11-02 | A track page whose two scripts are on `{{server}}`, as SoundCloud's are |
+| soundcloud-app.js | Written by hand | The script that holds `client_id:"…"` |
+| soundcloud-track.json | Written by hand in the shape of `api-v2/resolve` for a track | Title, length in milliseconds, artwork, `track_authorization`, the artist and four transcodings: a snipped HLS MP3, a progressive MP3, an HLS AAC and an HLS Opus |
+| soundcloud-progressive.json, soundcloud-hls-aac.json | Written by hand | A transcoding's reply: the address of the MP3 file and of the AAC playlist |
+| bandcamp-track.html, bandcamp-album.html | Written by hand in the shape of Bandcamp's `data-tralbum` attribute | A track with its free `mp3-128` stream, and an album of two streamable tracks and one with `file` null |
+| mixcloud-show.html | Written by hand in the shape of Mixcloud's `relay-data` script | A show whose `streamInfo.url` is a plain address |
+| mixcloud-encrypted.html | Written by hand | A show whose `streamInfo` addresses are encoded strings, which the reader leaves out |
