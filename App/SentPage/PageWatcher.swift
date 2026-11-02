@@ -5,6 +5,7 @@ import WebKit
 enum PageWatcher {
     static let handlerName = "dowlioMedia"
     static let groupsPerFrame = 1000
+    static let framesRead = 8
     static let passiveScript = "window.__dowlioPassive = true;"
 
     static let runScan = "window.__dowlioScanPage ? JSON.stringify(window.__dowlioScanPage()) : ''"

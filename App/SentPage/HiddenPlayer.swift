@@ -8,7 +8,6 @@ final class HiddenPlayer: NSObject {
     static let longestPlay: Duration = .seconds(15)
     static let quietAfterMedia: Duration = .seconds(3)
     static let longestRead: Duration = .seconds(3)
-    static let framesRead = 8
 
     static func play(_ page: SentPage) async -> PlayedPage {
         let player = HiddenPlayer(page: page)
@@ -91,7 +90,7 @@ final class HiddenPlayer: NSObject {
     fileprivate func receive(_ body: Any, from frame: WKFrameInfo) {
         guard !isFinished, let message = body as? [String: Any] else { return }
         if message["scanReady"] != nil {
-            if frames.count < Self.framesRead { frames.append(frame) }
+            if frames.count < PageWatcher.framesRead { frames.append(frame) }
             return
         }
         if agent == nil { agent = PageWatcher.agent(in: message) }

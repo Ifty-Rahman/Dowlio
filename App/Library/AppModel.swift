@@ -195,8 +195,9 @@ final class AppModel {
     func openPageWindow(for page: SentPage) {
         guard let analyzer else { return }
         PageWindows.open(page, read: { await analyzer.reading($0, of: $1) }) { [weak self] page, candidate in
-            self?.windowChoices[page.url] = candidate
-            self?.receive(page)
+            guard let self, let target = sendTarget() else { return }
+            windowChoices[page.url] = candidate
+            target.analyze(page)
         }
     }
 

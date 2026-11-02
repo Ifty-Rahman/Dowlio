@@ -62,7 +62,6 @@ final class PageWindowModel: NSObject {
     @ObservationIgnored private var refresh: Task<Void, Never>?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
 
-    static let framesRead = 8
     static let settleTime: Duration = .milliseconds(800)
 
     init(page: SentPage, read: @escaping (PlayedPage, SentPage) async -> PageAnalysis, choose: @escaping (SentPage, Candidate) -> Void) {
@@ -114,7 +113,8 @@ final class PageWindowModel: NSObject {
     }
 
     func add(_ candidate: Candidate) {
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             choose(await sentPage(), candidate)
         }
     }
@@ -122,7 +122,7 @@ final class PageWindowModel: NSObject {
     fileprivate func receive(_ body: Any, from frame: WKFrameInfo) {
         guard let message = body as? [String: Any] else { return }
         if message["scanReady"] != nil {
-            if frames.count < Self.framesRead { frames.append(frame) }
+            if frames.count < PageWatcher.framesRead { frames.append(frame) }
             return scheduleRefresh()
         }
         if agent == nil { agent = PageWatcher.agent(in: message) }
@@ -133,6 +133,7 @@ final class PageWindowModel: NSObject {
     }
 
     fileprivate func startedPage() {
+        refresh?.cancel()
         found = []
         frames = []
         candidates = []
@@ -212,6 +213,10 @@ extension PageWindowModel: WKNavigationDelegate, WKUIDelegate {
                 return (.cancel, preferences)
             }
             handOver(url)
+            return (.cancel, preferences)
+        }
+        if action.targetFrame == nil, action.navigationType == .linkActivated, let url = action.request.url {
+            webView.load(URLRequest(url: url))
             return (.cancel, preferences)
         }
         if action.targetFrame == nil {
