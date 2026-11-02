@@ -14,10 +14,12 @@ public struct PageAnalyzer: Sendable {
     private let readerFailed: @Sendable (ReaderFailure) -> Void
     private let sizes: SizeCheck
     private let identity: BrowserIdentity
+    private let cooldown: HostCooldown
 
     public init(
         session: URLSession = .shared,
         identity: BrowserIdentity = BrowserIdentity(userAgent: nil),
+        cooldown: HostCooldown = HostCooldown(),
         lookAgain: LookAgain? = nil,
         lookingFor longestLooking: Duration = .seconds(15),
         readers: [any SiteReader] = SiteReaders.all,
@@ -26,6 +28,7 @@ public struct PageAnalyzer: Sendable {
     ) {
         self.session = session
         self.identity = identity
+        self.cooldown = cooldown
         self.play = lookAgain
         self.longestLooking = longestLooking
         self.readers = readers
@@ -68,6 +71,7 @@ public struct PageAnalyzer: Sendable {
         report(.playing)
         guard let found = await lookedAgain(page, within: nil) else { return }
         let agent = page.userAgent == nil ? found.agent : nil
+        if found.candidates.isEmpty, found.refusals.blocked { return report(.blocked) }
         report(found.candidates.isEmpty && found.refusals.any ? .needsSignIn : .found(found.candidates.map { $0.requested(by: agent) }))
     }
 
@@ -83,6 +87,7 @@ public struct PageAnalyzer: Sendable {
         guard !Task.isCancelled else { return nil }
         let refusals = Refusals()
         let seen = page.played(played).withoutControlLabels
+        if played.html.map(BlockedPage.isChallenge) == true { refusals.noteBlocked() }
         let reading = played.html.map { HTMLReader($0, base: page.url) }
         async let fromSite = readSite(seen, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: seen, reading: reading, refusals: refusals) { _ in }
@@ -130,6 +135,7 @@ public struct PageAnalyzer: Sendable {
         let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
         let framed = await fromFrames
         let found = framed.isEmpty ? steps.found : Self.merged(steps.found + framed)
+        if found.isEmpty, refusals.blocked { return play == nil ? report(.blocked) : await playAndRead(page, report: report) }
         if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
         guard play != nil, !page.hasDataFromDowlioConnect, isThin(found, readerFound: steps.readerFound, on: page) else { return report(.found(found)) }
@@ -407,8 +413,10 @@ public struct PageAnalyzer: Sendable {
             request.httpMethod = "POST"
             request.httpBody = body
         }
+        await cooldown.wait(for: request.url?.host(percentEncoded: false) ?? "")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SiteReaderError.unreadable }
+        await noteReply(http, for: request)
         guard (200..<300).contains(http.statusCode) else { throw SiteReaderError.refused(status: http.statusCode) }
         guard data.count <= Self.largestPage else { throw SiteReaderError.unreadable }
         return data
@@ -716,10 +724,20 @@ public struct PageAnalyzer: Sendable {
     private func fetch(_ request: URLRequest, refusals: Refusals) async -> (Data, HTTPURLResponse)? {
         var request = request
         request.httpShouldHandleCookies = false
+        await cooldown.wait(for: request.url?.host(percentEncoded: false) ?? "")
         guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return nil }
         refusals.note(status: http.statusCode)
+        await noteReply(http, for: request)
+        if LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")), BlockedPage.isChallenge(String(decoding: data.prefix(65_536), as: UTF8.self)) {
+            refusals.noteBlocked()
+        }
         guard (200..<300).contains(http.statusCode), data.count <= Self.largestPage else { return nil }
         return (data, http)
+    }
+
+    private func noteReply(_ reply: HTTPURLResponse, for request: URLRequest) async {
+        guard reply.statusCode == 429 else { return }
+        await cooldown.cool(request.url?.host(percentEncoded: false) ?? "", for: BlockedPage.wait(from: reply.value(forHTTPHeaderField: "Retry-After")))
     }
 
     private struct Players {
@@ -848,7 +866,7 @@ private extension PageAnalysis {
         case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
         case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
         case .checkingForMore(let candidates): return .checkingForMore(candidates.map { $0.requested(by: agent) })
-        case .playing, .needsSignIn, .plainFile: return self
+        case .playing, .needsSignIn, .blocked, .plainFile: return self
         }
     }
 }
@@ -924,8 +942,10 @@ private struct Probe: Sendable {
 final class Refusals: @unchecked Sendable {
     private let lock = NSLock()
     private var refused = false
+    private var isBlocked = false
 
     var any: Bool { lock.withLock { refused } }
+    var blocked: Bool { lock.withLock { isBlocked } }
 
     func note(_ error: any Error) {
         guard let error = error as? DownloadError, error == .needsSignIn || error == .forbidden else { return }
@@ -933,7 +953,12 @@ final class Refusals: @unchecked Sendable {
     }
 
     func note(status: Int) {
+        if status == 429 { noteBlocked() }
         guard status == 401 || status == 403 else { return }
         lock.withLock { refused = true }
+    }
+
+    func noteBlocked() {
+        lock.withLock { isBlocked = true }
     }
 }

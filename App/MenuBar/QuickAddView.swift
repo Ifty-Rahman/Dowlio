@@ -78,6 +78,10 @@ struct QuickAddView: View {
             NeedsSignInBody(media: page)
                 .padding(.horizontal, DowlioDesign.Spacing.md)
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+        case .page(let page) where page.draft.phase == .blocked:
+            BlockedBody(media: page)
+                .padding(.horizontal, DowlioDesign.Spacing.md)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
         case .page(let page) where page.draft.phase == .nothingFound:
             NothingFoundBody(media: page)
                 .padding(.horizontal, DowlioDesign.Spacing.md)

@@ -10,6 +10,7 @@ enum SiteCheck {
         case found = "found"
         case nothingFound = "nothing found"
         case needsSignIn = "needs sign-in"
+        case blocked = "blocked"
         case plainFile = "plain file"
         case failed = "error"
     }
@@ -29,6 +30,7 @@ enum SiteCheck {
             switch analysis {
             case .found(let candidates) where !candidates.isEmpty: .found
             case .needsSignIn: .needsSignIn
+            case .blocked: .blocked
             case .plainFile: .plainFile
             case .found, .looking, .checkingForMore, .playing: error == nil ? .nothingFound : .failed
             }
@@ -116,7 +118,7 @@ enum SiteCheck {
                 lines.append("  nothing found, would need Look Again")
             case .failed:
                 lines.append("  error: " + (outcome.error ?? "unknown"))
-            case .needsSignIn, .plainFile:
+            case .needsSignIn, .blocked, .plainFile:
                 lines.append("  " + outcome.result.rawValue)
             }
             for candidate in outcome.candidates {

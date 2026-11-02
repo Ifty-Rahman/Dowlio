@@ -127,6 +127,9 @@ struct NewDownloadSheet: View {
         case .needsSignIn:
             MediaHeader(media: media)
             NeedsSignInBody(media: media)
+        case .blocked:
+            MediaHeader(media: media)
+            BlockedBody(media: media)
         }
     }
 

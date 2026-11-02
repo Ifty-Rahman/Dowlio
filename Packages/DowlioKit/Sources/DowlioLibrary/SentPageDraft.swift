@@ -9,6 +9,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case found
         case nothingFound
         case needsSignIn
+        case blocked
         case restricted(Candidate.Restriction)
     }
 
@@ -70,6 +71,10 @@ public struct SentPageDraft: Equatable, Sendable {
         case .needsSignIn:
             candidates = []
             phase = .needsSignIn
+            return nil
+        case .blocked:
+            candidates = []
+            phase = .blocked
             return nil
         case .plainFile(let url):
             return url
@@ -147,6 +152,11 @@ public struct SentPageDraft: Equatable, Sendable {
         if !candidates.isEmpty, candidates.allSatisfy({ $0.restriction == .needsPassword }) { return [Self.passwordLine] }
         let next = "This site only shows this video to signed-in visitors. Sign in to it in your browser, then send the page again."
         return page.throughDowlioConnect ? [next] : [next, "Install Dowlio Connect so Dowlio can use your sign-in."]
+    }
+
+    public var blocked: [String] {
+        let first = "\(host) wants to check you're a person. Open the page in your browser, then send it to Dowlio."
+        return page.throughDowlioConnect ? [first] : [first, "Install Dowlio Connect so Dowlio can use your sign-in."]
     }
 
     public var lookingLine: String {

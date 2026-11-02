@@ -57,6 +57,8 @@ struct LinkItemBody: View {
             switch page.draft.phase {
             case .needsSignIn:
                 NeedsSignInBody(media: page)
+            case .blocked:
+                BlockedBody(media: page)
             case .nothingFound:
                 NothingFoundBody(media: page)
                 LinkCard(url: page.draft.page.url, check: sheet.draft.check(for: page.draft.page.url))

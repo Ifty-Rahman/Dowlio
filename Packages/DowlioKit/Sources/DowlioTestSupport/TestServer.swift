@@ -141,11 +141,13 @@ public final class TestServer: @unchecked Sendable {
         public var status: Int
         public var count: Int
         public var headers: [String: String]
+        public var body: Data
 
-        public init(status: Int, count: Int = .max, headers: [String: String] = [:]) {
+        public init(status: Int, count: Int = .max, headers: [String: String] = [:], body: Data = Data()) {
             self.status = status
             self.count = count
             self.headers = headers
+            self.body = body
         }
     }
 
@@ -408,7 +410,7 @@ public final class TestServer: @unchecked Sendable {
         }
 
         if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {
-            return send(status: "\(fault.status) Fault", headers: fault.headers, body: Data(), hold: nil, on: connection)
+            return send(status: "\(fault.status) Fault", headers: fault.headers, body: fault.body, hold: nil, on: connection)
         }
 
         // A reply stays in flight until the server closes its connection. The count goes down

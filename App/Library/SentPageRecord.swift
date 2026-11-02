@@ -108,6 +108,8 @@ enum SentPageRecord {
             record["plainFile"] = url.absoluteString
         case .needsSignIn:
             record["needsSignIn"] = true
+        case .blocked:
+            record["blocked"] = true
         case .looking, .checkingForMore, .playing, nil:
             record["unfinished"] = true
         }

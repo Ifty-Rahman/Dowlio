@@ -189,6 +189,7 @@ public enum PageAnalysis: Equatable, Sendable {
     case checkingForMore([Candidate])
     case playing
     case needsSignIn
+    case blocked
     case plainFile(URL)
     case found([Candidate])
 }
