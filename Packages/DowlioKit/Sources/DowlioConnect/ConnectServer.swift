@@ -32,6 +32,16 @@ public enum PageScanResult: Equatable, Sendable {
     case noAnswer
 }
 
+public struct SiteSignIn: Equatable, Sendable {
+    public var cookies: [Cookie]
+    public var userAgent: String?
+
+    public init(cookies: [Cookie], userAgent: String? = nil) {
+        self.cookies = cookies
+        self.userAgent = userAgent
+    }
+}
+
 public enum ConnectServerError: Error, Equatable {
     case noFreePort
 }
@@ -57,6 +67,8 @@ public actor ConnectServer {
     private var listenFailed = false
     private let testTimeout: Duration
     private let scanTimeout: Duration
+    private let signInTimeout: Duration
+    private var waitingSignIns: [String: (session: UUID, answer: CheckedContinuation<SiteSignIn?, Never>)] = [:]
     private var waitingScans: [String: (session: UUID, answer: CheckedContinuation<PageScanResult, Never>)] = [:]
     private let nameBrowser: @Sendable (String) -> String
     private let extensionVersion: String?
@@ -92,6 +104,7 @@ public actor ConnectServer {
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
         scanTimeout: Duration = .seconds(8),
+        signInTimeout: Duration = .seconds(1),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
         extensionVersion: String? = nil,
         peerApp: @escaping @Sendable (NWConnection) -> String? = { PeerProcess.appName(of: $0) },
@@ -107,6 +120,7 @@ public actor ConnectServer {
         self.approve = approve
         self.testTimeout = testTimeout
         self.scanTimeout = scanTimeout
+        self.signInTimeout = signInTimeout
         self.nameBrowser = nameBrowser
         self.extensionVersion = extensionVersion
         self.peerApp = peerApp
@@ -228,6 +242,7 @@ public actor ConnectServer {
                 return false
             }
             session.pairing = pairing
+            session.connectedAt = now()
             rename(pairing, to: session.appName)
             justAllowed[pairing] = nil
             browserChange.yield()
@@ -244,6 +259,7 @@ public actor ConnectServer {
         case var .catchOffer(offer):
             guard let pairing = session.pairing else { return close(session) }
             offer.browser = (try? store.browserPairing(pairing))?.browserName
+            session.lastSent = now()
             Task { await take(offer, from: session, replyingTo: requestID) }
         case .catchReleased:
             guard session.pairing != nil else { return close(session) }
@@ -251,17 +267,25 @@ public actor ConnectServer {
         case let .linkSend(url, referrer, browser, cookies, userAgent):
             guard let pairing = session.pairing else { return close(session) }
             let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
+            session.lastSent = now()
             sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, userAgent: userAgent))
             send(.linkReceived.replying(to: requestID), to: session)
         case var .pageSend(page):
             guard let pairing = session.pairing else { return close(session) }
             page.browser = session.appName ?? page.browser ?? (try? store.browserPairing(pairing))?.browserName
+            session.lastSent = now()
             sentPage.yield(page)
             send(.pageReceived.replying(to: requestID), to: session)
             if let requestID { answerScan(requestID, from: session, with: .sent) }
         case .pageNone:
             guard session.pairing != nil else { return close(session) }
             if let requestID { answerScan(requestID, from: session, with: .noPage) }
+        case let .siteSignIn(cookies, userAgent):
+            guard session.pairing != nil else { return close(session) }
+            if let requestID, let waiting = waitingSignIns[requestID], waiting.session == session.id {
+                waitingSignIns[requestID] = nil
+                waiting.answer.resume(returning: SiteSignIn(cookies: cookies, userAgent: userAgent))
+            }
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)
@@ -369,6 +393,27 @@ public actor ConnectServer {
         }
     }
 
+    public func signIn(for link: URL, frontBrowser app: String?) async -> SiteSignIn? {
+        let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
+        let front = app.flatMap { name in connected.first { $0.appName?.caseInsensitiveCompare(name) == .orderedSame } }
+        let recent = connected.max { ($0.lastSent ?? $0.connectedAt ?? .distantPast) < ($1.lastSent ?? $1.connectedAt ?? .distantPast) }
+        guard let browser = front ?? recent else { return nil }
+        let requestID = "signin-\(UUID().uuidString)"
+        let deadline = signInTimeout
+        Task {
+            try? await Task.sleep(for: deadline)
+            self.answerSignIn(requestID, with: nil)
+        }
+        return await withCheckedContinuation { continuation in
+            waitingSignIns[requestID] = (browser.id, continuation)
+            send(Outgoing.siteSignIn(for: link).replying(to: requestID), to: browser)
+        }
+    }
+
+    private func answerSignIn(_ requestID: String, with result: SiteSignIn?) {
+        waitingSignIns.removeValue(forKey: requestID)?.answer.resume(returning: result)
+    }
+
     private func answerScan(_ requestID: String, from session: Session? = nil, with result: PageScanResult) {
         guard let waiting = waitingScans[requestID], session.map({ $0.id == waiting.session }) ?? true else { return }
         waitingScans[requestID] = nil
@@ -386,6 +431,9 @@ public actor ConnectServer {
         }
         for (requestID, waiting) in waitingScans where waiting.session == session.id {
             answerScan(requestID, with: .notConnected)
+        }
+        for (requestID, waiting) in waitingSignIns where waiting.session == session.id {
+            answerSignIn(requestID, with: nil)
         }
     }
 
@@ -515,6 +563,8 @@ final class Session: @unchecked Sendable {
     let connection: NWConnection
     var appName: String?
     var resolvedApp = false
+    var lastSent: Date?
+    var connectedAt: Date?
     private let lock = NSLock()
     private var open = true
     var pairing: UUID?

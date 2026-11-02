@@ -23,6 +23,7 @@ enum SettingsKey {
     static let hasSeenWelcome = "hasSeenWelcome"
     static let catchesDownloads = "catchesDownloads"
     static let neverCatchSites = "neverCatchSites"
+    static let usesBrowserSignIn = "usesBrowserSignIn"
     static let retiredKeys = ["sharesSignIn", "noSignInSites", "signInLog"]
 }
 

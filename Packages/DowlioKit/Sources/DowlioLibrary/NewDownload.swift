@@ -169,6 +169,11 @@ public struct NewDownloadDraft: Equatable, Sendable {
         append(link.absoluteString)
     }
 
+    public mutating func addSignIn(for link: URL, cookies: [Cookie], userAgent agent: String?) {
+        if userAgent.trimmingCharacters(in: .whitespaces).isEmpty, let agent { userAgent = agent }
+        cookiesByLink[link] = cookies
+    }
+
     public mutating func merge(_ other: NewDownloadDraft) {
         if referrer.trimmingCharacters(in: .whitespaces).isEmpty { referrer = other.referrer }
         cookiesByLink.merge(other.cookiesByLink) { _, new in new }

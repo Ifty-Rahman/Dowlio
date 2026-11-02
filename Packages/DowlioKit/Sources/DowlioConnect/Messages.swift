@@ -13,6 +13,7 @@ enum Incoming: Equatable {
     case linkSend(url: URL, referrer: URL?, browser: String?, cookies: [Cookie], userAgent: String?)
     case pageSend(SentPage)
     case pageNone
+    case siteSignIn(cookies: [Cookie], userAgent: String?)
     case unknown(type: String)
 }
 
@@ -113,6 +114,9 @@ struct Envelope {
         case "page.none":
             guard requestID != nil else { return nil }
             message = .pageNone
+        case "site.signIn":
+            guard requestID != nil, let cookies = cookies() else { return nil }
+            message = .siteSignIn(cookies: cookies, userAgent: text("userAgent", limit: Self.maximumHeaderValue))
         case "settings.change":
             let catches = object["catches"] as? Bool
             let site = text("neverCatchSite")
@@ -181,6 +185,7 @@ struct Outgoing: Encodable {
     static let linkReceived = Outgoing(type: "link.received")
     static let pageReceived = Outgoing(type: "page.received")
     static let pageScan = Outgoing(type: "page.scan")
+    static func siteSignIn(for link: URL) -> Outgoing { Outgoing(type: "site.signIn", url: link.absoluteString) }
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(
             type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch

@@ -22,12 +22,15 @@ final class NewDownloadModel: Identifiable {
 
     let list: LinkList
     private let inspect: (URL, RequestOptions) async throws -> LinkInspection
+    private let signIn: (URL) async -> SiteSignIn?
+    private var askedSignIn: Set<URL> = []
     private var pending: Task<Void, Never>?
     init(
         text: String,
         folder: URL,
         list: LinkList,
-        inspect: @escaping (URL, RequestOptions) async throws -> LinkInspection
+        inspect: @escaping (URL, RequestOptions) async throws -> LinkInspection,
+        signIn: @escaping (URL) async -> SiteSignIn? = { _ in nil }
     ) {
         draft = NewDownloadDraft(text: text, folder: folder)
         self.list = list
@@ -124,6 +127,7 @@ final class NewDownloadModel: Identifiable {
         for url in draft.linksToCheck() {
             let headers = draft.inspectionOptions(for: url)
             Task { [weak self, inspect] in
+                if await self?.borrowsSignIn(for: url, checkedWith: headers) == true { return }
                 let check: NewDownloadDraft.Check
                 do {
                     check = .inspected(try await inspect(url, headers))
@@ -135,6 +139,13 @@ final class NewDownloadModel: Identifiable {
                 self?.record(check, for: url, checkedWith: headers)
             }
         }
+    }
+
+    private func borrowsSignIn(for url: URL, checkedWith headers: RequestOptions) async -> Bool {
+        guard headers.cookies.isEmpty, draft.origin(for: url) == nil, askedSignIn.insert(url).inserted,
+              let found = await signIn(url), !found.cookies.isEmpty else { return false }
+        draft.addSignIn(for: url, cookies: found.cookies, userAgent: found.userAgent)
+        return true
     }
 
     private func record(_ check: NewDownloadDraft.Check, for url: URL, checkedWith headers: RequestOptions) {

@@ -150,6 +150,12 @@ export function startWorker({ chrome, WebSocket, timers, navigator, random = Mat
       case "page.scan":
         if (typeof message.requestId === "string") await sending.scanFront(message.requestId);
         break;
+      case "site.signIn":
+        if (typeof message.requestId === "string") {
+          const found = typeof message.url === "string" ? await cookies.cookiesFor(message.url) : undefined;
+          reply("site.signIn", message.requestId, { cookies: found ?? [], userAgent: navigator?.userAgent });
+        }
+        break;
     }
   }
 

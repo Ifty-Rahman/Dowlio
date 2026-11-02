@@ -52,6 +52,7 @@ struct ConnectFixture {
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
         scanTimeout: Duration = .seconds(8),
+        signInTimeout: Duration = .seconds(1),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
         extensionVersion: String? = nil,
         peerApp: @escaping @Sendable (NWConnection) -> String? = { _ in nil }
@@ -69,7 +70,7 @@ struct ConnectFixture {
         let catcher = Catcher(library: library, settings: chosenSettings)
         server = ConnectServer(
             ports: ports ?? [0], store: store, vault: vault, now: now, catcher: catcher, catchDeadline: catchDeadline, releaseWait: releaseWait, preferences: preferences,
-            testTimeout: testTimeout, scanTimeout: scanTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion, peerApp: peerApp
+            testTimeout: testTimeout, scanTimeout: scanTimeout, signInTimeout: signInTimeout, nameBrowser: nameBrowser, extensionVersion: extensionVersion, peerApp: peerApp
         ) { request in
             await approvals.decide(request)
         }

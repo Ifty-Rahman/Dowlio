@@ -272,6 +272,7 @@ private struct ConnectionsSettings: View {
 
 private struct BrowsersSettings: View {
     @Bindable var model: AppModel
+    @AppStorage(SettingsKey.usesBrowserSignIn) private var usesBrowserSignIn = false
 
     var body: some View {
         Form {
@@ -282,6 +283,17 @@ private struct BrowsersSettings: View {
             }
             Section {
                 SendShortcutRecorder()
+            }
+            Section {
+                Toggle(isOn: $usesBrowserSignIn) {
+                    HStack(spacing: DowlioDesign.Spacing.xs) {
+                        Text("Use my browser's sign-in for pasted links")
+                        InfoButton(
+                            topic: "Browser sign-in",
+                            text: "When you paste a link, Dowlio asks the browser with Dowlio Connect for that site's cookies, so videos behind a sign-in work without sending the page. The cookies stay in memory for that link and its download. Dowlio doesn't save them."
+                        )
+                    }
+                }
             }
             Section {
                 Toggle(isOn: $model.catchPreferences.catches) {

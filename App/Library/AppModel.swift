@@ -290,9 +290,12 @@ final class AppModel {
     func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
         guard let library else { return nil }
         let list = LinkList(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
-        let model = NewDownloadModel(text: text, folder: downloadsFolder, list: list) { url, options in
+        let model = NewDownloadModel(text: text, folder: downloadsFolder, list: list, inspect: { url, options in
             try await library.inspect(url, options: options)
-        }
+        }, signIn: { [weak self] url in
+            guard UserDefaults.standard.bool(forKey: SettingsKey.usesBrowserSignIn) else { return nil }
+            return await self?.connectServer?.signIn(for: url, frontBrowser: FrontBrowser.frontApp?.name)
+        })
         model.draft.connections = settings.connections
         return model
     }
