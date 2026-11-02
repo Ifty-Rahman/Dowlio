@@ -37,6 +37,7 @@ final class AppModel {
     weak var menuBar: MenuBarController?
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
+    private let hostCooldown = HostCooldown()
     private var catchGrouper = CatchGrouper()
     var revealing: [DownloadID]?
     var catchPreferences = UserDefaults.standard.catchPreferences {
@@ -225,7 +226,7 @@ final class AppModel {
         #else
         let readerFailed = ReaderFailure.log
         #endif
-        return PageAnalyzer(identity: WebKitIdentity.shared.current, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
+        return PageAnalyzer(identity: WebKitIdentity.shared.current, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
             try await library.inspect(url, options: options)
         }
     }

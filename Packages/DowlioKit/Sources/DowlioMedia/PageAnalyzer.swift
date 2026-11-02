@@ -135,10 +135,13 @@ public struct PageAnalyzer: Sendable {
         let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
         let framed = await fromFrames
         let found = framed.isEmpty ? steps.found : Self.merged(steps.found + framed)
-        if found.isEmpty, refusals.blocked { return play == nil ? report(.blocked) : await playAndRead(page, report: report) }
+        if found.isEmpty, refusals.blocked {
+            guard play != nil else { return report(.blocked) }
+            return await playAndRead(page, report: report)
+        }
         if found.isEmpty, refusals.any { return report(.needsSignIn) }
         if found.isEmpty, play != nil { return await playAndRead(page, report: report) }
-        guard play != nil, !page.hasDataFromDowlioConnect, isThin(found, readerFound: steps.readerFound, on: page) else { return report(.found(found)) }
+        guard play != nil, !refusals.blocked, !page.hasDataFromDowlioConnect, isThin(found, readerFound: steps.readerFound, on: page) else { return report(.found(found)) }
         let left = longestLooking - (ContinuousClock.now - start)
         guard left > .seconds(1) else { return report(.found(found)) }
         report(.checkingForMore(found))
@@ -413,7 +416,7 @@ public struct PageAnalyzer: Sendable {
             request.httpMethod = "POST"
             request.httpBody = body
         }
-        await cooldown.wait(for: request.url?.host(percentEncoded: false) ?? "")
+        await cooldown.wait(for: request)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SiteReaderError.unreadable }
         await noteReply(http, for: request)
@@ -724,11 +727,11 @@ public struct PageAnalyzer: Sendable {
     private func fetch(_ request: URLRequest, refusals: Refusals) async -> (Data, HTTPURLResponse)? {
         var request = request
         request.httpShouldHandleCookies = false
-        await cooldown.wait(for: request.url?.host(percentEncoded: false) ?? "")
+        await cooldown.wait(for: request)
         guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return nil }
         refusals.note(status: http.statusCode)
         await noteReply(http, for: request)
-        if LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")), BlockedPage.isChallenge(String(decoding: data.prefix(65_536), as: UTF8.self)) {
+        if LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")), BlockedPage.isChallenge(String(decoding: data.prefix(BlockedPage.largestHead), as: UTF8.self)) {
             refusals.noteBlocked()
         }
         guard (200..<300).contains(http.statusCode), data.count <= Self.largestPage else { return nil }
@@ -737,7 +740,7 @@ public struct PageAnalyzer: Sendable {
 
     private func noteReply(_ reply: HTTPURLResponse, for request: URLRequest) async {
         guard reply.statusCode == 429 else { return }
-        await cooldown.cool(request.url?.host(percentEncoded: false) ?? "", for: BlockedPage.wait(from: reply.value(forHTTPHeaderField: "Retry-After")))
+        await cooldown.cool(HostCooldown.host(of: request), for: BlockedPage.wait(from: reply.value(forHTTPHeaderField: "Retry-After")))
     }
 
     private struct Players {
