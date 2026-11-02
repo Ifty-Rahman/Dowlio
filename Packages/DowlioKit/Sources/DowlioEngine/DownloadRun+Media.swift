@@ -241,7 +241,13 @@ extension DownloadRun {
             guard FileManager.default.createFile(atPath: joined.path, contents: nil),
                   let output = try? FileHandle(forWritingTo: joined) else { throw DownloadError.destinationNotWritable }
             defer { try? output.close() }
+            var timeline = TransportStreamTimeline()
+            let isTransportStream = head.first == 0x47
             for part in parts {
+                if isTransportStream {
+                    try output.write(contentsOf: timeline.continued(try Data(contentsOf: part)))
+                    continue
+                }
                 let input = try FileHandle(forReadingFrom: part)
                 defer { try? input.close() }
                 while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
