@@ -24,18 +24,20 @@ public struct MixcloudReader: SiteReader {
     private static let relayData = try! NSRegularExpression(pattern: #"<script[^>]*id="relay-data"[^>]*>(.*?)</script>"#, options: .dotMatchesLineSeparators)
 
     public func read(_ page: SitePage) async throws -> [SiteVideo] {
-        let html: String
-        if let known = page.html { html = known } else { html = try await page.text(at: page.url) }
+        let html = try await page.loadedHTML()
         guard let raw = AudioTrack.capture(Self.relayData, in: html),
               let data = try? JSONSerialization.jsonObject(with: Data(HTMLReader.decode(raw).utf8)),
-              let show = AudioTrack.first("streamInfo", in: data), let stream = show.object("streamInfo") else { return [] }
+              let show = AudioTrack.first("streamInfo", in: data), let stream = show.object("streamInfo") else { throw SiteReaderError.unreadable }
         let hls = URL(json: stream["hlsUrl"])
         let file = URL(json: stream["url"])
         guard hls != nil || file != nil else { throw SiteReaderError.unreadable }
         let owner = show.object("owner")?.text("displayName") ?? show.object("owner")?.text("username")
         let thumbnail = show.object("picture")?.text("urlRoot").flatMap { URL(string: "https://thumbnailer.mixcloud.com/unsafe/600x600/\($0)") }
         var versions: [Version] = []
-        if let file { versions.append(Version(source: .file(file), contentType: "audio/mp4", codecs: "AAC")) }
+        if let file {
+            let isMP3 = file.pathExtension.lowercased() == "mp3"
+            versions.append(Version(source: .file(file), contentType: isMP3 ? "audio/mpeg" : "audio/mp4", codecs: isMP3 ? "MP3" : "AAC"))
+        }
         if versions.isEmpty, let hls, case .media(let playlist)? = try? M3U8Parser.parse(try await page.text(at: hls), base: hls),
            let version = HLSVersions.audioVersion(of: playlist, language: nil, codecs: ["mp4a.40.2"]) {
             versions.append(version)

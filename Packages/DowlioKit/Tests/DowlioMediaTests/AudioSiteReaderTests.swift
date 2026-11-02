@@ -12,12 +12,13 @@ struct AudioSiteReaderTests {
 
     private func soundCloud() async throws -> ReaderSite {
         let site = try await ReaderSite { SoundCloudReader(hosts: ["127.0.0.1"], api: $0.url(for: "/api/")) }
-        try site.serve(fixture: "soundcloud-page.html", at: "/sample-artist/sample-track", replacing: placeholders(site))
+        let fill = placeholders(site)
+        try site.serve(fixture: "soundcloud-page.html", at: "/sample-artist/sample-track", replacing: fill)
         try site.serve(fixture: "soundcloud-app.js", at: "/assets/app-sample.js")
         site.site.serve(text: "var nothing = 1;", type: "application/javascript", at: "/assets/0-sample.js")
-        try site.serve(fixture: "soundcloud-track.json", at: "/api/resolve", replacing: placeholders(site))
-        try site.serve(fixture: "soundcloud-progressive.json", at: "/media/sample/stream/progressive", replacing: placeholders(site))
-        try site.serve(fixture: "soundcloud-hls-aac.json", at: "/media/sample/stream/hls-aac", replacing: placeholders(site))
+        try site.serve(fixture: "soundcloud-track.json", at: "/api/resolve", replacing: fill)
+        try site.serve(fixture: "soundcloud-progressive.json", at: "/media/sample/stream/progressive", replacing: fill)
+        try site.serve(fixture: "soundcloud-hls-aac.json", at: "/media/sample/stream/hls-aac", replacing: fill)
         site.site.serve(video: 3_400_000, type: "audio/mpeg", at: "/audio/sample.mp3")
         site.site.serve(text: PageAnalyzerTests.mediaPlaylist(segments: 2, named: "a"), at: "/audio/sample-aac/playlist.m3u8")
         for index in 0..<2 { site.site.serve(video: 100_000, type: "audio/mp4", at: "/audio/sample-aac/a\(index).ts") }

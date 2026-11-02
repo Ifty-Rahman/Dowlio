@@ -25,14 +25,14 @@ public struct BandcampReader: SiteReader {
 
     public func read(_ page: SitePage) async throws -> [SiteVideo] {
         guard Self.slug(in: page.url, kinds: ["track", "album"]) != nil else { return [] }
-        let html: String
-        if let known = page.html { html = known } else { html = try await page.text(at: page.url) }
+        let html = try await page.loadedHTML()
         guard let attribute = AudioTrack.capture(Self.tralbum, in: html),
               let tralbum = try JSONSerialization.jsonObject(with: Data(HTMLReader.decode(attribute).utf8)) as? [String: Any] else { return [] }
         let artist = tralbum.text("artist")
         let art = jsonNumber(tralbum["art_id"]).map { Int64($0) }
         return tralbum.objects("trackinfo").compactMap { track -> SiteVideo? in
-            guard let stream = URL(json: track.object("file")?["mp3-128"]) else { return nil }
+            let files = track.object("file") ?? [:]
+            guard let stream = URL(json: files["mp3-128"]) ?? files.keys.sorted().first(where: { $0.hasPrefix("mp3-") }).flatMap({ URL(json: files[$0]) }) else { return nil }
             return SiteVideo(
                 label: AudioTrack.label(artist: track.text("artist") ?? artist, title: track.text("title")),
                 thumbnail: art.flatMap { URL(string: "https://f4.bcbits.com/img/a\($0)_10.jpg") }, duration: jsonNumber(track["duration"]),

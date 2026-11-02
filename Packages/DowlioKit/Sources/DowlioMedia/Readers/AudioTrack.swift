@@ -4,8 +4,8 @@ enum AudioTrack {
     static func label(artist: String?, title: String?) -> String? {
         let name = (artist ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let track = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty || track.isEmpty { return track.isEmpty ? (name.isEmpty ? nil : name) : track }
-        return "\(name) - \(track)"
+        if track.isEmpty { return name.isEmpty ? nil : name }
+        return name.isEmpty ? track : "\(name) - \(track)"
     }
 
     static func capture(_ pattern: NSRegularExpression, in text: String) -> String? {

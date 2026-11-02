@@ -81,6 +81,11 @@ public struct SitePage: Sendable {
         return try JSONSerialization.jsonObject(with: try await send(url, nil, headers), options: [.fragmentsAllowed])
     }
 
+    public func loadedHTML() async throws -> String {
+        if let html { return html }
+        return try await text(at: url)
+    }
+
     public func text(at url: URL) async throws -> String {
         String(decoding: try await fetch(url), as: UTF8.self)
     }

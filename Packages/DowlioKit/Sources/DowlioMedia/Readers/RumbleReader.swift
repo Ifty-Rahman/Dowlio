@@ -59,8 +59,7 @@ public struct RumbleReader: SiteReader {
 
     private func embed(of page: SitePage) async throws -> String? {
         if let id = Self.embedID(in: page.url) { return id }
-        let html: String
-        if let known = page.html { html = known } else { html = try await page.text(at: page.url) }
+        let html = try await page.loadedHTML()
         return Self.firstEmbedID(in: html)
     }
 

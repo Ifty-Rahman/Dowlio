@@ -52,8 +52,7 @@ public struct SoundCloudReader: SiteReader {
     }
 
     private func clientID(for page: SitePage) async throws -> String {
-        let html: String
-        if let known = page.html { html = known } else { html = try await page.text(at: page.url) }
+        let html = try await page.loadedHTML()
         if let found = AudioTrack.capture(Self.clientID, in: html) { return found }
         let ns = html as NSString
         let scripts = Self.scriptAddress.matches(in: html, range: NSRange(location: 0, length: ns.length))
@@ -66,13 +65,13 @@ public struct SoundCloudReader: SiteReader {
 
     private func version(of transcoding: [String: Any], client: String, authorization: String?, page: SitePage) async throws -> Version? {
         guard let format = transcoding.object("format"), let protocolName = format.text("protocol"), let mime = format.text("mime_type")?.lowercased(),
-              var request = transcoding.text("url").flatMap({ URLComponents(string: $0) }) else { return nil }
+              var address = transcoding.text("url").flatMap({ URLComponents(string: $0) }) else { return nil }
         let progressive = protocolName == "progressive" && mime.hasPrefix("audio/mpeg")
         let segmented = protocolName == "hls" && mime.hasPrefix("audio/mp4")
         guard progressive || segmented else { return nil }
-        request.queryItems = (request.queryItems ?? []) + [URLQueryItem(name: "client_id", value: client)]
+        address.queryItems = (address.queryItems ?? []) + [URLQueryItem(name: "client_id", value: client)]
             + (authorization.map { [URLQueryItem(name: "track_authorization", value: $0)] } ?? [])
-        guard let location = request.url, let reply = try await page.json(at: location) as? [String: Any], let media = URL(json: reply["url"]) else { return nil }
+        guard let location = address.url, let reply = try await page.json(at: location) as? [String: Any], let media = URL(json: reply["url"]) else { return nil }
         if progressive { return Version(source: .file(media), contentType: "audio/mpeg", codecs: "MP3") }
         guard case .media(let playlist) = try M3U8Parser.parse(try await page.text(at: media), base: media) else { return nil }
         return HLSVersions.audioVersion(of: playlist, language: nil, codecs: ["mp4a.40.2"])
