@@ -355,6 +355,7 @@ struct NothingFoundBody: View {
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             Button(text.action) { media.lookAgain() }
+            OpenInWindowButton(media: media)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, DowlioDesign.Spacing.sm)
@@ -377,6 +378,7 @@ struct NeedsSignInBody: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
+            OpenInWindowButton(media: media)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, DowlioDesign.Spacing.sm)

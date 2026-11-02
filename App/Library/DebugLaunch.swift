@@ -43,6 +43,17 @@ enum DebugLaunch {
         #endif
     }
 
+    @MainActor
+    static func pageWindow(_ open: @escaping @MainActor (SentPage) -> Void) {
+        #if DEBUG
+        guard let text = ProcessInfo.processInfo.environment["DOWLIO_DEBUG_PAGE_WINDOW"], let url = URL(string: text) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            open(SentPage(url: url))
+        }
+        #endif
+    }
+
     /// Whether any debug switch is set, so release builds skip the launch-time checks entirely.
     static var isOn: Bool {
         #if DEBUG

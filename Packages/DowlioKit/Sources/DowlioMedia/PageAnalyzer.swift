@@ -81,9 +81,22 @@ public struct PageAnalyzer: Sendable {
         var refusals: Refusals
     }
 
+    public func reading(_ played: PlayedPage, of page: SentPage) async -> PageAnalysis {
+        let identified = identified(page).page
+        guard let found = await read(played, of: identified) else { return .found([]) }
+        if found.candidates.isEmpty, found.refusals.blocked { return .blocked }
+        if found.candidates.isEmpty, found.refusals.any { return .needsSignIn }
+        let agent = identified.userAgent ?? found.agent
+        return .found(found.candidates.map { $0.requested(by: agent) })
+    }
+
     private func lookedAgain(_ page: SentPage, within limit: Duration?) async -> LookAgainResult? {
         guard let play else { return nil }
         let played = await Self.played(page, by: play, within: limit)
+        return await read(played, of: page)
+    }
+
+    private func read(_ played: PlayedPage, of page: SentPage) async -> LookAgainResult? {
         guard !Task.isCancelled else { return nil }
         let refusals = Refusals()
         let seen = page.played(played).withoutControlLabels

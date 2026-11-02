@@ -17,6 +17,7 @@ struct BlockedBody: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
+            OpenInWindowButton(media: media)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, DowlioDesign.Spacing.sm)

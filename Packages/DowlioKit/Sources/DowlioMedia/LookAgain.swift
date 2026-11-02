@@ -41,6 +41,10 @@ extension SentPage {
 
 extension AsyncStream where Element == PageAnalysis {
     public static var nothingFound: AsyncStream<PageAnalysis> {
-        AsyncStream { $0.yield(.found([])); $0.finish() }
+        found([])
+    }
+
+    public static func found(_ candidates: [Candidate]) -> AsyncStream<PageAnalysis> {
+        AsyncStream { $0.yield(.found(candidates)); $0.finish() }
     }
 }

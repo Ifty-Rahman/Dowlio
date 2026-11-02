@@ -38,6 +38,7 @@ final class AppModel {
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
     private let hostCooldown = HostCooldown()
+    private var windowChoices: [URL: Candidate] = [:]
     private var catchGrouper = CatchGrouper()
     var revealing: [DownloadID]?
     var catchPreferences = UserDefaults.standard.catchPreferences {
@@ -79,6 +80,9 @@ final class AppModel {
         }
         DebugLaunch.sendPage { [weak self] page in
             self?.receive(page)
+        }
+        DebugLaunch.pageWindow { [weak self] page in
+            self?.openPageWindow(for: page)
         }
         DebugLaunch.useSheet { [weak self] links in
             self?.requestNewDownload(links)
@@ -188,6 +192,14 @@ final class AppModel {
         sendTarget()?.analyze(page)
     }
 
+    func openPageWindow(for page: SentPage) {
+        guard let analyzer else { return }
+        PageWindows.open(page, read: { await analyzer.reading($0, of: $1) }) { [weak self] page, candidate in
+            self?.windowChoices[page.url] = candidate
+            self?.receive(page)
+        }
+    }
+
     private func sendTarget(activating: Bool = true) -> NewDownloadModel? {
         switch sentRoute {
         case .quickAdd: menuBar?.sendTarget(activating: activating)
@@ -207,7 +219,8 @@ final class AppModel {
     }
 
     func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
-        recorded(page) { $0.analyze(page) }
+        if let chosen = windowChoices.removeValue(forKey: page.url) { return .found([chosen]) }
+        return recorded(page) { $0.analyze(page) }
     }
 
     func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
