@@ -25,10 +25,5 @@ xcuserdata/
 dist/
 dist-secrets/
 
-# Agent worktrees
-.claude/worktrees/
-.claude/settings.json
-.claude/settings.local.json
-
 # Dowlio Connect test dependencies
 Extension/node_modules/
