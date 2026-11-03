@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/Platform-macOS_14+-black) ![Architecture](https://img.shields.io/badge/Architecture-Apple_Silicon/Intel-black) ![Privacy](https://img.shields.io/badge/Privacy-No_accounts,_no_tracking-success)
 
-**Dowlio** splits each download across several connections, so large files arrive faster. It lives in your menu bar, keeps going when you close the window, and picks up where it left off after a quit. With Dowlio Connect, downloads you start in Chrome, Arc, Brave or Edge finish in Dowlio.
+**Dowlio** splits each download across several connections, so large files arrive faster. It lives in your menu bar, keeps going when you close the window, and picks up where it left off after a quit. With Dowlio Connect, downloads you start in Chrome, Arc, Brave or Edge finish in Dowlio. Send it a page with a video, from X, Instagram, Facebook, Reddit or many other sites, and it lists every video on the page so you can pick a quality and get one playable file.
 
 ---
 
@@ -33,6 +33,9 @@ xattr -dr com.apple.quarantine /Applications/Dowlio.app
 
 - **Catch downloads:** with Dowlio Connect added, a download you start in a Chromium browser moves to Dowlio and starts at once. If Dowlio is quit or can't take it, the browser keeps it.
 - **Send to Dowlio:** hand Dowlio a link from the browser's right-click menu. Nothing downloads until you choose Download.
+- **Videos from a page:** press ⌥⇧D on a page, or choose Send this page to Dowlio, and Dowlio lists the videos on it with their qualities, sizes and an audio-only choice. Feeds label each video with its post text or title.
+- **Streams too:** HLS and DASH videos download to one MP4, with separate video and audio joined. DRM-protected media is refused with a clear message.
+- **Updates in the app:** Dowlio checks for a new version once a day and installs it when you say so. Check for Updates in the Dowlio menu checks now.
 - **Faster downloads:** each file is split into segments fetched over several connections at once, from 1 to 16 per download (8 by default). You see every segment fill on a segmented progress bar.
 - **Take over slow segments:** when a connection finishes early, it can split the slowest remaining segment and help with it. This is off by default, and a download never has more than 32 segments.
 - **Pause and resume:** pause from a row, the toolbar or the menu bar. If a server can't resume, Dowlio tells you before a pause would start the file over.
@@ -92,6 +95,12 @@ To stop catching, turn off Catch downloads in the Dowlio Connect popup or in Set
 
 Right-click a link and choose Send to Dowlio. The link opens in Quick add from the menu bar, or in the New Download sheet when the menu bar icon is off. Dowlio checks it first and says so when the link is a web page rather than a file. Nothing downloads until you choose Download, and Cancel drops it.
 
+### Send a page
+
+Press ⌥⇧D on a page with a video, or choose Send this page to Dowlio in the Dowlio Connect popup or the page's right-click menu. Quick add opens at once and lists every video Dowlio finds, each with its resolutions, sizes and an audio-only choice. Pick one and choose Download, or Open in Dowlio for the full page of versions.
+
+In Safari, or a browser without Dowlio Connect, ⌥⇧D reads the page's address with your permission and Dowlio looks at the page itself. A link to a plain file, such as a PDF or a ZIP, opens the New Download sheet as before. You can change the shortcut in Settings › Browsers.
+
 ### Cookies
 
 Dowlio Connect passes along a site's cookies with each download it hands over, so files from sites you're logged in to work in Dowlio too. Dowlio keeps them in memory for that download only and never writes them to disk.
@@ -120,7 +129,7 @@ Other tools in the library:
 
 ## ⚙️ Settings
 
-- **General:** open at login, start in the menu bar, show in the menu bar, show in the Dock, notifications, and what happens when a download finishes: nothing, Show in Finder or Open the file.
+- **General:** open at login, start in the menu bar, show in the menu bar, show in the Dock, notifications, what happens when a download finishes (nothing, Show in Finder or Open the file), and whether Dowlio checks for updates by itself.
 - **Downloads:** the download folder, sorting into category folders, and what to do when a file with the same name exists: keep both, replace or skip.
 - **Connections:** connections per download, downloads at once, how extra connections open, how many times to retry a failed connection, and Take over slow segments.
 - **Browsers:** each Chromium browser on your Mac and whether it's connected, with Add, Test and Reload. Also the Catch downloads switch and the sites that are never caught.
@@ -129,7 +138,7 @@ Other tools in the library:
 
 ## 🔒 Privacy
 
-Dowlio has no account and no tracking. It stores what it needs to resume a download and show your history, and the sites you never catch on. It stores no page titles, no cookies and no request bodies. It does keep the page a download came from, because some servers only resume a download for the page that linked to it. Cookies from Dowlio Connect stay in memory for the one download that needs them.
+Dowlio has no account and no tracking. Apart from the sites you download from, it only talks to GitHub, to check for updates. It stores what it needs to resume a download and show your history, and the sites you never catch on. It stores no page titles, no cookies and no request bodies. It does keep the page a download came from, because some servers only resume a download for the page that linked to it. Cookies from Dowlio Connect stay in memory for the one download that needs them.
 
 Dowlio Connect talks to Dowlio only on your Mac, at `127.0.0.1`. Dowlio refuses web pages that try to connect, and a browser can do nothing until you allow it with its code. Report a Problem opens a prefilled GitHub issue with only the app and macOS versions. It never includes your links, file names or hosts.
 
@@ -143,10 +152,8 @@ Dowlio works in light and dark mode and with Increase Contrast. It calms its ani
 
 ## 🔭 Coming Next
 
-- Send to Dowlio for a whole page: choose from the files and media Dowlio finds on it.
-- Media downloads from streams and video sites, with audio and video merged.
+- YouTube and more video sites.
 - A scheduled queue with a speed limit, duplicate checks and recovery for expired links.
-- Automatic updates.
 
 ---
 
