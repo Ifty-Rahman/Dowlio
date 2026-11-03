@@ -73,20 +73,35 @@ final class BrowserSetup {
         rows = BrowserList.rows(installed: installed ?? [], links: await server.browserLinks())
     }
 
+    static let otherBrowser = BrowserRow(name: "your browser", appURL: nil, link: nil)
+
+    private var connectedWhenGuideOpened: Set<String> = []
+
     func add(_ row: BrowserRow) {
+        guard prepareExtension() else { return }
+        added.remember(row.name)
+        guide = row
+    }
+
+    func addOther() {
+        guard prepareExtension() else { return }
+        connectedWhenGuideOpened = Set(rows.filter { $0.state == .connected }.map(\.name))
+        guide = Self.otherBrowser
+    }
+
+    private func prepareExtension() -> Bool {
         guard let bundled = Self.bundled else {
             addFailure = "Dowlio Connect is missing from this copy of Dowlio. Download Dowlio again."
-            return
+            return false
         }
         do {
             try ExtensionFolder.install(from: bundled, to: folder)
         } catch {
             addFailure = "Dowlio couldn't put Dowlio Connect in place. \(error.localizedDescription)"
-            return
+            return false
         }
         addFailure = nil
-        added.remember(row.name)
-        guide = row
+        return true
     }
 
     func openExtensionsPage(of row: BrowserRow) {
@@ -94,9 +109,19 @@ final class BrowserSetup {
         NSWorkspace.shared.open([extensions], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
     }
 
+    private var newlyConnected: BrowserRow? {
+        rows.first { $0.state == .connected && !connectedWhenGuideOpened.contains($0.name) }
+    }
+
     var guideIsConnected: Bool {
         guard let guide else { return false }
+        if guide == Self.otherBrowser { return newlyConnected != nil }
         return rows.first { $0.name == guide.name }?.state == .connected
+    }
+
+    var guideBrowserName: String {
+        guard let guide else { return "" }
+        return guide == Self.otherBrowser ? newlyConnected?.name ?? guide.name : guide.name
     }
 
     func test(_ row: BrowserRow) {

@@ -64,6 +64,12 @@ public struct BrowserRow: Equatable, Identifiable, Sendable {
     public let appURL: URL?
     public let link: BrowserLink?
 
+    public init(name: String, appURL: URL?, link: BrowserLink?) {
+        self.name = name
+        self.appURL = appURL
+        self.link = link
+    }
+
     public var id: String { name }
     public var state: BrowserState { link?.state ?? .notInstalled }
 }
