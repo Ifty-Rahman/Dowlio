@@ -16,11 +16,12 @@ struct BrowsersList: View {
                     BrowserRowView(row: row, setup: setup)
                 }
             }
-            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+            HStack {
                 Text("Missing a browser? Dowlio finds the Chromium browsers it knows. Any other Chromium browser can still connect.")
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Spacer()
                 Button("Add Another Browser…") { setup.addOther() }
             }
             HStack {

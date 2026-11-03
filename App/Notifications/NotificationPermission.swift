@@ -45,15 +45,6 @@ final class NotificationPermission {
             NSWorkspace.shared.open(url)
         }
     }
-
-    static func sendTest() {
-        let content = UNMutableNotificationContent()
-        content.title = "Dowlio notifications are on"
-        content.body = "You'll see a note like this when a download finishes."
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test", content: content, trigger: nil)) { error in
-            if let error { log.error("Posting the test notification failed: \(error.localizedDescription, privacy: .public)") }
-        }
-    }
 }
 
 struct NotificationPermissionRow: View {
@@ -71,9 +62,7 @@ struct NotificationPermissionRow: View {
                 Button("Allow Notifications") { Task { await permission.request() } }
             case .denied, .withoutBanners:
                 Button("Open System Settings…") { NotificationPermission.openSystemSettings() }
-            case .allowed:
-                Button("Send a Test") { NotificationPermission.sendTest() }
-            case .unknown:
+            case .allowed, .unknown:
                 EmptyView()
             }
         }
