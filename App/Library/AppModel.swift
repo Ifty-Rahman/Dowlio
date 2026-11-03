@@ -340,8 +340,15 @@ final class AppModel {
     func applyPresence(activating: Bool = true) {
         let presence = UserDefaults.standard.presence
         menuBar?.isVisible = presence.menuBar
+        let front = NSApp.keyWindow.map { $0.sheetParent ?? $0 }
         NSApp.setActivationPolicy(presence.dock ? .regular : .accessory)
-        if activating { NSApp.activate() }
+        guard activating || front != nil else { return }
+        NSApp.activate()
+        DispatchQueue.main.async { front?.makeKeyAndOrderFront(nil) }
+    }
+
+    func askNotificationPermission() {
+        notifier.askPermissionIfNeeded()
     }
 
     func applyDownloadsAtOnce() {

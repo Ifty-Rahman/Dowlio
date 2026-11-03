@@ -101,6 +101,7 @@ struct LibraryWindow: View {
                 model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
                 model.openSettingsWindow = { [openSettings] in openSettings() }
                 revealCaught()
+                if hasSeenWelcome { model.askNotificationPermission() }
             }
             .onDisappear { model.isLibraryWindowOpen = false }
             .onChange(of: model.revealing) { revealCaught() }

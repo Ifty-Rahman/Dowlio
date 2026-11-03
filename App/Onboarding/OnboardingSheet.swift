@@ -12,6 +12,7 @@ struct OnboardingSheet: View {
     enum Page: Int, CaseIterable {
         case welcome
         case setup
+        case notifications
         case browsers
         case shortcut
     }
@@ -33,6 +34,7 @@ struct OnboardingSheet: View {
         switch page {
         case .welcome: WelcomePage()
         case .setup: SetupPage(model: model)
+        case .notifications: NotificationsPage()
         case .browsers: BrowsersPage(model: model)
         case .shortcut: ShortcutPage()
         }
@@ -139,6 +141,25 @@ private struct SetupPage: View {
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { folderPath = folder.path }
         }
+    }
+}
+
+private struct NotificationsPage: View {
+    @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
+    @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
+    @State private var permission = NotificationPermission()
+
+    var body: some View {
+        Form {
+            Section {
+                NotificationPermissionRow(permission: permission)
+                Toggle("When a download finishes", isOn: $notifies)
+                Toggle("When a download fails or can't resume", isOn: $notifiesOnProblems)
+            } header: {
+                PageHeader(symbol: "bell.badge.fill", title: "Know when downloads are done", subtitle: "Dowlio can tell you when a download finishes or runs into a problem. You can change this later in Settings.")
+            }
+        }
+        .onboardingForm()
     }
 }
 

@@ -23,6 +23,7 @@ struct SettingsView: View {
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .hidingToolbarBackground()
+        .background(SettingsWindowBehavior(model: model))
     }
 }
 
@@ -31,7 +32,7 @@ private struct GeneralSettings: View {
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
     @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
-    @State private var notificationsDenied = false
+    @State private var permission = NotificationPermission()
 
     var body: some View {
         Form {
@@ -40,15 +41,7 @@ private struct GeneralSettings: View {
             }
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
-                if notifies, notificationsDenied {
-                    HStack {
-                        Text("macOS isn't letting Dowlio show notifications.")
-                            .font(DowlioDesign.TypeRole.detail)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Open System Settings…") { openNotificationSettings() }
-                    }
-                }
+                if notifies { NotificationPermissionRow(permission: permission) }
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -59,21 +52,6 @@ private struct GeneralSettings: View {
             }
         }
         .settingsForm()
-        .task { await checkNotifications() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await checkNotifications() }
-        }
-    }
-
-    private func checkNotifications() async {
-        notificationsDenied = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
-    }
-
-    private func openNotificationSettings() {
-        let id = Bundle.main.bundleIdentifier ?? ""
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 

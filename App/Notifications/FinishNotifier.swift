@@ -40,18 +40,13 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
         )]))
     }
 
-    /// The question comes when the first download is added, so it has a reason.
     func askPermissionIfNeeded() {
         Task {
-            let status = await center.notificationSettings().authorizationStatus
-            log.info("Notification permission is \(status.rawValue, privacy: .public)")
-            guard status == .notDetermined else { return }
-            do {
-                let granted = try await center.requestAuthorization(options: [.alert, .sound])
-                log.info("Notification permission granted: \(granted, privacy: .public)")
-            } catch {
-                log.error("Notification permission request failed: \(error.localizedDescription, privacy: .public)")
-            }
+            let permission = NotificationPermission()
+            await permission.refresh()
+            log.info("Notification permission state: \(String(describing: permission.state), privacy: .public)")
+            guard permission.state == .notAsked else { return }
+            await permission.request()
         }
     }
 
