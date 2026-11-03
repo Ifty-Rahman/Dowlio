@@ -4,6 +4,10 @@ public struct BrowserIdentity: Equatable, Sendable {
     public var userAgent: String?
     public var acceptLanguage: String?
 
+    public static let chromeUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+
+    public static var standard: BrowserIdentity { BrowserIdentity(userAgent: chromeUserAgent) }
+
     public init(userAgent: String?, languages: [String] = Locale.preferredLanguages) {
         self.userAgent = userAgent
         acceptLanguage = Self.acceptLanguage(languages)

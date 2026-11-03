@@ -28,6 +28,13 @@ struct ConnectionOpener: Sendable {
         shared = sessions == .oneShared ? SharedSession(idleTimeout: idleTimeout) : nil
     }
 
+    static let navigationHeaders = [
+        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Site": "none",
+    ]
+
     func open(_ url: URL, range: RangeRequest?, ifRange validator: String? = nil) -> Connection {
         var request = request(for: url, range: range)
         if let validator { request.setValue(validator, forHTTPHeaderField: "If-Range") }
@@ -88,6 +95,9 @@ struct ConnectionOpener: Sendable {
             request.setValue(origin, forHTTPHeaderField: "Origin")
         }
         if let userAgent = options.userAgent ?? identity.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        if options.userAgent == nil, identity.userAgent != nil, !readsLikeAPlayer, fromLinkSite {
+            for (name, value) in Self.navigationHeaders where request.value(forHTTPHeaderField: name) == nil { request.setValue(value, forHTTPHeaderField: name) }
+        }
         if request.value(forHTTPHeaderField: "Accept-Language") == nil, let languages = identity.acceptLanguage {
             request.setValue(languages, forHTTPHeaderField: "Accept-Language")
         }

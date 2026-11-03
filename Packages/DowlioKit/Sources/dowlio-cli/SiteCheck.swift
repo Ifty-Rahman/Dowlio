@@ -62,7 +62,7 @@ enum SiteCheck {
         } catch {
             fail("Can't read \(paths[0]).")
         }
-        let outcomes = await analyze(links(in: text), identity: BrowserIdentity(userAgent: agent))
+        let outcomes = await analyze(links(in: text), identity: agent.map { BrowserIdentity(userAgent: $0) } ?? .standard)
         print(asJSON ? json(outcomes) : report(outcomes))
     }
 

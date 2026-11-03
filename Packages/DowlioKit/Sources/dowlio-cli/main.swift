@@ -18,8 +18,8 @@ usage: dowlio-cli get <url> [-c <connections>] [-o <folder>] [--shared-session]
           Analyse each link in <file>, one per line, as a pasted link with no
           browser and no Look Again, and print what each found. Blank lines and
           lines starting with # are skipped. --json prints the same as JSON.
-          --user-agent asks for every link with that user agent, as the app does
-          with its WebKit's own.
+          --user-agent asks for every link with that user agent. Without it, the
+          app's own (a current Chrome's) is used.
 
   Ctrl-C pauses the download and prints its partial file, for resume.
 """
