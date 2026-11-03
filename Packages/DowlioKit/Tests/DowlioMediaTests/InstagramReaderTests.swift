@@ -70,6 +70,23 @@ struct InstagramReaderTests {
         #expect(candidates.first?.versions.map(\.totalBytes) == [3_000])
     }
 
+    @Test func aFileWithNoSizeInTheDataTakesItsResolutionFromItsEncodingTagNotThePostsOriginalSize() async throws {
+        let site = try await instagram()
+        site.site.serve(html: "<title>Instagram</title>", at: "/reel/Aa11Bb22Cc3/")
+        let tag = Data(#"{"vencode_tag":"xpv_progressive.INSTAGRAM.CLIPS.C3.720.dash_baseline_1_v1"}"#.utf8).base64EncodedString()
+        var reel = try reel(code: "Aa11Bb22Cc3", caption: "Tagged reel", seconds: 12)
+        reel["original_width"] = 1080
+        reel["original_height"] = 1920
+        reel["video_versions"] = [
+            ["type": 101, "url": "https://scontent.cdn.example/v/reel.mp4?efg=\(tag)&oe=1"],
+            ["type": 102, "url": "https://scontent.cdn.example/v/reel.mp4?efg=\(tag)&oe=1"],
+        ]
+
+        let candidates = try await site.candidates("/reel/Aa11Bb22Cc3/") { $0.embeddedJSON = [PageFixture.json(reel)] }
+
+        #expect(candidates.first?.versions.map(\.height) == [720])
+    }
+
     @Test func aCarouselsVideosTakeTheCaptionOfTheirPost() async throws {
         let site = try await instagram()
         site.site.serve(html: "<title>Instagram</title>", at: "/p/Ca12Ro34Us5/")

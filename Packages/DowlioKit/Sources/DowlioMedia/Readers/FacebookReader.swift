@@ -100,7 +100,11 @@ public struct FacebookReader: SiteReader {
 
     private func isVideo(_ object: [String: Any]) -> Bool {
         guard object["__typename"] as? String ?? "Video" == "Video" else { return false }
-        return delivery(of: object) != nil || Self.olderFileKeys.contains { object.text($0) != nil }
+        return delivery(of: object) != nil || legacy(of: object) != nil || Self.olderFileKeys.contains { object.text($0) != nil }
+    }
+
+    private func legacy(of object: [String: Any]) -> [String: Any]? {
+        object.object("videoDeliveryLegacyFields")
     }
 
     private func delivery(of object: [String: Any]) -> [String: Any]? {
@@ -114,20 +118,22 @@ public struct FacebookReader: SiteReader {
             return SiteVideo(label: label, thumbnail: thumbnail, duration: duration, restriction: restriction)
         }
         let result = delivery(of: media)
+        let older = legacy(of: media) ?? media
         let files = result.map { $0.objects("progressive_urls").compactMap { URL(json: $0["progressive_url"]) } }
-            ?? Self.olderFileKeys.compactMap { URL(json: media[$0]) }
-        let dash = result.map { dashVersions(in: $0, label: label, base: base) }
+            ?? Self.olderFileKeys.compactMap { URL(json: older[$0]) }
+        let manifests = result.map { $0.objects("dash_manifests").compactMap { $0.text("manifest_xml") } } ?? [older.text("dash_manifest_xml_string")].compactMap { $0 }
+        let dash = dashVersions(of: manifests, label: label, base: base)
         let streams = result?.objects("hls_playlist_urls").compactMap { URL(json: $0["hls_playlist_url"]) } ?? []
-        let versions = Self.progressive(files) + (dash?.versions ?? [])
+        let versions = Self.progressive(files) + dash.versions
         guard !versions.isEmpty || !streams.isEmpty else { return nil }
-        return SiteVideo(label: label, thumbnail: thumbnail, duration: duration ?? dash?.duration, versions: versions, streams: streams)
+        return SiteVideo(label: label, thumbnail: thumbnail, duration: duration ?? dash.duration, versions: versions, streams: streams)
     }
 
-    private func dashVersions(in result: [String: Any], label: String?, base: URL) -> (versions: [Version], duration: Double?) {
+    private func dashVersions(of manifests: [String], label: String?, base: URL) -> (versions: [Version], duration: Double?) {
         var versions: [Version] = []
         var duration: Double?
-        for entry in result.objects("dash_manifests") {
-            guard let xml = entry.text("manifest_xml"), let manifest = try? MPDParser.parse(Data(xml.utf8), base: base),
+        for xml in manifests {
+            guard let manifest = try? MPDParser.parse(Data(xml.utf8), base: base),
                   let dash = DASHVersions.candidate(of: manifest, label: label ?? "", thumbnail: nil), dash.restriction == nil else { continue }
             versions += dash.versions
             duration = duration ?? dash.duration
@@ -138,7 +144,7 @@ public struct FacebookReader: SiteReader {
     private static func progressive(_ files: [URL]) -> [Version] {
         var seen = Set<URL>()
         return files.filter { seen.insert($0).inserted }.map { url in
-            Version(source: .file(url), contentType: "video/mp4", height: height(of: url), codecs: MediaCodecs.h264WithAAC)
+            Version(source: .file(url), contentType: "video/mp4", height: MediaFile.height(inEncodingTagOf: url), codecs: MediaCodecs.h264WithAAC)
         }
     }
 
@@ -146,16 +152,5 @@ public struct FacebookReader: SiteReader {
         if media["is_live_streaming"] as? Bool == true { return .live }
         guard let text = media.text("drm_info"), let info = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { return nil }
         return ((info["video_license_uri_map"] as? [String: Any]) ?? [:]).isEmpty ? nil : .protected
-    }
-
-    static func height(of url: URL) -> Int? {
-        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        guard var encoded = query.first(where: { $0.name == "efg" })?.value else { return nil }
-        encoded = encoded.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
-        guard let data = Data(base64Encoded: encoded),
-              let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["vencode_tag"] as? String,
-              let match = tag.firstMatch(of: /\.(\d{3,4})\./) else { return nil }
-        return Int(match.1)
     }
 }

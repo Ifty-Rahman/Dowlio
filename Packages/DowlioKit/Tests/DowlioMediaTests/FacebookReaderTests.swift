@@ -45,6 +45,23 @@ struct FacebookReaderTests {
         #expect(video.versions.contains { $0.isAudio && $0.codecs == "AAC" })
     }
 
+    @Test func aReelAPlainRequestGetsIsReadFromItsLegacyDeliveryFields() async throws {
+        let site = try await facebook()
+        site.site.serve(html: try PageFixture.html("facebook-reel-legacy"), at: "/reel/3000000000000001/")
+
+        let candidates = try await site.candidates("/reel/3000000000000001/")
+
+        let video = try #require(candidates.first)
+        #expect(candidates.count == 1)
+        #expect(video.duration == 135.185)
+        #expect(video.thumbnail == URL(string: "https://video.cdn.example/v/thumb.jpg?oe=6AE4B7CE"))
+        let files = video.versions.filter { if case .file = $0.source { true } else { false } }
+        #expect(files.map(\.source.url.lastPathComponent) == ["legacy-sd.mp4", "legacy-hd.mp4"])
+        let av1 = video.versions.filter { $0.codecs?.hasPrefix("AV1") ?? false }
+        #expect(av1.compactMap(\.height) == [360, 480, 540, 640, 720, 1080])
+        #expect(video.versions.contains { $0.isAudio })
+    }
+
     @Test func aProgressiveFileTakesItsResolutionFromItsEncodingTag() async throws {
         let site = try await facebook()
         site.site.serve(html: "<title>Facebook</title>", at: "/reel/42/")

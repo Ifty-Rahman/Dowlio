@@ -85,7 +85,7 @@ enum MetaMedia {
         let original = shorterSide(media["original_width"], media["original_height"])
         for entry in media.objects("video_versions") {
             guard let url = URL(json: entry["url"]), seen.insert(url).inserted else { continue }
-            let height = shorterSide(entry["width"], entry["height"]) ?? original
+            let height = shorterSide(entry["width"], entry["height"]) ?? MediaFile.height(inEncodingTagOf: url) ?? original
             versions.append(Version(source: .file(url), contentType: "video/mp4", height: height, codecs: MediaCodecs.h264WithAAC))
         }
         var duration = jsonNumber(media["video_duration"])

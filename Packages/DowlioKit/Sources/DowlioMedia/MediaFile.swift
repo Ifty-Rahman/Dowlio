@@ -25,6 +25,17 @@ public enum MediaFile {
         return named.count == 1 ? named.first : nil
     }
 
+    public static func height(inEncodingTagOf url: URL) -> Int? {
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard var encoded = query.first(where: { $0.name == "efg" })?.value else { return nil }
+        encoded = encoded.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded),
+              let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["vencode_tag"] as? String,
+              let match = tag.firstMatch(of: /\.(\d{3,4})\./) else { return nil }
+        return Int(match.1)
+    }
+
     public static func codecs(in text: String) -> String? {
         let lowered = text.lowercased()
         let tokens = Set(lowered.split { !$0.isLetter && !$0.isNumber }.map(String.init))
