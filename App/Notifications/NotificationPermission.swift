@@ -19,6 +19,8 @@ final class NotificationPermission {
 
     private(set) var state = State.unknown
 
+    var needsAttention: Bool { state != .allowed && state != .unknown }
+
     func refresh() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         switch settings.authorizationStatus {

@@ -41,7 +41,7 @@ private struct GeneralSettings: View {
             }
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
-                if notifies { NotificationPermissionRow(permission: permission) }
+                if notifies && permission.needsAttention { NotificationPermissionRow(permission: permission) }
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -52,6 +52,10 @@ private struct GeneralSettings: View {
             }
         }
         .settingsForm()
+        .task { await permission.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await permission.refresh() }
+        }
     }
 }
 
