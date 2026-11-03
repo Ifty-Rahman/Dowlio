@@ -149,6 +149,9 @@ for (const [name, item] of [
   ["a data: link", { url: "data:text/csv;base64,YQ==", finalUrl: "data:text/csv;base64,YQ==" }],
   ["a file: link", { url: "file:///Users/me/a.zip", finalUrl: "file:///Users/me/a.zip" }],
   ["an incognito download", { incognito: true }],
+  ["a Chrome update", { url: "https://dl.google.com/chrome/mac/stable/GGRO/googlechrome.dmg", finalUrl: "https://dl.google.com/chrome/mac/stable/GGRO/googlechrome.dmg" }],
+  ["a Firefox update", { url: "https://download.mozilla.org/?product=firefox-latest&os=osx", finalUrl: "https://download-installer.cdn.mozilla.net/pub/firefox/Firefox.dmg" }],
+  ["an extension package", { mime: "application/x-chrome-extension" }],
   ["a download the browser says Dowlio Connect started", { byExtensionId: "abcdefghijklmnopabcdefghijklmnop" }],
 ]) {
   test(`${name} stays in the browser untouched`, async () => {
