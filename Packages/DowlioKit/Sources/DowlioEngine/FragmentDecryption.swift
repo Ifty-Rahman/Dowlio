@@ -23,6 +23,8 @@ final class FragmentKeys: @unchecked Sendable {
 }
 
 enum FragmentDecryption {
+    static let largestKey = 64
+
     static func decrypt(_ data: Data, key: Data, iv: Data) throws -> Data {
         guard key.count == kCCKeySizeAES128, iv.count == kCCBlockSizeAES128 else { throw DownloadError.mediaUnplayable }
         var output = Data(count: data.count + kCCBlockSizeAES128)
@@ -56,6 +58,7 @@ extension DownloadRun {
             var received = Data()
             for try await event in connection.events {
                 if case .data(let data) = event { received.append(data) }
+                guard received.count <= FragmentDecryption.largestKey else { throw DownloadError.mediaUnplayable }
             }
             return received
         }

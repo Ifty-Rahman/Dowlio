@@ -11,7 +11,7 @@ async function connected({ clock = { time: 0 } } = {}) {
   startWorker({ chrome, WebSocket: net.FakeWebSocket, timers, navigator, now: () => clock.time });
   await flush();
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   return { chrome, timers, net, socket: net.last() };
 }
 
@@ -406,7 +406,7 @@ test("a download that starts while Dowlio Connect is still connecting waits for 
 
   await chrome.downloads.create(download());
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   for (let turn = 0; turn < 5; turn += 1) await flush();
 
   assert.deepEqual(chrome.downloads.calls, [["cancel", 7], ["erase", 7]]);
@@ -423,7 +423,7 @@ test("a download stays in the browser untouched when Dowlio doesn't connect with
   await chrome.downloads.create(download());
   await timers.advance(3000);
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
 
   assert.deepEqual(chrome.downloads.calls, []);
   assert.equal(offers(net.last()).length, 0);

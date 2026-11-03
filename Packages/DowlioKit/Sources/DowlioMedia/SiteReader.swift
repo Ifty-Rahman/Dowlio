@@ -161,7 +161,7 @@ public struct ReaderFailure: Equatable, Sendable {
     private static let logger = Logger(subsystem: "io.github.ifty-rahman.Dowlio", category: "site-readers")
 
     public static let log: @Sendable (ReaderFailure) -> Void = { failure in
-        logger.notice("\(failure.reader, privacy: .public) reader on \(failure.site, privacy: .public): \(failure.reason, privacy: .public)")
+        logger.notice("\(failure.reader, privacy: .public) reader on \(failure.site, privacy: .private): \(failure.reason, privacy: .public)")
     }
 }
 

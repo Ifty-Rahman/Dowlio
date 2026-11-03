@@ -134,3 +134,13 @@ struct M3U8ParserTests {
         }
     }
 }
+
+struct PlaylistLimitTests {
+    @Test func aPlaylistWithMoreThanAHundredThousandSegmentsIsRefused() {
+        let segments = (0...M3U8Parser.mostEntries).map { "#EXTINF:1,\ns\($0).ts" }.joined(separator: "\n")
+
+        #expect(throws: M3U8Parser.Error.tooLarge) {
+            try M3U8Parser.parse("#EXTM3U\n" + segments, base: URL(string: "https://example.com/")!)
+        }
+    }
+}

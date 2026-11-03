@@ -79,11 +79,17 @@ final class HiddenPlayer: NSObject {
     }
 
     private var cookies: [HTTPCookie] {
-        let site = PageAnalyzer.site(of: page.url)
-        let domain = "." + (site.split(separator: ":").first.map(String.init) ?? site)
-        let secure = page.url.scheme?.lowercased() == "https" ? "TRUE" : "FALSE"
+        let host = page.url.host(percentEncoded: false) ?? ""
+        let pageIsSecure = page.url.scheme?.lowercased() == "https"
         return page.cookies.compactMap { cookie in
-            HTTPCookie(properties: [.name: cookie.name, .value: cookie.value, .domain: domain, .path: "/", .secure: secure])
+            let bare = cookie.domain.map { $0.hasPrefix(".") ? String($0.dropFirst()) : $0 }
+            let domain = bare.map { cookie.hostOnly ? $0 : "." + $0 } ?? host
+            var properties: [HTTPCookiePropertyKey: Any] = [
+                .name: cookie.name, .value: cookie.value, .domain: domain, .path: cookie.path ?? "/",
+            ]
+            if cookie.secure || (cookie.domain == nil && pageIsSecure) { properties[.secure] = "TRUE" }
+            if cookie.httpOnly { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+            return HTTPCookie(properties: properties)
         }
     }
 

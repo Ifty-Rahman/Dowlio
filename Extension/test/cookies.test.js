@@ -12,7 +12,7 @@ async function connected({ settings } = {}) {
   startWorker({ chrome, WebSocket: net.FakeWebSocket, timers: new FakeTimers(), navigator: navigatorLike() });
   await flush();
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   if (settings) await net.last().reply({ type: "settings.update", catches: true, neverCatch: [], ...settings });
   return { chrome, socket: net.last() };
 }
@@ -30,15 +30,15 @@ test("a catch carries the cookies for the download's own site without asking", a
   await chrome.downloads.create(download("https://other.org/b.pdf", 8));
 
   const [first, second] = sent(socket, "catch.offer");
-  assert.deepEqual(first.cookies, [{ name: "session", value: "abc" }]);
-  assert.deepEqual(second.cookies, [{ name: "id", value: "yyy" }]);
+  assert.deepEqual(first.cookies, [{ name: "session", value: "abc", domain: "example.com" }]);
+  assert.deepEqual(second.cookies, [{ name: "id", value: "yyy", domain: "other.org" }]);
 });
 
 test("cookies come from the host the file is served from, not the page that linked it", async () => {
   const { chrome, socket } = await connected();
   await chrome.downloads.create({ ...download("https://example.com/get/1"), finalUrl: "https://files.example.com/a.pdf" });
 
-  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "id", value: "zzz" }]);
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "id", value: "zzz", domain: "example.com" }]);
 });
 
 test("a sent link carries its site's cookies", async () => {
@@ -46,7 +46,7 @@ test("a sent link carries its site's cookies", async () => {
 
   await chrome.contextMenus.click({ menuItemId: "send-to-dowlio", linkUrl: "https://example.com/private/a.pdf", pageUrl: "https://example.com/" }, { id: 1 });
 
-  assert.deepEqual(sent(socket, "link.send")[0].cookies, [{ name: "session", value: "abc" }]);
+  assert.deepEqual(sent(socket, "link.send")[0].cookies, [{ name: "session", value: "abc", domain: "example.com" }]);
 });
 
 test("an older Dowlio's sign-in switch and block list no longer stop cookies", async () => {
@@ -54,7 +54,20 @@ test("an older Dowlio's sign-in switch and block list no longer stop cookies", a
 
   await chrome.downloads.create(download("https://example.com/private/a.pdf"));
 
-  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "session", value: "abc" }]);
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "session", value: "abc", domain: "example.com" }]);
+});
+
+test("each cookie carries the domain, path and flags the browser holds for it", async () => {
+  const { chrome, socket } = await connected();
+  chrome.cookies.jar["https://www.flags.example"] = [
+    { name: "sid", value: "1", domain: "www.flags.example", path: "/app", hostOnly: true, secure: true, httpOnly: true, partitionKey: undefined },
+  ];
+
+  await chrome.downloads.create(download("https://www.flags.example/a.pdf"));
+
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [
+    { name: "sid", value: "1", domain: "www.flags.example", path: "/app", hostOnly: true, secure: true, httpOnly: true },
+  ]);
 });
 
 test("a site with no cookies sends none", async () => {
@@ -75,7 +88,7 @@ test("a catch carries the site's partitioned cookies, such as a Cloudflare pass,
 
   await chrome.downloads.create(download("https://www.guarded.net/download.php?id=1"));
 
-  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "cf_clearance", value: "old" }, { name: "cf_clearance", value: "new" }]);
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "cf_clearance", value: "old", domain: ".guarded.net" }, { name: "cf_clearance", value: "new", domain: ".guarded.net" }]);
 });
 
 test("a browser that can't read partitioned cookies still sends the others", async () => {
@@ -88,7 +101,7 @@ test("a browser that can't read partitioned cookies still sends the others", asy
 
   await chrome.downloads.create(download("https://example.com/a.pdf"));
 
-  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "session", value: "abc" }]);
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "session", value: "abc", domain: "example.com" }]);
 });
 
 test("a huge cookie jar is trimmed so the message stays small", async () => {

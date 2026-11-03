@@ -57,6 +57,8 @@ final class AppModel {
 
     init() {
         UserDefaults.standard.removeRetiredSettings()
+        URLCache.shared = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 0)
+        Task.detached(priority: .background) { Self.removeSavedWebData() }
         do {
             let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
@@ -107,17 +109,28 @@ final class AppModel {
         }
     }
 
+    nonisolated private static func removeSavedWebData() {
+        let files = FileManager.default
+        let library = files.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let caches = library.appending(path: "Caches/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)
+        let saved = ["Cache.db", "Cache.db-shm", "Cache.db-wal", "fsCachedData", "WebKit"].map { caches.appending(path: $0) }
+            + [library.appending(path: "WebKit/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)]
+        for url in saved where files.fileExists(atPath: url.path) { try? files.removeItem(at: url) }
+    }
+
     private(set) var browserSetup: BrowserSetup?
 
     private func startConnectServer(store: DownloadStore, library: Library, support: URL) {
+        let extensionID = ExtensionFolder.extensionID(at: BrowserSetup.extensionFolder(in: support))
         let added = AddedBrowser()
         let catcher = Catcher(library: library, settings: { AppModel.currentSettings() })
         let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
         let server = ConnectServer(
             store: store, vault: vault, catcher: catcher, preferences: catchPreferences,
-            nameBrowser: { added.name(for: $0) }, extensionVersion: BrowserSetup.bundledVersion
+            nameBrowser: { added.name(for: $0) }, extensionVersion: BrowserSetup.bundledVersion,
+            extensionIDs: { [extensionID] }
         ) { request in
-            await MainActor.run { PairingAlert.ask(request) }
+            await PairingAlert.show(request)
         }
         connectServer = server
         browserSetup = BrowserSetup(server: server, added: added, supportFolder: support)
@@ -396,7 +409,7 @@ final class AppModel {
                 options.referrer = chosen.referrer ?? version.referrer ?? page.url
                 options.origin = version.origin
                 options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
-                options.cookies = chosen.cookies.isEmpty ? page.cookies : chosen.cookies
+                options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: version.source.url, from: page.url)
                 options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)
                 return (version.source, options, draft.origin(for: page.url))
             case let .file(url, name):

@@ -11,7 +11,7 @@ async function worker({ connect = true } = {}) {
   await flush();
   if (connect) {
     await net.last().accept();
-    await net.last().reply({ type: "hello.ok" });
+    await net.last().prove();
   }
   return { chrome, net, timers, socket: net.last() };
 }

@@ -71,11 +71,15 @@ public struct MediaPlaylist: Equatable, Sendable {
 public enum M3U8Parser {
     public enum Error: Swift.Error, Equatable {
         case notAPlaylist
+        case tooLarge
     }
+
+    public static let mostEntries = 100_000
 
     public static func parse(_ text: String, base: URL) throws -> Playlist {
         let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         guard lines.first?.hasPrefix("#EXTM3U") == true else { throw Error.notAPlaylist }
+        guard lines.lazy.filter({ !$0.hasPrefix("#") }).count <= mostEntries else { throw Error.tooLarge }
         if lines.contains(where: { $0.hasPrefix("#EXT-X-STREAM-INF") }) { return .master(master(lines, base: base)) }
         return .media(media(lines, base: base))
     }

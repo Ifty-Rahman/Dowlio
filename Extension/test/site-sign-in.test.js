@@ -13,7 +13,7 @@ async function connected() {
   startWorker({ chrome, WebSocket: net.FakeWebSocket, timers: new FakeTimers(), navigator: { ...navigatorLike(), userAgent: "Mozilla/5.0 Arc" } });
   await flush();
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   return { chrome, socket: net.last() };
 }
 
@@ -27,7 +27,7 @@ test("asked for a link's sign-in, the worker answers with that site's cookies, H
 
   const [answer] = answers(socket);
   assert.equal(answer.requestId, "signin-1");
-  assert.deepEqual(answer.cookies, [{ name: "session", value: "abc" }, { name: "theme", value: "dark" }]);
+  assert.deepEqual(answer.cookies, [{ name: "session", value: "abc", domain: "members.example.com", httpOnly: true }, { name: "theme", value: "dark", domain: "members.example.com" }]);
   assert.equal(answer.userAgent, "Mozilla/5.0 Arc");
 });
 

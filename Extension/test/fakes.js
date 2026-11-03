@@ -1,3 +1,5 @@
+import { serverProof } from "../lib/proof.js";
+
 export function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -281,6 +283,24 @@ export function fakeSockets() {
     async reply(message) {
       this.onmessage?.({ data: JSON.stringify({ v: 1, ...message }) });
       await flush();
+    }
+
+    async sentMessage(type) {
+      for (let turn = 0; turn < 50; turn += 1) {
+        const found = [...this.sent].reverse().find((message) => message.type === type);
+        if (found) return found;
+        await flush();
+      }
+      throw new Error(`Dowlio Connect never sent ${type}`);
+    }
+
+    async prove(token = "tok", { proof } = {}) {
+      const hello = await this.sentMessage("hello");
+      const server = "server-nonce-abcdefghijklmnop";
+      await this.reply({ type: "hello.challenge", nonce: server, proof: proof ?? (await serverProof(token, hello.nonce, server)) });
+      if (proof) return;
+      await this.sentMessage("hello.proof");
+      await this.reply({ type: "hello.ok" });
     }
 
     async fail() {

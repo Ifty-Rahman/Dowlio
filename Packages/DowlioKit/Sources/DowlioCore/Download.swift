@@ -148,10 +148,40 @@ public struct DownloadOrigin: Equatable, Sendable {
 public struct Cookie: Equatable, Sendable {
     public var name: String
     public var value: String
+    public var domain: String?
+    public var path: String?
+    public var hostOnly: Bool
+    public var secure: Bool
+    public var httpOnly: Bool
 
-    public init(name: String, value: String) {
+    public init(name: String, value: String, domain: String? = nil, path: String? = nil, hostOnly: Bool = false, secure: Bool = false, httpOnly: Bool = true) {
         self.name = name
         self.value = value
+        self.domain = domain
+        self.path = path
+        self.hostOnly = hostOnly
+        self.secure = secure
+        self.httpOnly = httpOnly
+    }
+
+    public func isSent(to url: URL, from origin: URL) -> Bool {
+        guard let host = url.host(percentEncoded: false)?.lowercased() else { return false }
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https" else { return false }
+        if secure, scheme != "https" { return false }
+        if let path, path.count > 1, !url.path(percentEncoded: true).hasPrefix(path) { return false }
+        guard let domain = domain?.lowercased(), !domain.isEmpty else {
+            return host == origin.host(percentEncoded: false)?.lowercased()
+        }
+        let bare = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
+        if hostOnly { return host == bare }
+        return host == bare || host.hasSuffix("." + bare)
+    }
+}
+
+extension Array where Element == Cookie {
+    public func sent(to url: URL, from origin: URL) -> [Cookie] {
+        filter { $0.isSent(to: url, from: origin) }
     }
 }
 

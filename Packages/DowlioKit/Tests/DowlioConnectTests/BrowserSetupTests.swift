@@ -116,7 +116,7 @@ struct BrowserLinkTests {
 
         let allowed = await fixture.server.browserLinks().map(\.state)
         let client = try await fixture.client()
-        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        try await fixture.sayHello(on: client, token: token, version: "0.2.0")
         _ = try await client.receive()
 
         #expect(allowed == [.connecting])
@@ -143,7 +143,7 @@ struct BrowserLinkTests {
         let token = try await fixture.pairedToken()
         _ = await changes.next()
         let client = try await fixture.client()
-        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        try await fixture.sayHello(on: client, token: token, version: "0.2.0")
         _ = await changes.next()
         client.close()
         _ = await changes.next()
@@ -259,5 +259,13 @@ struct LinkTestTextTests {
     ])
     func eachTestResultNamesTheStepInPlainWords(result: LinkTestResult, text: String) {
         #expect(result.text(browser: "Arc") == text)
+    }
+}
+
+struct ExtensionIDTests {
+    @Test func anUnpackedExtensionsIDComesFromItsFolderAsChromeWorksItOut() {
+        let folder = URL(filePath: "/Users/ifty/Library/Application Support/Dowlio/Browser Extension", directoryHint: .isDirectory)
+
+        #expect(ExtensionFolder.extensionID(at: folder) == "jpdhehfjjalaolealbpankfgobleohdh")
     }
 }

@@ -3,8 +3,11 @@ import DowlioMedia
 import Foundation
 
 enum Incoming: Equatable {
-    case pairRequest(code: String, browser: String, version: String, extensionID: String)
-    case hello(token: String, version: String)
+    case pairRequest(browser: String, version: String, extensionID: String)
+    case pairCode(String)
+    case hello(key: String, nonce: String, version: String)
+    case helloProof(String)
+    case legacyHello(token: String)
     case ping
     case pong
     case catchOffer(CatchOffer)
@@ -46,7 +49,12 @@ struct Envelope {
                 guard let name = entry["name"] as? String, let value = entry["value"] as? String,
                       Self.isCookieName(name), Self.isCookieValue(value)
                 else { return nil }
-                return Cookie(name: name, value: value)
+                let domain = (entry["domain"] as? String).flatMap { Self.isCookieDomain($0) ? $0 : nil }
+                let path = (entry["path"] as? String).flatMap { $0.hasPrefix("/") && Self.isCookieValue($0) ? $0 : nil }
+                return Cookie(
+                    name: name, value: value, domain: domain, path: path, hostOnly: entry["hostOnly"] as? Bool ?? false,
+                    secure: entry["secure"] as? Bool ?? false, httpOnly: entry["httpOnly"] as? Bool ?? true
+                )
             }
         }
         func browserRequest() -> BrowserRequest? {
@@ -69,13 +77,23 @@ struct Envelope {
         }
         switch type {
         case "pair.request":
-            guard let code = text("code"), code.count == 4, code.allSatisfy(\.isNumber),
-                  let browser = text("browser"), let version = text("version"), let id = text("extensionId")
-            else { return nil }
-            message = .pairRequest(code: code, browser: browser, version: version, extensionID: id)
+            guard let browser = text("browser"), let version = text("version"), let id = text("extensionId") else { return nil }
+            message = .pairRequest(browser: browser, version: version, extensionID: id)
+        case "pair.code":
+            guard let code = text("code"), code.count == 6, code.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            message = .pairCode(code)
         case "hello":
-            guard let token = text("token"), let version = text("version") else { return nil }
-            message = .hello(token: token, version: version)
+            if let key = text("key"), let nonce = text("nonce"), let version = text("version"),
+               Self.isProofText(key), Self.isProofText(nonce) {
+                message = .hello(key: key, nonce: nonce, version: version)
+            } else if let token = text("token") {
+                message = .legacyHello(token: token)
+            } else {
+                return nil
+            }
+        case "hello.proof":
+            guard let proof = text("proof"), Self.isProofText(proof) else { return nil }
+            message = .helloProof(proof)
         case "ping":
             message = .ping
         case "pong":
@@ -154,8 +172,20 @@ extension Envelope {
         !name.isEmpty && name.count <= 256 && name.unicodeScalars.allSatisfy { $0.value > 32 && $0.value < 127 && $0 != ";" && $0 != "=" }
     }
 
+    static func isCookieDomain(_ domain: String) -> Bool {
+        !domain.isEmpty && domain.count <= 253 && domain.unicodeScalars.allSatisfy {
+            $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-")
+        }
+    }
+
     static func isCookieValue(_ value: String) -> Bool {
         value.count <= 4096 && value.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value != 127 && $0 != ";" }
+    }
+
+    static func isProofText(_ text: String) -> Bool {
+        (16...88).contains(text.count) && text.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0) && $0.isASCII || $0 == "-" || $0 == "_"
+        }
     }
 
     static func isWebLink(_ url: URL) -> Bool {
@@ -172,9 +202,15 @@ struct Outgoing: Encodable {
     var url: String?
     var catches: Bool?
     var neverCatch: [String]?
+    var nonce: String?
+    var proof: String?
+    var left: Int?
 
     static func pairApproved(token: String) -> Outgoing { Outgoing(type: "pair.approved", token: token) }
     static func pairRefused(_ reason: String) -> Outgoing { Outgoing(type: "pair.refused", reason: reason) }
+    static let pairCodeNeeded = Outgoing(type: "pair.codeNeeded")
+    static func pairCodeWrong(left: Int) -> Outgoing { Outgoing(type: "pair.codeWrong", left: left) }
+    static func helloChallenge(nonce: String, proof: String) -> Outgoing { Outgoing(type: "hello.challenge", nonce: nonce, proof: proof) }
     static let helloAccepted = Outgoing(type: "hello.ok")
     static let helloRejected = Outgoing(type: "hello.rejected")
     static let pong = Outgoing(type: "pong")

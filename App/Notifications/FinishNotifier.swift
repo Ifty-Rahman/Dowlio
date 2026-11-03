@@ -27,7 +27,7 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             identifier: Self.category,
             actions: [
                 UNNotificationAction(identifier: ThenAction.showInFinder.rawValue, title: "Show in Finder"),
-                UNNotificationAction(identifier: ThenAction.open.rawValue, title: "Open"),
+                UNNotificationAction(identifier: Self.openAction, title: "Open"),
             ],
             intentIdentifiers: []
         ), UNNotificationCategory(
@@ -88,17 +88,18 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func post(_ content: UNMutableNotificationContent, as group: UUID) {
-        log.info("Posting \(content.title, privacy: .public)")
+        log.info("Posting \(content.title, privacy: .private)")
         center.add(UNNotificationRequest(identifier: group.uuidString, content: content, trigger: nil)) { error in
             if let error { log.error("Posting a notification failed: \(error.localizedDescription, privacy: .public)") }
         }
     }
 
+    private static let openAction = "open"
+
     private static func perform(_ action: ThenAction, on file: URL) {
         switch action {
         case .nothing: break
         case .showInFinder: NSWorkspace.shared.activateFileViewerSelecting([file])
-        case .open: NSWorkspace.shared.open(file)
         }
     }
 
@@ -129,10 +130,12 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             }
             return
         }
-        let action = ThenAction(rawValue: response.actionIdentifier)
+        let identifier = response.actionIdentifier
         let path = response.notification.request.content.userInfo["file"] as? String
         await MainActor.run {
-            if let path, let action {
+            if let path, identifier == Self.openAction {
+                NSWorkspace.shared.open(URL(filePath: path))
+            } else if let path, let action = ThenAction(rawValue: identifier) {
                 Self.perform(action, on: URL(filePath: path))
             } else {
                 AppDelegate.model?.showLibraryWindow()

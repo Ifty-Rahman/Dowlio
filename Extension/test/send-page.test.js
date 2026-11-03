@@ -12,7 +12,7 @@ async function worker({ connect = true } = {}) {
   await flush();
   if (connect) {
     await net.last().accept();
-    await net.last().reply({ type: "hello.ok" });
+    await net.last().prove();
   }
   return { chrome, net, timers, socket: net.last() };
 }
@@ -177,7 +177,7 @@ test("a page sent while the extension is still reconnecting waits for Dowlio and
   await chrome.contextMenus.click(pageClick, tab);
   await settle();
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   await settle();
 
   assert.equal(sends(net.last())[0]?.url, tab.url);

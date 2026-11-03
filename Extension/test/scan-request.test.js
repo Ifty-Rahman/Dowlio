@@ -10,7 +10,7 @@ async function worker() {
   startWorker({ chrome, WebSocket: net.FakeWebSocket, timers, navigator: { ...navigatorLike(), userAgent: "Mozilla/5.0 Arc" } });
   await flush();
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   return { chrome, socket: net.last() };
 }
 

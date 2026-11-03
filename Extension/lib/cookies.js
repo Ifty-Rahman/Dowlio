@@ -12,10 +12,17 @@ export function startCookies({ chrome }) {
       .catch(() => []);
     const kept = [];
     let bytes = 0;
-    for (const { name, value } of found) {
-      bytes += name.length + value.length + 40;
+    for (const cookie of found) {
+      const { name, value } = cookie;
+      bytes += name.length + value.length + (cookie.domain?.length ?? 0) + (cookie.path?.length ?? 0) + 80;
       if (bytes > MAX_COOKIE_BYTES) break;
-      kept.push({ name, value });
+      const entry = { name, value };
+      if (typeof cookie.domain === "string") entry.domain = cookie.domain;
+      if (typeof cookie.path === "string") entry.path = cookie.path;
+      for (const flag of ["hostOnly", "secure", "httpOnly"]) {
+        if (typeof cookie[flag] === "boolean") entry[flag] = cookie[flag];
+      }
+      kept.push(entry);
     }
     return kept.length ? kept : undefined;
   }

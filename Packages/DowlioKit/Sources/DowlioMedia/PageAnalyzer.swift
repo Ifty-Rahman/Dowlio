@@ -16,8 +16,19 @@ public struct PageAnalyzer: Sendable {
     private let identity: BrowserIdentity
     private let cooldown: HostCooldown
 
+    @TaskLocal static var reachesLocalNetwork = false
+
+    public static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        return URLSession(configuration: configuration)
+    }
+
     public init(
-        session: URLSession = .shared,
+        session: URLSession = PageAnalyzer.makeSession(),
         identity: BrowserIdentity = BrowserIdentity(userAgent: nil),
         cooldown: HostCooldown = HostCooldown(),
         lookAgain: LookAgain? = nil,
@@ -33,18 +44,30 @@ public struct PageAnalyzer: Sendable {
         self.longestLooking = longestLooking
         self.readers = readers
         self.readerFailed = readerFailed
-        self.inspect = inspect
-        self.sizes = SizeCheck(inspect: inspect)
+        let guarded: Inspect = { url, options in
+            guard Self.mayReach(url) else { throw URLError(.cannotConnectToHost) }
+            return try await inspect(url, options)
+        }
+        self.inspect = guarded
+        self.sizes = SizeCheck(inspect: guarded)
+    }
+
+    static func mayReach(_ url: URL) -> Bool {
+        reachesLocalNetwork || !LocalAddress.isLocal(url)
+    }
+
+    private static func within<T>(_ page: SentPage, _ work: () async -> T) async -> T {
+        await $reachesLocalNetwork.withValue(LocalAddress.isLocal(page.url) || LocalAddress.isLocal(page.framedBy)) { await work() }
     }
 
     public func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
         let (identified, agent) = identified(page)
-        return stream(stampingVersionsWith: agent) { await run(identified, report: $0) }
+        return stream(stampingVersionsWith: agent) { report in await Self.within(identified) { await run(identified, report: report) } }
     }
 
     public func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
         let (identified, agent) = identified(page)
-        return stream(stampingVersionsWith: agent) { await playAndRead(identified, report: $0) }
+        return stream(stampingVersionsWith: agent) { report in await Self.within(identified) { await playAndRead(identified, report: report) } }
     }
 
     private func identified(_ page: SentPage) -> (page: SentPage, addedAgent: String?) {
@@ -82,6 +105,10 @@ public struct PageAnalyzer: Sendable {
     }
 
     public func reading(_ played: PlayedPage, of page: SentPage) async -> PageAnalysis {
+        await Self.within(page) { await readingWithin(played, of: page) }
+    }
+
+    private func readingWithin(_ played: PlayedPage, of page: SentPage) async -> PageAnalysis {
         let identified = identified(page).page
         guard let found = await read(played, of: identified) else { return .found([]) }
         if found.candidates.isEmpty, found.refusals.blocked { return .blocked }
@@ -248,6 +275,10 @@ public struct PageAnalyzer: Sendable {
     }
 
     public func probe(_ candidate: Candidate, on sent: SentPage) async -> Candidate {
+        await Self.within(sent) { await probeWithin(candidate, on: sent) }
+    }
+
+    private func probeWithin(_ candidate: Candidate, on sent: SentPage) async -> Candidate {
         let (page, agent) = identified(sent)
         let files = candidate.unprobed.filter { $0.kind == .file }.map { ScannedMedia(url: $0.url, kind: MediaFile.kind(of: $0.url, contentType: $0.contentType) ?? .video) }
         let streams = candidate.unprobed.filter { $0.kind == .manifest }.map(\.url)
@@ -422,6 +453,7 @@ public struct PageAnalyzer: Sendable {
     private func readerData(at url: URL, for page: SentPage, sending body: Data? = nil, headers: [String: String] = [:]) async throws -> Data {
         var options = mediaOptions(page, for: url)
         if let parent = page.framedBy { options.referrer = parent }
+        guard Self.mayReach(url) else { throw SiteReaderError.unreadable }
         var request = request(for: url, options: options)
         request.httpShouldHandleCookies = false
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
@@ -430,11 +462,9 @@ public struct PageAnalyzer: Sendable {
             request.httpBody = body
         }
         await cooldown.wait(for: request)
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw SiteReaderError.unreadable }
+        guard let (data, http) = try await limitedData(for: request) else { throw SiteReaderError.unreadable }
         await noteReply(http, for: request)
         guard (200..<300).contains(http.statusCode) else { throw SiteReaderError.refused(status: http.statusCode) }
-        guard data.count <= Self.largestPage else { throw SiteReaderError.unreadable }
         return data
     }
 
@@ -740,14 +770,34 @@ public struct PageAnalyzer: Sendable {
     private func fetch(_ request: URLRequest, refusals: Refusals) async -> (Data, HTTPURLResponse)? {
         var request = request
         request.httpShouldHandleCookies = false
+        guard let url = request.url, Self.mayReach(url) else { return nil }
         await cooldown.wait(for: request)
-        guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return nil }
+        guard let found = try? await limitedData(for: request) else { return nil }
+        let (data, http) = found
         refusals.note(status: http.statusCode)
         await noteReply(http, for: request)
         if LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")), BlockedPage.isChallenge(String(decoding: data.prefix(BlockedPage.largestHead), as: UTF8.self)) {
             refusals.noteBlocked()
         }
         guard (200..<300).contains(http.statusCode), data.count <= Self.largestPage else { return nil }
+        return (data, http)
+    }
+
+    private func limitedData(for request: URLRequest) async throws -> (Data, HTTPURLResponse)? {
+        let (bytes, response) = try await session.bytes(for: request, delegate: RedirectGuard())
+        guard let http = response as? HTTPURLResponse, http.expectedContentLength <= Int64(Self.largestPage) else {
+            bytes.task.cancel()
+            return nil
+        }
+        var data = Data()
+        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > Self.largestPage {
+                bytes.task.cancel()
+                return nil
+            }
+        }
         return (data, http)
     }
 
@@ -824,8 +874,9 @@ public struct PageAnalyzer: Sendable {
         if let parent = page.framedBy { request.setValue(parent.absoluteString, forHTTPHeaderField: "Referer") }
         if let agent = page.userAgent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         identify(&request)
-        if !page.cookies.isEmpty {
-            request.setValue(page.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
+        let cookies = page.cookies.sent(to: page.url, from: page.url)
+        if !cookies.isEmpty {
+            request.setValue(cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
         guard let (data, http) = await fetch(request, refusals: refusals),
               LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")) else { return nil }
@@ -835,13 +886,14 @@ public struct PageAnalyzer: Sendable {
 
     private func pageOptions(_ page: SentPage) -> RequestOptions {
         var options = RequestOptions()
-        options.cookies = page.cookies
+        options.cookies = page.cookies.sent(to: page.url, from: page.url)
         options.userAgent = page.userAgent
         return options
     }
 
     private func mediaOptions(_ page: SentPage, for url: URL) -> RequestOptions {
         var options = pageOptions(page)
+        options.cookies = page.cookies.sent(to: url, from: page.url)
         options.referrer = page.referrer(of: url) ?? page.url
         return options
     }
@@ -976,5 +1028,44 @@ final class Refusals: @unchecked Sendable {
 
     func noteBlocked() {
         lock.withLock { isBlocked = true }
+    }
+}
+
+final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        var request = request
+        if !Self.sameOrigin(response.url ?? task.currentRequest?.url, request.url) {
+            for name in ["Cookie", "Authorization", "Origin"] { request.setValue(nil, forHTTPHeaderField: name) }
+        }
+        completionHandler(request)
+    }
+
+    static func sameOrigin(_ one: URL?, _ other: URL?) -> Bool {
+        guard let one, let other, let host = one.host()?.lowercased(), let scheme = one.scheme?.lowercased() else { return false }
+        func port(_ url: URL) -> Int? { url.port ?? (url.scheme?.lowercased() == "https" ? 443 : url.scheme?.lowercased() == "http" ? 80 : nil) }
+        return scheme == other.scheme?.lowercased() && host == other.host()?.lowercased() && port(one) == port(other)
+    }
+}
+
+public enum LocalAddress {
+    public static func isLocal(_ url: URL?) -> Bool {
+        guard let host = url?.host(percentEncoded: false)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")) else { return false }
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || host.hasSuffix(".internal") { return true }
+        let parts = host.split(separator: ".").compactMap { UInt8($0) }
+        if parts.count == 4, !host.contains(":") {
+            switch (parts[0], parts[1]) {
+            case (127, _), (10, _), (0, _), (169, 254), (192, 168): return true
+            case (172, 16...31): return true
+            case (100, 64...127): return true
+            default: return false
+            }
+        }
+        if host.contains(":") {
+            return host == "::1" || host == "::" || host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe80") || host.hasPrefix("::ffff:")
+        }
+        return false
     }
 }

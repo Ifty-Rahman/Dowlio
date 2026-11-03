@@ -40,13 +40,17 @@ final class BrowserSetup {
 
     static var bundledVersion: String? { bundled.flatMap(ExtensionFolder.version(at:)) }
 
+    static func extensionFolder(in supportFolder: URL) -> URL {
+        supportFolder.appending(path: "Browser Extension", directoryHint: .isDirectory)
+    }
+
     init(server: ConnectServer, added: AddedBrowser, supportFolder: URL) {
         self.server = server
         self.added = added
-        folder = supportFolder.appending(path: "Browser Extension", directoryHint: .isDirectory)
+        folder = Self.extensionFolder(in: supportFolder)
         if let bundled = Self.bundled {
             let folder = folder
-            Task.detached { _ = try? ExtensionFolder.updateIfOlder(from: bundled, to: folder) }
+            Task.detached { _ = try? ExtensionFolder.updateIfChanged(from: bundled, to: folder) }
         }
         Task { await refresh() }
     }

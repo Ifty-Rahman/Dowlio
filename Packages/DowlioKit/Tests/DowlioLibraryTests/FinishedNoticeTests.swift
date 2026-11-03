@@ -113,7 +113,7 @@ struct FinishedNoticeTests {
     }
 
     @Test(arguments: [
-        ("showInFinder", ThenAction.showInFinder), ("open", .open), ("nothing", .nothing), ("", .nothing), ("nonsense", .nothing),
+        ("showInFinder", ThenAction.showInFinder), ("open", .nothing), ("nothing", .nothing), ("", .nothing), ("nonsense", .nothing),
     ])
     func aSavedThenChoiceReadsBackAndAnythingElseDoesNothing(saved: String, action: ThenAction) {
         #expect(ThenAction(saved: saved) == action)

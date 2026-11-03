@@ -158,7 +158,12 @@ final class PageWindowModel: NSObject {
             return host == domain || host.hasSuffix("." + domain)
         }
         return SentPage(
-            url: webView.url ?? page.url, title: webView.title, cookies: matching.map { Cookie(name: $0.name, value: $0.value) },
+            url: webView.url ?? page.url, title: webView.title, cookies: matching.map {
+                Cookie(
+                    name: $0.name, value: $0.value, domain: $0.domain, path: $0.path, hostOnly: !$0.domain.hasPrefix("."),
+                    secure: $0.isSecure, httpOnly: $0.isHTTPOnly
+                )
+            },
             userAgent: page.userAgent ?? agent
         )
     }

@@ -1,17 +1,22 @@
-import { catchControls, lastDeclineText, popupText, sendPageControl } from "./lib/popup-text.js";
+import { catchControls, lastDeclineText, pairingErrorText, popupText, sendPageControl } from "./lib/popup-text.js";
 
 const storage = chrome.storage.local;
 let tabUrl;
 let tabId;
 
 async function render() {
-  const { status, code, catching, lastDecline } = await storage.get(["status", "code", "catching", "lastDecline"]);
+  const { status, catching, lastDecline, pairingError } = await storage.get(["status", "catching", "lastDecline", "pairingError"]);
   const text = popupText(status);
   document.getElementById("headline").textContent = text.headline;
   document.getElementById("detail").textContent = text.detail;
-  const codeView = document.getElementById("code");
-  codeView.hidden = !(text.showsCode && code);
-  codeView.textContent = code ?? "";
+  const codeForm = document.getElementById("code-form");
+  const wasHidden = codeForm.hidden;
+  codeForm.hidden = !text.asksForCode;
+  if (text.asksForCode && wasHidden) document.getElementById("code").focus();
+  const codeError = pairingErrorText(pairingError);
+  const errorView = document.getElementById("code-error");
+  errorView.hidden = !codeError;
+  errorView.textContent = codeError ?? "";
   document.getElementById("retry").hidden = !text.showsRetry;
   const note = lastDeclineText(lastDecline);
   const noteView = document.getElementById("last-decline");
@@ -40,6 +45,15 @@ document.getElementById("send-page").addEventListener("click", () => {
   if (typeof tabId !== "number") return;
   chrome.runtime.sendMessage({ type: "page.send", tabId });
   window.close();
+});
+
+document.getElementById("code-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const field = document.getElementById("code");
+  const code = field.value.replace(/\s/g, "");
+  if (!/^\d{6}$/.test(code)) return;
+  chrome.runtime.sendMessage({ type: "pair.code", code });
+  field.value = "";
 });
 
 document.getElementById("retry").addEventListener("click", () => {

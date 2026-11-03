@@ -101,10 +101,9 @@ struct ConnectionOpener: Sendable {
         if request.value(forHTTPHeaderField: "Accept-Language") == nil, let languages = identity.acceptLanguage {
             request.setValue(languages, forHTTPHeaderField: "Accept-Language")
         }
-        // Cookies came from the link's own site, and a redirect may lead to another one.
-        if !options.cookies.isEmpty, fromLinkSite {
-            let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-            request.setValue(cookies, forHTTPHeaderField: "Cookie")
+        let cookies = fromLinkSite ? options.cookies.sent(to: url, from: originalURL) : []
+        if !cookies.isEmpty {
+            request.setValue(cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
         return request
     }

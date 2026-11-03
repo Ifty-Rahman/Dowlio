@@ -112,7 +112,6 @@ public struct ProblemNotice: Equatable, Sendable {
 public enum ThenAction: String, CaseIterable, Sendable {
     case nothing
     case showInFinder
-    case open
 
     /// A saved choice, with anything unknown read as doing nothing.
     public init(saved: String) {
@@ -123,7 +122,6 @@ public enum ThenAction: String, CaseIterable, Sendable {
         switch self {
         case .nothing: "Do nothing"
         case .showInFinder: "Show in Finder"
-        case .open: "Open the file"
         }
     }
 }
