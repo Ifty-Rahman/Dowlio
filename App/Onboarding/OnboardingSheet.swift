@@ -230,6 +230,7 @@ private struct FillingBar: View {
     private static let cycle: TimeInterval = 10
     private static let fillTime: TimeInterval = 8
     private static let count = 8
+    @State private var start = Date()
 
     var body: some View {
         Group {
@@ -237,7 +238,7 @@ private struct FillingBar: View {
                 SegmentedBar(segments: Self.segments(filled: Array(repeating: 1, count: Self.count)), fraction: nil, tint: DowlioDesign.brandAccent, height: 8)
             } else {
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                    let time = context.date.timeIntervalSinceReferenceDate
+                    let time = max(context.date.timeIntervalSince(start), 0)
                     let filled = Self.fills(round: Int(time / Self.cycle), at: time.truncatingRemainder(dividingBy: Self.cycle))
                     let done = filled.allSatisfy { $0 >= 1 }
                     SegmentedBar(
