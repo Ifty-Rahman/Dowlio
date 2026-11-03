@@ -16,6 +16,12 @@ struct BrowsersList: View {
                     BrowserRowView(row: row, setup: setup)
                 }
             }
+            HStack {
+                Spacer()
+                if setup.isScanning { ProgressView().controlSize(.small) }
+                Button("Scan for Browsers") { Task { await setup.refresh(rescanning: true) } }
+                    .disabled(setup.isScanning)
+            }
             if let failure = setup.addFailure {
                 Label(failure, systemImage: "exclamationmark.triangle.fill")
                     .font(DowlioDesign.TypeRole.detail)
@@ -24,14 +30,14 @@ struct BrowsersList: View {
         }
         .task { await setup.watch() }
         .task {
-            await setup.refresh(rescanning: true)
+            await setup.refresh()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 await setup.refresh()
             }
         }
         .sheet(item: Bindable(setup).guide) { row in
-            AddGuide(row: row, path: setup.folderPath) { setup.guide = nil }
+            AddGuide(row: row, path: setup.folderPath, connected: setup.guideIsConnected, openExtensions: { setup.openExtensionsPage(of: row) }) { setup.guide = nil }
         }
     }
 }
@@ -106,15 +112,53 @@ private struct BrowserIcon: View {
 private struct AddGuide: View {
     let row: BrowserRow
     let path: String
+    let connected: Bool
+    let openExtensions: () -> Void
     let done: () -> Void
     @State private var copied = false
 
     var body: some View {
+        Group {
+            if connected {
+                connectedBody
+            } else {
+                steps
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(DowlioDesign.Spacing.xxl)
+        .frame(width: 480)
+        .task(id: connected) {
+            guard connected else { return }
+            try? await Task.sleep(for: .seconds(2))
+            done()
+        }
+    }
+
+    private var connectedBody: some View {
+        VStack(spacing: DowlioDesign.Spacing.md) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(.green)
+                .accessibilityHidden(true)
+            Text("Connected to \(row.name)")
+                .font(DowlioDesign.TypeRole.title)
+                .accessibilityAddTraits(.isHeader)
+            Text("Dowlio Connect is ready. You can send pages from \(row.name) to Dowlio.")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Done", action: done)
+                .keyboardShortcut(.defaultAction)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var steps: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
             Text("Add Dowlio Connect to \(row.name)")
                 .font(DowlioDesign.TypeRole.title)
                 .accessibilityAddTraits(.isHeader)
-            Text("Dowlio opened \(row.name)'s extensions page. Follow these steps in \(row.name).")
+            Text("Follow these steps. Dowlio stays open here, and this window closes when \(row.name) is connected.")
                 .foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: DowlioDesign.Spacing.sm) {
                 Text(path)
@@ -131,24 +175,20 @@ private struct AddGuide: View {
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
                 step(1, "Click Copy path above.")
-                step(2, "In \(row.name), turn on Developer mode, at the top right of the extensions page.")
-                step(3, "Click Load unpacked.")
-                step(4, "In the file window, press ⌘⇧G, paste the path with ⌘V, and press Return.")
-                step(5, "Click Select.")
-                step(6, "Dowlio asks you to allow \(row.name). Click Allow, and the row turns Connected.")
+                step(2, "Click Open extensions page below. It opens in \(row.name).")
+                step(3, "In \(row.name), turn on Developer mode, at the top right of the extensions page.")
+                step(4, "Click Load unpacked.")
+                step(5, "In the file window, press ⌘⇧G, paste the path with ⌘V, and press Return.")
+                step(6, "Click Select.")
+                step(7, "Dowlio asks you to allow \(row.name). Click Allow, and this window shows you're connected.")
             }
-            Text("If the extensions page didn't open, type chrome://extensions in \(row.name)'s address bar and press Return.")
-                .font(DowlioDesign.TypeRole.detail)
-                .foregroundStyle(.secondary)
             HStack {
+                Button("Open extensions page", action: openExtensions)
                 Spacer()
                 Button("Done", action: done)
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(DowlioDesign.Spacing.xxl)
-        .frame(width: 480)
     }
 
     private func step(_ number: Int, _ text: String) -> some View {

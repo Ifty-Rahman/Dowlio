@@ -27,6 +27,7 @@ final class AddedBrowser: @unchecked Sendable {
 final class BrowserSetup {
     private(set) var rows: [BrowserRow] = []
     private(set) var testing: Set<String> = []
+    private(set) var isScanning = false
     private(set) var testResults: [String: String] = [:]
     var guide: BrowserRow?
     private(set) var addFailure: String?
@@ -47,6 +48,7 @@ final class BrowserSetup {
             let folder = folder
             Task.detached { _ = try? ExtensionFolder.updateIfOlder(from: bundled, to: folder) }
         }
+        Task { await refresh() }
     }
 
     func reload(_ row: BrowserRow) {
@@ -64,7 +66,9 @@ final class BrowserSetup {
 
     func refresh(rescanning: Bool = false) async {
         if rescanning || installed == nil {
+            isScanning = true
             installed = await Task.detached { ChromiumBrowsers.scan() }.value
+            isScanning = false
         }
         rows = BrowserList.rows(installed: installed ?? [], links: await server.browserLinks())
     }
@@ -83,9 +87,16 @@ final class BrowserSetup {
         addFailure = nil
         added.remember(row.name)
         guide = row
-        if let appURL = row.appURL, let extensions = URL(string: "chrome://extensions") {
-            NSWorkspace.shared.open([extensions], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
-        }
+    }
+
+    func openExtensionsPage(of row: BrowserRow) {
+        guard let appURL = row.appURL, let extensions = URL(string: "chrome://extensions") else { return }
+        NSWorkspace.shared.open([extensions], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    var guideIsConnected: Bool {
+        guard let guide else { return false }
+        return rows.first { $0.name == guide.name }?.state == .connected
     }
 
     func test(_ row: BrowserRow) {
