@@ -13,9 +13,12 @@ struct LinkPager: View {
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
                 HStack(spacing: DowlioDesign.Spacing.xs) {
                     PagerArrow(systemImage: "chevron.left", label: "Previous", isEnabled: list.position > 0) { list.previous() }
-                    Text(list.positionLine)
-                        .font(DowlioDesign.TypeRole.detail.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    ZStack {
+                        Text("000 of 000").hidden()
+                        Text(list.positionLine)
+                    }
+                    .font(DowlioDesign.TypeRole.detail.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
                     PagerArrow(systemImage: "chevron.right", label: "Next", isEnabled: list.position < list.items.count - 1) { list.next() }
                     Spacer(minLength: DowlioDesign.Spacing.sm)
                     Toggle(item.includeLabel, isOn: Binding(get: { list.isIncluded(item.id) }, set: { list.include(item.id, $0) }))

@@ -72,12 +72,16 @@ struct MoreMenuAnchor: NSViewRepresentable {
     let found: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = ClickThroughView()
         DispatchQueue.main.async { found(view) }
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private final class ClickThroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 private struct MoreMenuView: View {

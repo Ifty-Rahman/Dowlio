@@ -81,9 +81,13 @@ struct MenuBarPopover: View {
     private var moreMenu: some View {
         Button(action: toggleMore) {
             Image(systemName: "ellipsis.circle")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
         }
         .background(MoreMenuAnchor { panel.moreAnchor = $0 })
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .help("More")
         .accessibilityLabel("More")
     }

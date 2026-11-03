@@ -73,6 +73,7 @@ struct VideoThumbnail: View {
                 } placeholder: {
                     Color.clear
                 }
+                .allowsHitTesting(false)
             }
             .overlay {
                 Image(systemName: "play.fill")
@@ -92,6 +93,7 @@ struct VideoThumbnail: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : DowlioDesign.Radius.nested))
+            .contentShape(RoundedRectangle(cornerRadius: compact ? 6 : DowlioDesign.Radius.nested))
             .accessibilityHidden(true)
     }
 }

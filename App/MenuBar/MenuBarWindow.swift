@@ -56,6 +56,11 @@ final class MenuBarWindow {
 
 private final class MenuBarPanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !isKeyWindow { makeKey() }
+        super.sendEvent(event)
+    }
 }
 
 private final class MenuBarHostingView: NSHostingView<AnyView> {
