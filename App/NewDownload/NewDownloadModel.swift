@@ -108,7 +108,12 @@ final class NewDownloadModel: Identifiable {
     var downloadTitle: String {
         let count = list.downloads.count
         if count > 1 { return "Download \(count)" }
-        return draft.downloadsAnyway && list.items.count == 1 ? "Download Anyway" : "Download"
+        return list.items.count == 1 && list.items.contains(where: Self.isUncheckedFile) ? "Download Anyway" : "Download"
+    }
+
+    private static func isUncheckedFile(_ item: LinkItem) -> Bool {
+        if case .file(_, .failed) = item.kind { return true }
+        return false
     }
 
     func append(_ more: String) {
