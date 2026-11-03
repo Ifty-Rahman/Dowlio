@@ -94,7 +94,7 @@ public struct SentPageDraft: Equatable, Sendable {
         let previousShowings = showings
         candidates = found
         selected = 0
-        included = found.count == 1 ? [0] : []
+        included = []
         picks = [:]
         showings = [:]
         phase = Self.phase(of: found)
@@ -104,7 +104,7 @@ public struct SentPageDraft: Equatable, Sendable {
             return found.firstIndex { !Set($0.versions.map(\.source.url)).isDisjoint(with: urls) }
         }
         if previous.indices.contains(previousSelected), let index = moved(previousSelected) { selected = index }
-        if previous.count != 1 || found.count != 1 { included = Set(previousIncluded.compactMap(moved)) }
+        included = Set(previousIncluded.compactMap(moved))
         for (index, version) in previousPicks {
             if let to = moved(index), found[to].versions.contains(version) { picks[to] = version }
         }

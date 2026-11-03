@@ -82,11 +82,12 @@ struct SentPageDraftTests {
         #expect(!draft.isIncluded(1))
     }
 
-    @Test func aPagesOnlyVideoIsIncluded() {
+    @Test func aPagesOnlyVideoStartsUnticked() {
         var draft = SentPageDraft(page: page)
         _ = draft.update(.found([clip]))
 
-        #expect(draft.downloads.map(\.candidate) == [clip])
+        #expect(draft.downloads.isEmpty)
+        #expect(!draft.isIncluded(0))
     }
 
     @Test func chosenVideosDownloadEachOnesChoiceUntilTakenOut() {
