@@ -210,7 +210,7 @@ public actor Library {
     }
 
     /// Throws the download away: its partial file, its row and its record.
-    public func cancel(_ id: DownloadID) async {
+    public func cancel(_ id: DownloadID, trashingPartial: Bool = false) async {
         guard let record = records[id], record.state != .completed else { return }
         records[id] = nil
         snapshots[id] = nil
@@ -220,14 +220,16 @@ public actor Library {
         try? store.delete(id.rawValue)
         publish()
         await engine.cancel(id)
-        if let package = record.partialFile { try? FileManager.default.removeItem(at: package) }
+        if let package = record.partialFile {
+            if !trashingPartial || (try? trash(package)) == nil { try? FileManager.default.removeItem(at: package) }
+        }
         await fillSlots()
     }
 
     public func discard(_ id: DownloadID) async {
         guard let record = records[id] else { return }
         guard record.state == .completed else { return await cancel(id) }
-        try? moveToTrash(id)
+        try? await moveToTrash(id)
     }
 
     /// Takes the row off the list. A Completed download's file stays. Anything with a partial
@@ -240,9 +242,11 @@ public actor Library {
     }
 
     /// Sends a Completed download's file to the Trash and takes the row off the list. Throws, and
-    /// keeps the row, when the Trash refuses the file.
-    public func moveToTrash(_ id: DownloadID) throws {
-        guard let record = records[id], record.state == .completed else { return }
+    /// keeps the row, when the Trash refuses the file. A download that isn't finished is stopped,
+    /// and its partial file goes to the Trash.
+    public func moveToTrash(_ id: DownloadID) async throws {
+        guard let record = records[id] else { return }
+        guard record.state == .completed else { return await cancel(id, trashingPartial: true) }
         if Self.finishedFileExists(record) {
             try trash(record.folder.appending(path: record.fileName))
         }

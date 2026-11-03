@@ -51,6 +51,21 @@ struct RemovalTests {
         #expect(try await fixture.relaunched().library.firstRows { _ in true }.isEmpty)
     }
 
+    @Test func moveToTrashStopsAnUnfinishedDownloadAndSendsItsPartialFileToTheTrash() async throws {
+        let trash = TrashSpy()
+        let fixture = try await LibraryFixture(trash: trash.trash)
+        let server = try await TestServer()
+        server.serve(.init(data: TestServer.makeData(size: 4 * 1024 * 1024, seed: 306), holdAfterBytes: 128 * 1024, eTag: "\"m6\""), at: "/half.iso")
+
+        let id = await fixture.add(server.url(for: "/half.iso"))
+        _ = try await fixture.library.row(id) { $0.receivedBytes > 0 }
+        try await fixture.library.moveToTrash(id)
+
+        #expect(trash.trashed.count == 1)
+        #expect(try await fixture.library.firstRows { _ in true }.isEmpty)
+        #expect(try await fixture.relaunched().library.firstRows { _ in true }.isEmpty)
+    }
+
     @Test func aFileTheTrashRefusesKeepsItsRow() async throws {
         let fixture = try await LibraryFixture(trash: { _ in throw CocoaError(.fileWriteNoPermission) })
         let server = try await TestServer()
