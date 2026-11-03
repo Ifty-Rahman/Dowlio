@@ -103,6 +103,22 @@ enum DebugLaunch {
         #endif
     }
 
+    static var updateFeed: String? {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["DOWLIO_DEBUG_UPDATE_FEED"]
+        #else
+        nil
+        #endif
+    }
+
+    static var checksForUpdates: Bool {
+        #if DEBUG
+        updateFeed != nil
+        #else
+        true
+        #endif
+    }
+
     private static func flag(_ name: String) -> Bool {
         #if DEBUG
         ProcessInfo.processInfo.environment[name] == "1"

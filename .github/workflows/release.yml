@@ -29,6 +29,15 @@ jobs:
             exit 1
           fi
 
+      - name: Require the update signing key
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is not set. Run scripts/make-update-key.sh and store the secret. Without it installed copies can't update."
+            exit 1
+          fi
+
       - name: Import the signing certificate
         env:
           SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
@@ -59,10 +68,26 @@ jobs:
       - name: Package
         run: ./scripts/package.sh
 
-      - name: Publish the release
+      - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
+            --draft \
             --title "Dowlio ${GITHUB_REF_NAME#v}" \
             --generate-notes
+
+      - name: Write and attach the update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          gh api markdown -f mode=gfm -f context="$GITHUB_REPOSITORY" -F text=@"$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/notes.html"
+          ./scripts/appcast.sh "$RUNNER_TEMP/notes.html"
+          gh release upload "$GITHUB_REF_NAME" dist/appcast.xml
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

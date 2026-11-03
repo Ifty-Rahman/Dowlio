@@ -50,11 +50,27 @@ private struct GeneralSettings: View {
             Section("When a download fails or can't resume") {
                 Toggle("Show a notification", isOn: $notifiesOnProblems)
             }
+            UpdateSettings(updater: model.updater)
         }
         .settingsForm()
         .task { await permission.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await permission.refresh() }
+        }
+    }
+}
+
+private struct UpdateSettings: View {
+    @Bindable var updater: AppUpdater
+
+    var body: some View {
+        Section("Updates") {
+            LabeledContent {
+                Button("Check Now") { updater.checkNow() }
+                    .disabled(!updater.canCheck)
+            } label: {
+                Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
+            }
         }
     }
 }

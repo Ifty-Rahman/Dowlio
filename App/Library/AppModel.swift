@@ -35,6 +35,7 @@ final class AppModel {
     /// as after a quiet start at login.
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
+    let updater = AppUpdater()
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
     private let hostCooldown = HostCooldown()

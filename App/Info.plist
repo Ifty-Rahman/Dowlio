@@ -33,5 +33,11 @@
 	<string>Dowlio reads the address of the page in front when you press the Send to Dowlio shortcut in a browser without Dowlio Connect.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Dowlio contributors.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Ifty-Rahman/Dowlio/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>PGE9QpcxoUUbgMW7kQmdMDT9XYwbz8SeyritVI/wANM=</string>
 </dict>
 </plist>

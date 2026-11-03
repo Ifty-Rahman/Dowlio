@@ -17,6 +17,9 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: 3.1.0
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.10.1
 targets:
   Dowlio:
     type: application
@@ -37,6 +40,7 @@ targets:
       - package: DowlioKit
         product: DowlioMedia
       - package: KeyboardShortcuts
+      - package: Sparkle
     postCompileScripts:
       - name: Bundle Dowlio Connect
         basedOnDependencyAnalysis: false
@@ -58,11 +62,15 @@ targets:
         # Plain http:// downloads are allowed and marked "Not secure" (docs/adr/0003).
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        SUFeedURL: https://github.com/Ifty-Rahman/Dowlio/releases/latest/download/appcast.xml
+        SUPublicEDKey: PGE9QpcxoUUbgMW7kQmdMDT9XYwbz8SeyritVI/wANM=
+        SUEnableAutomaticChecks: true
         NSAppleEventsUsageDescription: Dowlio reads the address of the page in front when you press the Send to Dowlio shortcut in a browser without Dowlio Connect.
     entitlements:
       path: App/Dowlio.entitlements
       properties:
         com.apple.security.automation.apple-events: true
+        com.apple.security.cs.disable-library-validation: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio
