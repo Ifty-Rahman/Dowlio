@@ -286,10 +286,11 @@ export function fakeSockets() {
     }
 
     async sentMessage(type) {
-      for (let turn = 0; turn < 50; turn += 1) {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
         const found = [...this.sent].reverse().find((message) => message.type === type);
         if (found) return found;
-        await flush();
+        await new Promise((resolve) => setTimeout(resolve, 1));
       }
       throw new Error(`Dowlio Connect never sent ${type}`);
     }

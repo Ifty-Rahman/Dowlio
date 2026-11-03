@@ -169,13 +169,21 @@ public struct Cookie: Equatable, Sendable {
         let scheme = url.scheme?.lowercased()
         guard scheme == "http" || scheme == "https" else { return false }
         if secure, scheme != "https" { return false }
-        if let path, path.count > 1, !url.path(percentEncoded: true).hasPrefix(path) { return false }
+        if let path, path.count > 1, !Self.pathMatches(url.path(percentEncoded: true), path) { return false }
         guard let domain = domain?.lowercased(), !domain.isEmpty else {
             return host == origin.host(percentEncoded: false)?.lowercased()
         }
         let bare = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
         if hostOnly { return host == bare }
         return host == bare || host.hasSuffix("." + bare)
+    }
+}
+
+extension Cookie {
+    static func pathMatches(_ requested: String, _ path: String) -> Bool {
+        let requested = requested.isEmpty ? "/" : requested
+        guard requested.hasPrefix(path) else { return false }
+        return requested.count == path.count || path.hasSuffix("/") || requested.dropFirst(path.count).first == "/"
     }
 }
 

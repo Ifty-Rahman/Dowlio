@@ -52,7 +52,7 @@ struct Envelope {
                 let domain = (entry["domain"] as? String).flatMap { Self.isCookieDomain($0) ? $0 : nil }
                 let path = (entry["path"] as? String).flatMap { $0.hasPrefix("/") && Self.isCookieValue($0) ? $0 : nil }
                 return Cookie(
-                    name: name, value: value, domain: domain, path: path, hostOnly: entry["hostOnly"] as? Bool ?? false,
+                    name: name, value: value, domain: domain, path: path, hostOnly: entry["hostOnly"] as? Bool ?? domain.map { !$0.hasPrefix(".") } ?? false,
                     secure: entry["secure"] as? Bool ?? false, httpOnly: entry["httpOnly"] as? Bool ?? true
                 )
             }

@@ -219,7 +219,7 @@ public actor ConnectServer {
 
     private func accept(_ connection: NWConnection) {
         sessions = sessions.filter { $0.value.isOpen }
-        guard sessions.count < Self.maximumSessions else {
+        guard sessions.values.filter({ $0.pairing == nil }).count < Self.maximumSessions else {
             connection.cancel()
             return
         }
@@ -392,7 +392,8 @@ public actor ConnectServer {
         let found = session.appName
         let request = PairingRequest(code: code, browser: found ?? nameBrowser(browser), extensionVersion: version, isIdentified: found != nil)
         session.pairingCode = code
-        session.pairingRequest = (request, extensionID)
+        session.pairingRequest = request
+        session.pairingExtensionID = extensionID
         session.codeTries = 0
         let approve = approve
         session.asking = Task {
@@ -409,8 +410,8 @@ public actor ConnectServer {
     }
 
     private func confirm(_ code: String, for session: Session) -> Outgoing {
-        guard let expected = session.pairingCode, let (request, extensionID) = session.pairingRequest else { return .pairRefused("denied") }
-        guard Data(code.utf8) == Data(expected.utf8) else {
+        guard let expected = session.pairingCode, let request = session.pairingRequest, let extensionID = session.pairingExtensionID else { return .pairRefused("denied") }
+        guard ConnectProof.isSameCode(code, as: expected) else {
             session.codeTries += 1
             let left = Self.codeTries - session.codeTries
             guard left > 0 else {
@@ -437,6 +438,7 @@ public actor ConnectServer {
         guard session.pairingCode != nil else { return }
         session.pairingCode = nil
         session.pairingRequest = nil
+        session.pairingExtensionID = nil
         session.asking?.cancel()
         session.asking = nil
         isPairingPending = false
@@ -678,7 +680,8 @@ final class Session: @unchecked Sendable {
     var resolvedApp = false
     var lastActive: Date?
     var pairingCode: String?
-    var pairingRequest: (PairingRequest, String)?
+    var pairingRequest: PairingRequest?
+    var pairingExtensionID: String?
     var codeTries = 0
     var asking: Task<Void, Never>?
     var challenge: Challenge?

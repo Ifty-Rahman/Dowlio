@@ -41,3 +41,14 @@ struct CookieTests {
         #expect(!cookie.isSent(to: URL(string: "https://media.example.com/video.mp4")!, from: page))
     }
 }
+
+struct CookiePathTests {
+    @Test func aPathMatchesOnlyWholeSegments() {
+        let page = URL(string: "https://www.example.com/")!
+        let cookie = Cookie(name: "sid", value: "1", domain: ".example.com", path: "/members")
+
+        #expect(cookie.isSent(to: URL(string: "https://www.example.com/members")!, from: page))
+        #expect(cookie.isSent(to: URL(string: "https://www.example.com/members/1")!, from: page))
+        #expect(!cookie.isSent(to: URL(string: "https://www.example.com/membersX")!, from: page))
+    }
+}

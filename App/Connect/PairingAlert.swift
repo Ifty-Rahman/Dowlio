@@ -23,7 +23,7 @@ final class PairingAlert: NSObject {
         alert.messageText = "Type \(Self.spaced(request.code)) in Dowlio Connect"
         alert.informativeText = request.isIdentified
             ? "\(request.browser) wants to connect to Dowlio. Open the Dowlio Connect popup in \(request.browser) and type this code. Downloads from that browser can then finish in Dowlio."
-            : "An app Dowlio couldn't identify wants to connect to Dowlio. It says it's \(request.browser). Type this code only in the Dowlio Connect popup of a browser you just added it to."
+            : "An unknown app says it's \(request.browser) and wants to connect. Type this code only into Dowlio Connect in a browser you just added it to."
         let dontAllow = alert.addButton(withTitle: "Don't Allow")
         dontAllow.target = self
         dontAllow.action = #selector(refuse)

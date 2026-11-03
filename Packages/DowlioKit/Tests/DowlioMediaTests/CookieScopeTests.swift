@@ -1,5 +1,5 @@
 import DowlioCore
-import DowlioMedia
+@testable import DowlioMedia
 import DowlioTestSupport
 import Foundation
 import Testing
@@ -43,11 +43,23 @@ struct CookieScopeTests {
         #expect(followed.allSatisfy { $0.headers["cookie"] == nil })
     }
 
+    @Test func aRedirectFromAPublicPageToTheLocalNetworkIsNotFollowed() async throws {
+        let local = try await TestServer()
+        local.serve(TestServer.File(data: Data("#EXTM3U\n#EXTINF:4,\nsegment.ts\n#EXT-X-ENDLIST\n".utf8), headers: ["Content-Type": "application/vnd.apple.mpegurl"]), at: "/router.m3u8")
+        let request = URLRequest(url: local.url(for: "/start"))
+        local.redirect("/start", to: local.url(for: "/router.m3u8").absoluteString)
+
+        let read = try await LimitedRead(limit: 1_000_000, reachesLocalNetwork: false).read(request, in: PageAnalyzer.makeSession())
+
+        #expect(read?.1.statusCode == 302)
+        #expect(!local.requests.contains { $0.path == "/router.m3u8" })
+    }
+
     @Test(arguments: [
         ("http://127.0.0.1:8080/a.mp4", true), ("http://localhost/a", true), ("http://printer.local/", true),
         ("http://192.168.1.1/", true), ("http://10.0.0.8/", true), ("http://172.20.1.1/", true), ("http://169.254.1.1/", true),
         ("http://[::1]/", true), ("http://[fd00::1]/", true), ("https://example.com/a.mp4", false), ("https://8.8.8.8/", false),
-        ("http://172.32.0.1/", false),
+        ("http://172.32.0.1/", false), ("http://2130706433/", true), ("http://0x7f000001/", true),
     ])
     func localAddressesAreRecognised(_ address: String, _ local: Bool) throws {
         #expect(LocalAddress.isLocal(try #require(URL(string: address))) == local)

@@ -25,30 +25,38 @@ enum ConnectProof {
     }
 
     static func server(_ secret: Data, client: String, server: String) -> String {
-        code(secret, "dowlio-connect server \(client) \(server)")
+        code(secret, said(by: "server", client: client, server: server))
     }
 
     static func client(_ secret: Data, client: String, server: String) -> String {
-        code(secret, "dowlio-connect client \(client) \(server)")
+        code(secret, said(by: "client", client: client, server: server))
     }
 
     static func isClient(_ proof: String, _ secret: Data, client: String, server: String) -> Bool {
         guard let raw = Data(base64URL: proof) else { return false }
         return HMAC<SHA256>.isValidAuthenticationCode(
-            raw, authenticating: Data("dowlio-connect client \(client) \(server)".utf8), using: SymmetricKey(data: secret)
+            raw, authenticating: Data(said(by: "client", client: client, server: server).utf8), using: SymmetricKey(data: secret)
         )
     }
 
+    static func isSameCode(_ typed: String, as shown: String) -> Bool {
+        let key = SymmetricKey(size: .bits256)
+        let mac = HMAC<SHA256>.authenticationCode(for: Data(shown.utf8), using: key)
+        return HMAC<SHA256>.isValidAuthenticationCode(mac, authenticating: Data(typed.utf8), using: key)
+    }
+
     static func pairingCode() -> String {
-        var number: UInt32 = 0
-        _ = withUnsafeMutableBytes(of: &number) { SecRandomCopyBytes(kSecRandomDefault, 4, $0.baseAddress!) }
-        return String(format: "%06u", number % 1_000_000)
+        var generator = SystemRandomNumberGenerator()
+        return String(format: "%06u", UInt32.random(in: 0..<1_000_000, using: &generator))
     }
 
     static func random(bytes count: Int) -> String {
-        var bytes = [UInt8](repeating: 0, count: count)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes).base64URL
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }).base64URL
+    }
+
+    private static func said(by side: String, client: String, server: String) -> String {
+        "dowlio-connect \(side) \(client) \(server)"
     }
 
     private static func code(_ secret: Data, _ text: String) -> String {

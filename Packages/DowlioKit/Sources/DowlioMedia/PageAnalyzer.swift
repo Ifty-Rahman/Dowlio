@@ -784,21 +784,7 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func limitedData(for request: URLRequest) async throws -> (Data, HTTPURLResponse)? {
-        let (bytes, response) = try await session.bytes(for: request, delegate: RedirectGuard())
-        guard let http = response as? HTTPURLResponse, http.expectedContentLength <= Int64(Self.largestPage) else {
-            bytes.task.cancel()
-            return nil
-        }
-        var data = Data()
-        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
-        for try await byte in bytes {
-            data.append(byte)
-            if data.count > Self.largestPage {
-                bytes.task.cancel()
-                return nil
-            }
-        }
-        return (data, http)
+        try await LimitedRead(limit: Self.largestPage, reachesLocalNetwork: Self.reachesLocalNetwork).read(request, in: session)
     }
 
     private func noteReply(_ reply: HTTPURLResponse, for request: URLRequest) async {
@@ -1031,16 +1017,74 @@ final class Refusals: @unchecked Sendable {
     }
 }
 
-final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+final class LimitedRead: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let limit: Int
+    private let reachesLocalNetwork: Bool
+    private let lock = NSLock()
+    private var data = Data()
+    private var response: HTTPURLResponse?
+    private var isTooLarge = false
+    private var answer: CheckedContinuation<(Data, HTTPURLResponse)?, Error>?
+
+    init(limit: Int, reachesLocalNetwork: Bool) {
+        self.limit = limit
+        self.reachesLocalNetwork = reachesLocalNetwork
+    }
+
+    func read(_ request: URLRequest, in session: URLSession) async throws -> (Data, HTTPURLResponse)? {
+        let task = session.dataTask(with: request)
+        task.delegate = self
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock { answer = continuation }
+                task.resume()
+            }
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let http = response as? HTTPURLResponse, http.expectedContentLength <= Int64(limit) else {
+            lock.withLock { isTooLarge = true }
+            return completionHandler(.cancel)
+        }
+        lock.withLock { self.response = http }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive chunk: Data) {
+        let overLimit = lock.withLock {
+            data.append(chunk)
+            isTooLarge = data.count > limit
+            return isTooLarge
+        }
+        if overLimit { dataTask.cancel() }
+    }
+
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        guard reachesLocalNetwork || !LocalAddress.isLocal(request.url) else { return completionHandler(nil) }
         var request = request
         if !Self.sameOrigin(response.url ?? task.currentRequest?.url, request.url) {
             for name in ["Cookie", "Authorization", "Origin"] { request.setValue(nil, forHTTPHeaderField: name) }
         }
         completionHandler(request)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        let (continuation, result) = lock.withLock { () -> (CheckedContinuation<(Data, HTTPURLResponse)?, Error>?, Result<(Data, HTTPURLResponse)?, Error>) in
+            defer { answer = nil }
+            if isTooLarge { return (answer, .success(nil)) }
+            if let error { return (answer, .failure(error)) }
+            return (answer, .success(response.map { (data, $0) }))
+        }
+        continuation?.resume(with: result)
     }
 
     static func sameOrigin(_ one: URL?, _ other: URL?) -> Bool {
@@ -1054,7 +1098,10 @@ public enum LocalAddress {
     public static func isLocal(_ url: URL?) -> Bool {
         guard let host = url?.host(percentEncoded: false)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")) else { return false }
         if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || host.hasSuffix(".internal") { return true }
-        let parts = host.split(separator: ".").compactMap { UInt8($0) }
+        var parts = host.split(separator: ".").compactMap { UInt8($0) }
+        if let whole = host.hasPrefix("0x") ? UInt32(host.dropFirst(2), radix: 16) : UInt32(host) {
+            parts = [UInt8(whole >> 24), UInt8(whole >> 16 & 0xff), UInt8(whole >> 8 & 0xff), UInt8(whole & 0xff)]
+        }
         if parts.count == 4, !host.contains(":") {
             switch (parts[0], parts[1]) {
             case (127, _), (10, _), (0, _), (169, 254), (192, 168): return true

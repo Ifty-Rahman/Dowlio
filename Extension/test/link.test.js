@@ -98,7 +98,7 @@ test("a server that can't prove it's Dowlio is dropped and gets nothing", async 
   await socket.accept();
 
   await socket.prove("tok", { proof: "not-the-right-proof-at-all" });
-  for (let turn = 0; turn < 50 && socket.readyState !== 3; turn += 1) await flush();
+  for (const deadline = Date.now() + 2000; Date.now() < deadline && socket.readyState !== 3; ) await new Promise((resolve) => setTimeout(resolve, 1));
   await socket.reply({ type: "hello.ok" });
   await socket.reply({ type: "site.signIn", requestId: "s1", url: "https://mail.example/" });
 
