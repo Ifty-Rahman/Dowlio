@@ -16,7 +16,7 @@ struct BrowsersList: View {
                     BrowserRowView(row: row, setup: setup)
                 }
             }
-            HStack {
+            HStack(alignment: .top) {
                 Text("Missing a browser? Dowlio finds the Chromium browsers it knows. Any other Chromium browser can still connect.")
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
