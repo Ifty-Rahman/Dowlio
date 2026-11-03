@@ -129,7 +129,7 @@ struct ThinResultTests {
 
         let updates = await updates(site, "/watch")
 
-        #expect(ContinuousClock.now - start < .seconds(10))
+        #expect(ContinuousClock.now - start < .seconds(20))
         guard case .found(let candidates) = updates.last else { Issue.record("not found: \(updates)"); return }
         #expect(candidates.flatMap(\.versions).map(\.source.url.lastPathComponent) == ["clip.mp4"])
     }

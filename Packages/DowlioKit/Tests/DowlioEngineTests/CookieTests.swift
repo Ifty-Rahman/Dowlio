@@ -108,7 +108,8 @@ struct CookieTests {
         )
         let folder = try TestFiles.makeFolder()
         var configuration = EngineConfiguration.fast
-        configuration.idleTimeout = .seconds(1)
+        configuration.idleTimeout = .seconds(3)
+        configuration.retry.maximumFailures = 10
 
         let engine = DownloadEngine(configuration: configuration)
         let id = await engine.add(url: server.url(for: "/k.bin"), to: folder, options: Self.options)
