@@ -12,7 +12,7 @@ final class StreamFragments: @unchecked Sendable {
     }
 
     func withoutListedFragments(in candidates: [Candidate]) -> [Candidate] {
-        let listed = lock.withLock { listed }
+        let listed: Set<String> = lock.withLock { self.listed }
         guard !listed.isEmpty else { return candidates }
         return candidates.compactMap { candidate in
             var kept = candidate
