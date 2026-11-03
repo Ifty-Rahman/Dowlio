@@ -143,8 +143,10 @@ extension DownloadRun {
               let handle = try? FileHandle(forWritingTo: temporary) else { throw DownloadError.destinationNotWritable }
         defer { try? handle.close() }
         var written: Int64 = 0
+        let began = ContinuousClock.now
         for try await event in connection.events {
             guard case .data(let data) = event else { continue }
+            if Self.isCrawling(written: written, since: began) { throw RetryableFailure() }
             var chunk = data
             if skip > 0 {
                 let dropped = min(Int64(chunk.count), skip)
@@ -167,6 +169,15 @@ extension DownloadRun {
         try? FileManager.default.removeItem(at: part)
         try FileManager.default.moveItem(at: temporary, to: part)
         plan.finish(position, bytes: written)
+    }
+
+    static let crawlGrace = Duration.seconds(15)
+    static let crawlBytesPerSecond: Int64 = 20_000
+
+    static func isCrawling(written: Int64, since began: ContinuousClock.Instant, now: ContinuousClock.Instant = .now) -> Bool {
+        let elapsed = now - began
+        guard elapsed > crawlGrace else { return false }
+        return written < crawlBytesPerSecond * Int64(elapsed.components.seconds)
     }
 
     private func reportingProgress(of plan: MediaPlan, _ work: () async throws -> Void) async throws {

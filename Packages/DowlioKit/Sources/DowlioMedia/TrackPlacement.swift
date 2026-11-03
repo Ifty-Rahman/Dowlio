@@ -11,4 +11,16 @@ public enum TrackPlacement {
         guard longest > .zero, range.duration > longest + allowedGap else { return (at, CMTimeRange(start: range.start, duration: range.duration)) }
         return (at, CMTimeRange(start: range.start, duration: longest))
     }
+
+    public static func trusted(
+        _ declared: CMTimeRange, lastSampleStart: CMTime, lastSampleDuration: CMTime, typicalSampleDuration: CMTime
+    ) -> CMTimeRange {
+        guard lastSampleStart.isNumeric, lastSampleDuration.isNumeric, typicalSampleDuration.isNumeric, typicalSampleDuration > .zero,
+              lastSampleStart >= declared.start
+        else { return declared }
+        let held = lastSampleDuration.seconds > 2 && lastSampleDuration.seconds > typicalSampleDuration.seconds * 10
+        let end = lastSampleStart + (held ? typicalSampleDuration : lastSampleDuration)
+        guard declared.end.seconds - end.seconds > allowedGap.seconds / 2 else { return declared }
+        return CMTimeRange(start: declared.start, end: end)
+    }
 }

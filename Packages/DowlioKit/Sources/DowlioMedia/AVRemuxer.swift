@@ -41,9 +41,21 @@ public enum AVRemuxer {
     }
 
     private static func timeRange(of track: AVAssetTrack, in asset: AVURLAsset) async throws -> CMTimeRange {
-        if let range = try? await track.load(.timeRange) { return range }
+        if let range = try? await track.load(.timeRange) { return trusted(range, of: track) }
         let duration = try await asset.load(.duration)
         guard duration.isNumeric, duration > .zero else { throw Error.unreadable }
         return CMTimeRange(start: .zero, duration: duration)
+    }
+
+    private static func trusted(_ declared: CMTimeRange, of track: AVAssetTrack) -> CMTimeRange {
+        guard track.canProvideSampleCursors, declared.duration.isNumeric,
+              let last = track.makeSampleCursor(presentationTimeStamp: declared.end),
+              let previous = last.copy() as? AVSampleCursor
+        else { return declared }
+        guard previous.stepInPresentationOrder(byCount: -1) == -1 else { return declared }
+        return TrackPlacement.trusted(
+            declared, lastSampleStart: last.presentationTimeStamp, lastSampleDuration: last.currentSampleDuration,
+            typicalSampleDuration: previous.currentSampleDuration
+        )
     }
 }
