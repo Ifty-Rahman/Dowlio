@@ -40,9 +40,7 @@ final class CatchToast {
         guard let content = panel.contentView, let buttonWindow = button.window else { return }
         let size = content.fittingSize
         let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let screen = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let x = min(max(anchor.midX - size.width / 2, screen.minX + 8), screen.maxX - size.width - 8)
-        panel.setFrame(NSRect(x: x, y: anchor.minY - size.height - 6, width: size.width, height: size.height), display: true)
+        panel.setFrame(MenuBarPlacement.frame(size: size, under: anchor, gap: 6), display: true)
         isShowing = true
         if !panel.isVisible || panel.alphaValue < 1 {
             panel.orderFrontRegardless()
