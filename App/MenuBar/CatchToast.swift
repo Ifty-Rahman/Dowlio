@@ -145,7 +145,7 @@ private struct CatchToastView: View {
             }
             .accessibilityElement(children: .combine)
             if let row {
-                SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.tone, height: 3)
+                SegmentedBar(segments: row.barSegments, fraction: row.barFraction, tint: row.tone, height: 3)
             }
             HStack {
                 Spacer()

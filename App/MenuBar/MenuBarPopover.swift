@@ -125,7 +125,7 @@ private struct PopoverRow: View {
                         .font(DowlioDesign.TypeRole.caption.monospacedDigit())
                         .foregroundStyle(row.tone)
                 }
-                SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.tone, height: 3, needsAttention: row.needsAttention)
+                SegmentedBar(segments: row.barSegments, fraction: row.barFraction, tint: row.tone, height: 3, needsAttention: row.needsAttention)
                 if row.needsAttention {
                     Text(row.detailLine)
                         .font(DowlioDesign.TypeRole.detail.weight(.medium))

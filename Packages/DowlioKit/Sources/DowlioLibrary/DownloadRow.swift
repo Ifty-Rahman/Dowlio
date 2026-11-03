@@ -120,6 +120,10 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         return min(Double(receivedBytes) / Double(totalBytes), 1)
     }
 
+    public var barSegments: [SegmentProgress] { state == .completed ? [] : displaySegments }
+
+    public var barFraction: Double? { state == .completed ? 1 : fractionDone }
+
     public var canPause: Bool {
         switch state {
         case .downloading, .retrying, .queued: true

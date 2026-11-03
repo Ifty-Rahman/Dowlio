@@ -22,7 +22,7 @@ struct DownloadRowView: View {
                 title(stateWord: true, notSecureWord: false)
                 title(stateWord: false, notSecureWord: false)
             }
-            SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.tone, needsAttention: row.needsAttention)
+            SegmentedBar(segments: row.barSegments, fraction: row.barFraction, tint: row.tone, needsAttention: row.needsAttention)
             HStack {
                 Text(row.detailLine)
                     .foregroundStyle(row.needsAttention ? AnyShapeStyle(row.tone) : AnyShapeStyle(.secondary))
