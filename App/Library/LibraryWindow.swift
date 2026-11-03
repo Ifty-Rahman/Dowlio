@@ -81,7 +81,7 @@ struct LibraryWindow: View {
         hasSeenWelcome = true
         guard let window = model.libraryWindow else { return }
         DispatchQueue.main.async {
-            window.setContentSize(NSSize(width: Self.toolbarMinimumWidth, height: 520))
+            window.setContentSize(Self.firstSize)
             window.center()
         }
     }
@@ -217,6 +217,7 @@ struct LibraryWindow: View {
     /// The toolbar spans the whole window and never changes with the panels, so this one width
     /// keeps every button out of the overflow menu.
     private static let toolbarMinimumWidth: CGFloat = 700
+    static let firstSize = NSSize(width: 870, height: 472)
     private static let listMinimumWidth: CGFloat = 360
     private static let sidebarWidth: CGFloat = 230
     private static let inspectorWidth: CGFloat = 280

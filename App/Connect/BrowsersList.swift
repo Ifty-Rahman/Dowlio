@@ -195,7 +195,9 @@ private struct AddGuide: View {
                 step(4, "Click Load unpacked.")
                 step(5, "In the file window, press ⌘⇧G, paste the path with ⌘V, and press Return.")
                 step(6, "Click Select.")
-                step(7, "Dowlio asks you to allow \(name). Click Allow, and this window shows you're connected.")
+                step(7, "Dowlio shows a 6-digit code in a small window on top.")
+                step(8, "In \(name), click Dowlio Connect in the toolbar. If you don't see it, click the puzzle-piece button and pin it first.")
+                step(9, "Type the code, click Connect, and this window shows you're connected.")
             }
             HStack {
                 if let openExtensions { Button("Open extensions page", action: openExtensions) }

@@ -19,7 +19,7 @@ struct DowlioApp: App {
         Window("Dowlio", id: LibraryWindow.sceneID) {
             LibraryWindow(model: model)
         }
-        .defaultSize(width: 870, height: 472)
+        .defaultSize(LibraryWindow.firstSize)
         .windowResizability(.contentSize)
         .commands {
             NewDownloadCommands(model: model)
