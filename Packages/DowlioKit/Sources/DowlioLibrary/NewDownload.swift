@@ -162,7 +162,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         lines.compactMap(\.url).count > 1
     }
 
-    /// Puts `link` in the field in place of what was there.
     public mutating func replace(with link: String) {
         let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -234,7 +233,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         return options
     }
 
-    /// What Download adds the link with.
     public var options: RequestOptions {
         var options = inspectionOptions
         options.connections = connections

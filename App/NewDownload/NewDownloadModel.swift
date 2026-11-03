@@ -131,7 +131,6 @@ final class NewDownloadModel: Identifiable {
         list.send(page)
     }
 
-    /// Checks the link if it needs it, now.
     func checkLinks() {
         pending?.cancel()
         for url in draft.linksToCheck() {
