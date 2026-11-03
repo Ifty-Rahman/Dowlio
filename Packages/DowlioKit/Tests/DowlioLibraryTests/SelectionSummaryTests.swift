@@ -47,7 +47,7 @@ struct SelectionSummaryTests {
         #expect(summary.cancelQuestion == "Cancel 2 downloads?")
         #expect(summary.removeQuestion == "Remove 2 downloads from the list?")
         #expect(summary.lossWarning == "The 1.50 MB downloaded so far will be deleted.")
-        #expect(SelectionSummary(rows: [done, done]).trashQuestion == "Move 2 files to the Trash?")
+        #expect(SelectionSummary(rows: [done, done]).trashQuestion == "Move 2 downloads to the Trash?")
         #expect(SelectionSummary(rows: [running]).cancelQuestion == "Cancel this download?")
     }
 

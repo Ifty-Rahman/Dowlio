@@ -10,7 +10,7 @@ log "Running Dowlio Connect server tests"
 (cd "$ROOT/Packages/DowlioKit" && swift test --filter DowlioConnectTests)
 
 log "Running Dowlio Connect tests"
-(cd "$ROOT/Extension" && node --test "test/*.test.js")
+(cd "$ROOT/Extension" && { [ -d node_modules ] || npm ci --no-audit --no-fund --silent; } && node --test "test/*.test.js")
 
 "$ROOT/scripts/bootstrap.sh"
 

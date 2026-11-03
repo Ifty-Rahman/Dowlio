@@ -37,7 +37,7 @@ public enum FileCategory: String, CaseIterable, Codable, Sendable {
             .audio: ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus", "wma", "alac"],
             .documents: [
                 "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "txt", "md",
-                "csv", "pages", "numbers", "key", "epub",
+                "csv", "pages", "numbers", "key", "epub", "torrent", "conf", "cfg", "ini", "json", "xml", "yaml", "yml", "toml", "log", "plist",
             ],
             .archives: ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "tbz", "xz", "txz", "zst", "lz", "lzma", "z"],
             .appsAndDiskImages: ["dmg", "pkg", "mpkg", "iso", "img", "app", "xip", "exe", "msi", "deb", "rpm", "apk", "appimage"],

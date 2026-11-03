@@ -13,10 +13,12 @@ jobs:
   release:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          ./scripts/install-xcodegen.sh "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/xcodegen/bin" >> "$GITHUB_PATH"
 
       - name: Require a passing CI run for this commit
         env:
@@ -26,6 +28,15 @@ jobs:
             --jq '[.check_runs[] | select(.name == "test") | .conclusion] | if length == 0 then "missing" elif all(. == "success") then "success" else "failed" end')
           if [ "$result" != "success" ]; then
             echo "::error::CI has not passed on $GITHUB_SHA ($result). Tag a commit on main after its CI run is green."
+            exit 1
+          fi
+
+      - name: Require the update signing key
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is not set. Run scripts/make-update-key.sh and store the secret. Without it installed copies can't update."
             exit 1
           fi
 
@@ -59,10 +70,31 @@ jobs:
       - name: Package
         run: ./scripts/package.sh
 
-      - name: Publish the release
+      - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes=()
+          if [ -f ".github/release-notes/$GITHUB_REF_NAME.md" ]; then
+            notes=(--notes-file ".github/release-notes/$GITHUB_REF_NAME.md")
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* \
+            --draft \
             --title "Dowlio ${GITHUB_REF_NAME#v}" \
+            "${notes[@]}" \
             --generate-notes
+
+      - name: Write and attach the update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          gh api markdown -f mode=gfm -f context="$GITHUB_REPOSITORY" -F text=@"$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/notes.html"
+          ./scripts/appcast.sh "$RUNNER_TEMP/notes.html"
+          gh release upload "$GITHUB_REF_NAME" dist/appcast.xml
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

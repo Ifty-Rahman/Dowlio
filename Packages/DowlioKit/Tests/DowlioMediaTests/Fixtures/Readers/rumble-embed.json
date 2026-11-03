@@ -1,0 +1,1 @@
+{"title":"Sample Rumble video","i":"{{server}}/thumb/rumble.jpg","duration":95,"live":0,"ua":{"mp4":{"360":{"url":"{{server}}/video/v-360.mp4","meta":{"bitrate":500,"size":2000000,"w":640,"h":360}},"720":{"url":"{{server}}/video/v-720.mp4","meta":{"bitrate":1500,"size":6000000,"w":1280,"h":720}}},"hls":{"auto":{"url":"{{server}}/video/v.m3u8","meta":{}}}}}

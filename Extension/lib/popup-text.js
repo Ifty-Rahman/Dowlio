@@ -6,9 +6,9 @@ export function popupText(status) {
       return { headline: "Connected to Dowlio", detail: "Downloads from this browser can finish in Dowlio." };
     case "pairing":
       return {
-        headline: "Allow this browser in Dowlio",
-        detail: "Dowlio is asking whether to connect. Allow it only if Dowlio shows this code.",
-        showsCode: true,
+        headline: "Type the code Dowlio shows",
+        detail: "Dowlio shows a 6-digit code when this browser asks to connect. Type it here.",
+        asksForCode: true,
       };
     case "denied":
       return { headline: "Dowlio didn't allow this browser", detail: "Ask again to show the request in Dowlio.", showsRetry: true };
@@ -31,6 +31,16 @@ export function catchControls({ status, catching, tabUrl }) {
     neverCaught,
     siteText: neverCaught ? `Downloads from ${site} stay in this browser.` : `Never catch on ${site}`,
   };
+}
+
+export function sendPageControl({ status, tabUrl }) {
+  if (!/^https?:/i.test(tabUrl ?? "")) return { shown: false };
+  return { shown: true, enabled: status === "connected" };
+}
+
+export function pairingErrorText(error) {
+  if (!error) return null;
+  return error.left === 1 ? "That code didn't match. 1 try left." : `That code didn't match. ${error.left} tries left.`;
 }
 
 const DECLINE_MEMORY = 60 * 60 * 1000;

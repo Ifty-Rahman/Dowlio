@@ -26,10 +26,35 @@ h1 {
   margin: 14px 0 4px;
 }
 
+#code-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+#code-form[hidden] {
+  display: none;
+}
+
 #code {
-  font: 600 28px ui-monospace, SFMono-Regular, monospace;
-  letter-spacing: 6px;
-  margin: 8px 0;
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  font: 600 20px ui-monospace, SFMono-Regular, monospace;
+  letter-spacing: 3px;
+  padding: 4px 8px;
+}
+
+#code-form button {
+  margin-top: 0;
+}
+
+#code-error {
+  flex-basis: 100%;
+  color: #d70015;
+  margin: 0;
 }
 
 #detail {
@@ -61,4 +86,23 @@ button {
 #last-decline {
   color: GrayText;
   margin: 10px 0 0;
+}
+
+#send-page {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: AccentColor;
+  color: AccentColorText;
+  font-weight: 600;
+}
+
+#send-page[hidden] {
+  display: none;
+}
+
+#send-page:disabled {
+  opacity: 0.5;
 }

@@ -15,9 +15,9 @@ struct InspectorView: View {
                     VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                         Text(percentText(row))
                             .font(DowlioDesign.TypeRole.heroMetric)
-                        Label(row.stateWord, systemImage: row.state.symbolName)
+                        Label(row.stateWord, systemImage: row.symbolName)
                             .font(DowlioDesign.TypeRole.caption)
-                            .foregroundStyle(row.state.tone)
+                            .foregroundStyle(row.tone)
                         Text(row.fileName)
                             .font(DowlioDesign.TypeRole.heading)
                             .lineLimit(2)
@@ -34,7 +34,7 @@ struct InspectorView: View {
                                 .font(DowlioDesign.TypeRole.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                             ForEach(Array(row.segments.enumerated()), id: \.offset) { _, segment in
-                                SegmentedBar(segments: [segment], fraction: nil, tint: segment.isActive ? row.state.tone : .secondary, height: 4)
+                                SegmentedBar(segments: [segment], fraction: nil, tint: segment.isActive ? row.tone : .secondary, height: 4)
                             }
                         }
                     }

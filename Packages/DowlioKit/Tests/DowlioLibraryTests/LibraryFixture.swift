@@ -1,6 +1,7 @@
 import DowlioCore
 import DowlioEngine
 import DowlioLibrary
+import DowlioMedia
 import DowlioStore
 import DowlioTestSupport
 import Foundation
@@ -25,7 +26,9 @@ struct LibraryFixture {
     ) async throws {
         self.databaseURL = databaseURL
         self.folder = folder
-        engine = DownloadEngine(configuration: .fast)
+        var configuration = EngineConfiguration.fast
+        configuration.remux = AVRemuxer.remux
+        engine = DownloadEngine(configuration: configuration)
         library = Library(engine: engine, store: try DownloadStore(databaseAt: databaseURL), trash: trash)
         await library.start(maximumFailures: maximumFailures)
     }

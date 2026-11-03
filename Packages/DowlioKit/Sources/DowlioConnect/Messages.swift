@@ -1,15 +1,22 @@
 import DowlioCore
+import DowlioMedia
 import Foundation
 
 enum Incoming: Equatable {
-    case pairRequest(code: String, browser: String, version: String, extensionID: String)
-    case hello(token: String, version: String)
+    case pairRequest(browser: String, version: String, extensionID: String)
+    case pairCode(String)
+    case hello(key: String, nonce: String, version: String)
+    case helloProof(String)
+    case legacyHello(token: String)
     case ping
     case pong
     case catchOffer(CatchOffer)
     case catchReleased
     case settingsChange(CatchPreferenceChange)
     case linkSend(url: URL, referrer: URL?, browser: String?, cookies: [Cookie], userAgent: String?)
+    case pageSend(SentPage)
+    case pageNone
+    case siteSignIn(cookies: [Cookie], userAgent: String?)
     case unknown(type: String)
 }
 
@@ -42,7 +49,12 @@ struct Envelope {
                 guard let name = entry["name"] as? String, let value = entry["value"] as? String,
                       Self.isCookieName(name), Self.isCookieValue(value)
                 else { return nil }
-                return Cookie(name: name, value: value)
+                let domain = (entry["domain"] as? String).flatMap { Self.isCookieDomain($0) ? $0 : nil }
+                let path = (entry["path"] as? String).flatMap { $0.hasPrefix("/") && Self.isCookieValue($0) ? $0 : nil }
+                return Cookie(
+                    name: name, value: value, domain: domain, path: path, hostOnly: entry["hostOnly"] as? Bool ?? domain.map { !$0.hasPrefix(".") } ?? false,
+                    secure: entry["secure"] as? Bool ?? false, httpOnly: entry["httpOnly"] as? Bool ?? true
+                )
             }
         }
         func browserRequest() -> BrowserRequest? {
@@ -65,13 +77,23 @@ struct Envelope {
         }
         switch type {
         case "pair.request":
-            guard let code = text("code"), code.count == 4, code.allSatisfy(\.isNumber),
-                  let browser = text("browser"), let version = text("version"), let id = text("extensionId")
-            else { return nil }
-            message = .pairRequest(code: code, browser: browser, version: version, extensionID: id)
+            guard let browser = text("browser"), let version = text("version"), let id = text("extensionId") else { return nil }
+            message = .pairRequest(browser: browser, version: version, extensionID: id)
+        case "pair.code":
+            guard let code = text("code"), code.count == 6, code.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            message = .pairCode(code)
         case "hello":
-            guard let token = text("token"), let version = text("version") else { return nil }
-            message = .hello(token: token, version: version)
+            if let key = text("key"), let nonce = text("nonce"), let version = text("version"),
+               Self.isProofText(key), Self.isProofText(nonce) {
+                message = .hello(key: key, nonce: nonce, version: version)
+            } else if let token = text("token") {
+                message = .legacyHello(token: token)
+            } else {
+                return nil
+            }
+        case "hello.proof":
+            guard let proof = text("proof"), Self.isProofText(proof) else { return nil }
+            message = .helloProof(proof)
         case "ping":
             message = .ping
         case "pong":
@@ -92,6 +114,27 @@ struct Envelope {
                 url: url, referrer: link("referrer"), browser: text("browser"), cookies: cookies,
                 userAgent: text("userAgent", limit: Self.maximumHeaderValue)
             )
+        case "page.send":
+            guard let url = link("url"), let cookies = cookies() else { return nil }
+            let scan = PageScan(object)
+            let watched = ((object["requests"] as? [[String: Any]]) ?? []).prefix(Self.maximumScannedMedia).compactMap { entry -> WatchedRequest? in
+                guard let value = entry["url"] as? String, value.count <= 8192, let address = URL(string: value), Self.isWebLink(address),
+                      let kind = (entry["kind"] as? String).flatMap(WatchedRequest.Kind.init(rawValue:)) else { return nil }
+                let referrer = (entry["referrer"] as? String).flatMap(URL.init(string:)).flatMap { Self.isWebLink($0) ? $0 : nil }
+                let contentType = (entry["contentType"] as? String).flatMap { !$0.isEmpty && $0.count <= 200 ? $0 : nil }
+                return WatchedRequest(url: address, kind: kind, contentType: contentType, referrer: referrer)
+            }
+            message = .pageSend(SentPage(
+                url: url, title: text("title", limit: 1000), browser: text("browser"), cookies: cookies,
+                userAgent: text("userAgent", limit: Self.maximumHeaderValue), scan: scan.media, players: scan.players, embeddedJSON: scan.embeddedJSON,
+                watched: Array(watched), throughDowlioConnect: true
+            ))
+        case "page.none":
+            guard requestID != nil else { return nil }
+            message = .pageNone
+        case "site.signIn":
+            guard requestID != nil, let cookies = cookies() else { return nil }
+            message = .siteSignIn(cookies: cookies, userAgent: text("userAgent", limit: Self.maximumHeaderValue))
         case "settings.change":
             let catches = object["catches"] as? Bool
             let site = text("neverCatchSite")
@@ -108,6 +151,7 @@ extension Envelope {
     static let maximumBody = 64 * 1024
     static let maximumHeaders = 40
     static let maximumHeaderValue = 4096
+    static let maximumScannedMedia = PageScan.maximumMedia
     static let unreplayedHeaders: Set<String> = [
         "host", "cookie", "range", "if-range", "content-length", "connection", "keep-alive", "accept-encoding",
         "transfer-encoding", "te", "trailer", "upgrade", "expect", "proxy-authorization", "proxy-connection",
@@ -128,13 +172,24 @@ extension Envelope {
         !name.isEmpty && name.count <= 256 && name.unicodeScalars.allSatisfy { $0.value > 32 && $0.value < 127 && $0 != ";" && $0 != "=" }
     }
 
+    static func isCookieDomain(_ domain: String) -> Bool {
+        !domain.isEmpty && domain.count <= 253 && domain.unicodeScalars.allSatisfy {
+            $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-")
+        }
+    }
+
     static func isCookieValue(_ value: String) -> Bool {
         value.count <= 4096 && value.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value != 127 && $0 != ";" }
     }
 
+    static func isProofText(_ text: String) -> Bool {
+        (16...88).contains(text.count) && text.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0) && $0.isASCII || $0 == "-" || $0 == "_"
+        }
+    }
+
     static func isWebLink(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), let host = url.host(), !host.isEmpty else { return false }
-        return scheme == "http" || scheme == "https"
+        PageScan.isWebLink(url)
     }
 }
 
@@ -147,9 +202,15 @@ struct Outgoing: Encodable {
     var url: String?
     var catches: Bool?
     var neverCatch: [String]?
+    var nonce: String?
+    var proof: String?
+    var left: Int?
 
     static func pairApproved(token: String) -> Outgoing { Outgoing(type: "pair.approved", token: token) }
     static func pairRefused(_ reason: String) -> Outgoing { Outgoing(type: "pair.refused", reason: reason) }
+    static let pairCodeNeeded = Outgoing(type: "pair.codeNeeded")
+    static func pairCodeWrong(left: Int) -> Outgoing { Outgoing(type: "pair.codeWrong", left: left) }
+    static func helloChallenge(nonce: String, proof: String) -> Outgoing { Outgoing(type: "hello.challenge", nonce: nonce, proof: proof) }
     static let helloAccepted = Outgoing(type: "hello.ok")
     static let helloRejected = Outgoing(type: "hello.rejected")
     static let pong = Outgoing(type: "pong")
@@ -158,6 +219,9 @@ struct Outgoing: Encodable {
     static func error(_ reason: String) -> Outgoing { Outgoing(type: "error", reason: reason) }
     static let catchAccepted = Outgoing(type: "catch.accepted")
     static let linkReceived = Outgoing(type: "link.received")
+    static let pageReceived = Outgoing(type: "page.received")
+    static let pageScan = Outgoing(type: "page.scan")
+    static func siteSignIn(for link: URL) -> Outgoing { Outgoing(type: "site.signIn", url: link.absoluteString) }
     static func settingsUpdate(_ preferences: CatchPreferences) -> Outgoing {
         Outgoing(
             type: "settings.update", catches: preferences.catches, neverCatch: preferences.neverCatch

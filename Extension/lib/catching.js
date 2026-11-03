@@ -28,6 +28,40 @@ export function matchesSite(host, sites) {
   return sites.some((site) => host === site || host.endsWith(`.${site}`));
 }
 
+export const BROWSER_UPDATE_SITES = [
+  "dl.google.com",
+  "edgedl.me.gvt1.com",
+  "gvt1.com",
+  "update.googleapis.com",
+  "clients2.google.com",
+  "clients2.googleusercontent.com",
+  "msedge.sf.dl.delivery.mp.microsoft.com",
+  "msedge.b.tlu.dl.delivery.mp.microsoft.com",
+  "edge.microsoft.com",
+  "download.mozilla.org",
+  "download-installer.cdn.mozilla.net",
+  "ftp.mozilla.org",
+  "archive.mozilla.org",
+  "versioncheck.addons.mozilla.org",
+  "updates.cdn.mozilla.net",
+  "laptop-updates.brave.com",
+  "brave-browser-downloads.s3.brave.com",
+  "brave-core-ext.s3.brave.com",
+  "downloads.vivaldi.com",
+  "download.opera.com",
+  "get.geo.opera.com",
+  "desktop.opera.com",
+  "releases.arc.net",
+  "releases.diabrowser.com",
+];
+
+const BROWSER_UPDATE_TYPES = ["application/x-chrome-extension", "application/x-xpinstall"];
+
+function isBrowserUpdate(item) {
+  if (BROWSER_UPDATE_TYPES.includes((item.mime || "").toLowerCase())) return true;
+  return isNeverCaught(item, BROWSER_UPDATE_SITES);
+}
+
 function isNeverCaught(item, sites) {
   return [item.url, item.finalUrl, item.referrer].map(hostOf).some((host) => host && matchesSite(host, sites));
 }
@@ -77,6 +111,7 @@ export function startCatching({ chrome, link, navigator, now = Date.now }) {
     const source = item.finalUrl || item.url;
     if (item.byExtensionId === chrome.runtime.id || wasHandedBack(item.url)) return true;
     if (!isWebLink(item.url) || !isWebLink(source)) return true;
+    if (isBrowserUpdate(item)) return true;
     return Boolean(item.incognito) || browserRequest.unsendable;
   }
 

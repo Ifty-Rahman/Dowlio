@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { catchControls, lastDeclineText } from "../lib/popup-text.js";
+import { catchControls, lastDeclineText, sendPageControl } from "../lib/popup-text.js";
 
 test("the catch controls show only while Dowlio is connected", () => {
   assert.equal(catchControls({ status: "disconnected", tabUrl: "https://example.com/" }).shown, false);
@@ -53,4 +53,18 @@ test("an old or missing note shows nothing", () => {
   const now = 1_800_000_000_000;
   assert.equal(lastDeclineText(undefined, now), null);
   assert.equal(lastDeclineText({ host: "a.com", reason: "error", at: now - 2 * 60 * 60 * 1000 }, now), null);
+});
+
+test("the send button shows on web pages, ready while Dowlio is connected", () => {
+  assert.deepEqual(sendPageControl({ status: "connected", tabUrl: "https://example.com/watch" }), { shown: true, enabled: true });
+});
+
+test("with Dowlio not running, the send button shows but can't be pressed", () => {
+  assert.deepEqual(sendPageControl({ status: "disconnected", tabUrl: "https://example.com/watch" }), { shown: true, enabled: false });
+  assert.deepEqual(sendPageControl({ status: "pairing", tabUrl: "https://example.com/watch" }), { shown: true, enabled: false });
+});
+
+test("pages that aren't websites have no send button", () => {
+  assert.equal(sendPageControl({ status: "connected", tabUrl: "chrome://extensions/" }).shown, false);
+  assert.equal(sendPageControl({ status: "connected" }).shown, false);
 });

@@ -34,7 +34,7 @@ struct WorkStealingTests {
 
         let completed = try #require(snapshots.last)
         #expect(completed.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "big.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "big.iso"), from: data) == nil)
         // The slow segment's own connection was asked for its range once, and the segment ended up
         // shorter than that range: its end moved earlier, and it holds exactly its new length.
         // Requests are matched by start, because stealing can shorten a range before it's asked for.
@@ -108,7 +108,7 @@ struct WorkStealingTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "split.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "split.iso"), from: data) == nil)
         // Stealing may split segments again after Resume, so the first request for each missing
         // part must start exactly where that part begins.
         let missingStarts = Set(paused.segments.filter { $0.receivedBytes < $0.end - $0.start + 1 }.map { $0.start + $0.receivedBytes })
@@ -138,6 +138,6 @@ extension WorkStealingTests {
 
         #expect(completed.state == .completed)
         #expect(completed.segments.count == 4)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "plain.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "plain.iso"), from: data) == nil)
     }
 }

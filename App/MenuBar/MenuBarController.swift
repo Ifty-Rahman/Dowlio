@@ -1,23 +1,27 @@
 import AppKit
+import DowlioCore
 import DowlioConnect
 import DowlioLibrary
+import DowlioMedia
 import Observation
 import SwiftUI
 
-/// Dowlio's menu bar item: an icon whose bar shows progress while downloading, and a popover.
+/// Dowlio's menu bar item: an icon whose bar shows progress while downloading, and a panel under it.
 /// AppKit owns it, because SwiftUI's menu bar extra can't be opened from code, and later phases
 /// open the catch toast and the Send panel from it.
 @MainActor
-final class MenuBarController: NSObject, NSPopoverDelegate {
+final class MenuBarController: NSObject {
     private let model: AppModel
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let popover = NSPopover()
     private let panel = MenuBarPanel()
-    private var drawnFraction: Double??
+    private var menuWindow: MenuBarWindow?
+    private var drawnIcon: (fraction: Double?, needsAttention: Bool)?
+    private var returnTo: NSRunningApplication?
+    private var openedAt = Date()
     private lazy var dismissal = PopoverDismissal(hooks: .init(
-        popoverWindow: { [weak self] in self?.popover.contentViewController?.view.window },
+        popoverWindow: { [weak self] in self?.menuWindow?.window },
         isPointerOnIcon: { [weak self] in self?.isPointerOnIcon ?? false },
-        isPopoverShown: { [weak self] in self?.popover.isShown ?? false },
+        isPopoverShown: { [weak self] in self?.menuWindow?.isShown ?? false },
         isMoreShown: { [weak self] in self?.moreMenu.isShown ?? false },
         hideMore: { [weak self] in self?.moreMenu.hide() },
         close: { [weak self] in self?.close() }
@@ -32,10 +36,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     init(model: AppModel) {
         self.model = model
         super.init()
-        popover.behavior = .applicationDefined
-        popover.animates = false
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: MenuBarPopover(
+        menuWindow = MenuBarWindow(content: MenuBarPopover(
             model: model, panel: panel,
             close: { [weak self] in self?.close() },
             toggleMore: { [weak self] in self?.toggleMore() }
@@ -71,17 +72,26 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     }
 
     func showSent(_ link: SentLink) {
-        if !popover.isShown { open() }
+        if menuWindow?.isShown != true { open() }
+        showQuickAdd()?.addSent(link)
+    }
+
+    func sendTarget(activating: Bool = true) -> NewDownloadModel? {
+        if menuWindow?.isShown != true { open(activating: activating) }
+        return showQuickAdd()
+    }
+
+    private func showQuickAdd() -> NewDownloadModel? {
         moreMenu.hide()
         if !panel.showsQuickAdd || panel.quickAdd == nil {
             panel.quickAdd = model.makeNewDownload()
             panel.showsQuickAdd = true
         }
-        panel.quickAdd?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+        return panel.quickAdd
     }
 
     @objc private func toggle() {
-        if popover.isShown { close() } else { open() }
+        if menuWindow?.isShown == true { close() } else { open() }
     }
 
     private func toggleMore() {
@@ -99,28 +109,33 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
     private func close() {
         moreMenu.hide()
-        guard popover.isShown else { return }
-        popover.performClose(nil)
+        guard let menuWindow, menuWindow.isShown else { return }
+        menuWindow.hide()
+        didClose()
     }
 
-    private func open() {
+    private func open(activating: Bool = true) {
         guard let button = item.button else { return }
         catchToast.hide()
-        panel.showsQuickAdd = false
-        panel.quickAdd = nil
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        let window = popover.contentViewController?.view.window
-        window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
-        NSApp.activate()
-        window?.makeKey()
+        panel.dropEmptyQuickAdd()
+        let front = NSWorkspace.shared.frontmostApplication
+        returnTo = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+        openedAt = Date()
+        menuWindow?.show(under: button, makingKey: activating)
         dismissal.start()
     }
 
-    func popoverDidClose(_ notification: Notification) {
+    private func didClose() {
         moreMenu.hide()
-        panel.showsQuickAdd = false
-        panel.quickAdd = nil
+        panel.dropEmptyQuickAdd()
         dismissal.stop()
+        let previous = returnTo
+        let opened = openedAt
+        returnTo = nil
+        Task { @MainActor [weak self] in
+            guard let self, let previous, !previous.isTerminated, !model.movedFocus(since: opened) else { return }
+            previous.activate()
+        }
     }
 
     private var isPointerOnIcon: Bool {
@@ -140,9 +155,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let steps = Double(StatusIcon.progressSteps)
         let fraction = summary.progressFraction.map { ($0 * steps).rounded(.down) / steps }
         item.button?.setAccessibilityLabel("Dowlio, \(summary.status)")
-        guard drawnFraction != .some(fraction) else { return }
-        drawnFraction = .some(fraction)
-        item.button?.image = StatusIcon.image(progress: fraction)
+        if let drawnIcon, drawnIcon.fraction == fraction, drawnIcon.needsAttention == summary.needsAttention { return }
+        drawnIcon = (fraction, summary.needsAttention)
+        item.button?.image = StatusIcon.image(progress: fraction, needsAttention: summary.needsAttention)
     }
 }
 
@@ -152,6 +167,19 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 final class MenuBarPanel {
     var showsQuickAdd = false
     var quickAdd: NewDownloadModel?
+
+    func dropEmptyQuickAdd() {
+        let waiting = quickAdd.map { !$0.isEmpty } ?? false
+        guard !waiting else { return }
+        showsQuickAdd = false
+        quickAdd = nil
+    }
+
+    func endQuickAdd() {
+        quickAdd?.discardSentPage()
+        showsQuickAdd = false
+        quickAdd = nil
+    }
     @ObservationIgnored weak var moreAnchor: NSView?
 }
 
@@ -167,18 +195,20 @@ enum StatusIcon {
     static let progressSteps = 34
 
     @MainActor
-    static func image(progress fraction: Double?) -> NSImage {
+    static func image(progress fraction: Double?, needsAttention: Bool = false) -> NSImage {
+        let ink: NSColor = needsAttention ? .systemRed : .black
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
-            NSColor.black.setFill()
+            ink.setFill()
+            ink.setStroke()
             arrow().fill()
             if let fraction {
-                progressBar(fraction)
+                progressBar(fraction, ink: ink)
             } else {
                 segments()
             }
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = !needsAttention
         image.accessibilityDescription = "Dowlio"
         return image
     }
@@ -206,12 +236,12 @@ enum StatusIcon {
         }
     }
 
-    private static func progressBar(_ fraction: Double) {
-        NSColor.black.withAlphaComponent(0.3).setFill()
+    private static func progressBar(_ fraction: Double, ink: NSColor) {
+        ink.withAlphaComponent(0.3).setFill()
         capsule(bar).fill()
         let filled = bar.width * CGFloat(min(max(fraction, 0), 1))
         guard filled > 0 else { return }
-        NSColor.black.setFill()
+        ink.setFill()
         capsule(NSRect(x: bar.minX, y: bar.minY, width: max(filled, bar.height), height: bar.height)).fill()
     }
 

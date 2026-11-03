@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><title>Product tour</title></head>
+<body>
+<div id="tour"></div>
+<script>
+const player = new Plyr('#tour', { controls: ['play', 'progress', 'mute'] });
+player.source = {
+  type: 'video',
+  title: 'Product tour 2026',
+  sources: [
+    { src: '/videos/tour-576.mp4', type: 'video/mp4', size: 576 },
+    { src: '/videos/tour-1080.mp4', type: 'video/mp4', size: 1080 },
+  ],
+  poster: '/videos/tour.jpg',
+};
+</script>
+</body></html>

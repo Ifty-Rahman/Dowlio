@@ -39,6 +39,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     /// A Completed download whose file is no longer where Dowlio put it.
     public var isFileMissing: Bool
     public var lostCookies = false
+    public var isMedia = false
     public var origin: DownloadOrigin?
 
     public var originText: String? {
@@ -119,6 +120,10 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         return min(Double(receivedBytes) / Double(totalBytes), 1)
     }
 
+    public var barSegments: [SegmentProgress] { state == .completed ? [] : displaySegments }
+
+    public var barFraction: Double? { state == .completed ? 1 : fractionDone }
+
     public var canPause: Bool {
         switch state {
         case .downloading, .retrying, .queued: true
@@ -127,6 +132,14 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
     }
 
     public var canCancel: Bool { state != .completed }
+
+    public var needsAttention: Bool {
+        switch state {
+        case .failed: true
+        case .paused: lostCookies
+        case .queued, .downloading, .retrying, .completed: false
+        }
+    }
 
     /// Cancel and Remove from List would delete bytes downloaded so far, so they ask first.
     public var hasBytesAtStake: Bool { state != .completed && receivedBytes > 0 }
@@ -149,7 +162,7 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
         case .queued: "Queued"
         case .downloading: "Downloading"
         case .retrying: "Retrying"
-        case .paused: "Paused"
+        case .paused: lostCookies ? "Can't resume" : "Paused"
         case .failed: "Failed"
         case .completed: "Completed"
         }
@@ -163,13 +176,13 @@ public struct DownloadRow: Equatable, Sendable, Identifiable {
             if isFileMissing { return "File not found" }
             return ByteText.string(totalBytes ?? receivedBytes)
         case .failed(let error):
-            let failure = FailureText(error)
+            let failure = FailureText(error, isMedia: isMedia)
             return "\(failure.reason) · \(failure.nextStep)"
         case .downloading:
             let connections = activeConnections == 1 ? "1 connection" : "\(activeConnections) connections"
             return activeConnections > 0 ? "\(progressText) · \(connections)" : progressText
         case .paused where lostCookies:
-            return "\(progressText) · Send it again from the browser"
+            return "\(progressText) · Send the \(isMedia ? "page" : "link") again from your browser"
         case .queued, .paused, .retrying:
             return progressText
         }
@@ -218,8 +231,9 @@ public struct FailureText: Equatable, Sendable {
     public var reason: String
     public var nextStep: String
 
-    public init(_ error: DownloadError) {
+    public init(_ error: DownloadError, isMedia: Bool = false) {
         switch error {
+        case .linkExpired where isMedia: (reason, nextStep) = ("Link expired", "Send the page again")
         case .linkExpired: (reason, nextStep) = ("Link expired", "Copy a fresh link from the site and add it again")
         case .needsSignIn: (reason, nextStep) = ("Needs sign-in", "This site only gives the file to signed-in visitors")
         case .forbidden: (reason, nextStep) = ("Refused", "The server won't give this file")
@@ -230,6 +244,7 @@ public struct FailureText: Equatable, Sendable {
         case .notEnoughSpace: (reason, nextStep) = ("Not enough space", "Free up space, then Retry")
         case .destinationNotWritable: (reason, nextStep) = ("Can't save to this folder", "Fix its permissions, then Retry")
         case .incompleteFile: (reason, nextStep) = ("Incomplete file", "Retry fetches the missing part")
+        case .mediaUnplayable: (reason, nextStep) = ("Couldn't make a playable file", "Send the page again and pick another version")
         }
     }
 }

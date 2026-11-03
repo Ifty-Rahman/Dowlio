@@ -38,10 +38,24 @@ public func waitUntil(_ condition: @Sendable () -> Bool) async throws {
 public enum TestFiles {
     /// A fresh empty folder under the temporary directory.
     public static func makeFolder() throws -> URL {
-        let folder = FileManager.default.temporaryDirectory
-            .appending(path: "DowlioTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let folder = runFolder.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
+    }
+
+    public static let runFolder: URL = {
+        let root = FileManager.default.temporaryDirectory.appending(path: "DowlioTests", directoryHint: .isDirectory)
+        removeEndedRuns(in: root) { kill($0, 0) == 0 || errno == EPERM }
+        atexit { try? FileManager.default.removeItem(at: TestFiles.runFolder) }
+        return root.appending(path: "run-\(getpid())", directoryHint: .isDirectory)
+    }()
+
+    public static func removeEndedRuns(in root: URL, isRunning: (pid_t) -> Bool) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        for name in names where name.hasPrefix("run-") {
+            guard let pid = pid_t(name.dropFirst(4)), !isRunning(pid) else { continue }
+            try? FileManager.default.removeItem(at: root.appending(path: name))
+        }
     }
 
     public static func sha256(_ data: Data) -> String {
@@ -50,5 +64,20 @@ public enum TestFiles {
 
     public static func sha256(of file: URL) throws -> String {
         try sha256(Data(contentsOf: file))
+    }
+
+    public static func difference(of file: URL, from expected: Data) -> String? {
+        guard let actual = try? Data(contentsOf: file) else { return "the file can't be read" }
+        guard actual != expected else { return nil }
+        let sizes = "\(actual.count) bytes, expected \(expected.count)"
+        let shared = min(actual.count, expected.count)
+        guard let first = (0..<shared).first(where: { actual[$0] != expected[$0] }) else {
+            return "\(sizes); matches up to the end of the shorter one"
+        }
+        var last = first
+        while last + 1 < shared, actual[last + 1] != expected[last + 1] { last += 1 }
+        let run = actual[first...last]
+        let what = run.allSatisfy { $0 == 0 } ? "all zeros on disk" : "other data on disk"
+        return "\(sizes); first difference at byte \(first), \(last - first + 1) bytes differ from there, \(what)"
     }
 }

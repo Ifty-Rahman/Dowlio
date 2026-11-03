@@ -7,20 +7,33 @@ struct ConnectionOpener: Sendable {
     let idleTimeout: Duration
     let now: @Sendable () -> Date
     let shared: SharedSession?
+    let readsLikeAPlayer: Bool
+    let identity: BrowserIdentity
 
     init(
         originalURL: URL,
         options: RequestOptions,
         idleTimeout: Duration,
         sessions: SessionMode,
+        readsLikeAPlayer: Bool = false,
+        identity: BrowserIdentity,
         now: @escaping @Sendable () -> Date
     ) {
+        self.identity = identity
         self.originalURL = originalURL
+        self.readsLikeAPlayer = readsLikeAPlayer
         self.options = options
         self.idleTimeout = idleTimeout
         self.now = now
         shared = sessions == .oneShared ? SharedSession(idleTimeout: idleTimeout) : nil
     }
+
+    static let navigationHeaders = [
+        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Site": "none",
+    ]
 
     func open(_ url: URL, range: RangeRequest?, ifRange validator: String? = nil) -> Connection {
         var request = request(for: url, range: range)
@@ -78,11 +91,19 @@ struct ConnectionOpener: Sendable {
         if let range { request.setValue(range.headerValue, forHTTPHeaderField: "Range") }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if let referrer = options.referrer { request.setValue(referrer.absoluteString, forHTTPHeaderField: "Referer") }
-        if let userAgent = options.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
-        // Cookies came from the link's own site, and a redirect may lead to another one.
-        if !options.cookies.isEmpty, fromLinkSite {
-            let cookies = options.cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-            request.setValue(cookies, forHTTPHeaderField: "Cookie")
+        if let origin = options.origin ?? (readsLikeAPlayer ? url.crossOrigin(from: options.referrer) : nil) {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+        if let userAgent = options.userAgent ?? identity.userAgent { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        if options.userAgent == nil, identity.userAgent != nil, !readsLikeAPlayer, fromLinkSite {
+            for (name, value) in Self.navigationHeaders where request.value(forHTTPHeaderField: name) == nil { request.setValue(value, forHTTPHeaderField: name) }
+        }
+        if request.value(forHTTPHeaderField: "Accept-Language") == nil, let languages = identity.acceptLanguage {
+            request.setValue(languages, forHTTPHeaderField: "Accept-Language")
+        }
+        let cookies = fromLinkSite ? options.cookies.sent(to: url, from: originalURL) : []
+        if !cookies.isEmpty {
+            request.setValue(cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         }
         return request
     }

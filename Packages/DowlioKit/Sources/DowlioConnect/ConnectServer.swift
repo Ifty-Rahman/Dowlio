@@ -1,4 +1,5 @@
 import DowlioCore
+import DowlioMedia
 import DowlioLibrary
 import DowlioStore
 import Foundation
@@ -8,11 +9,13 @@ public struct PairingRequest: Equatable, Sendable {
     public let code: String
     public let browser: String
     public let extensionVersion: String
+    public let isIdentified: Bool
 
-    public init(code: String, browser: String, extensionVersion: String) {
+    public init(code: String, browser: String, extensionVersion: String, isIdentified: Bool = true) {
         self.code = code
         self.browser = browser
         self.extensionVersion = extensionVersion
+        self.isIdentified = isIdentified
     }
 }
 
@@ -24,6 +27,23 @@ public struct SentLink: Sendable {
     public var userAgent: String?
 }
 
+public enum PageScanResult: Equatable, Sendable {
+    case sent
+    case noPage
+    case notConnected
+    case noAnswer
+}
+
+public struct SiteSignIn: Equatable, Sendable {
+    public var cookies: [Cookie]
+    public var userAgent: String?
+
+    public init(cookies: [Cookie], userAgent: String? = nil) {
+        self.cookies = cookies
+        self.userAgent = userAgent
+    }
+}
+
 public enum ConnectServerError: Error, Equatable {
     case noFreePort
 }
@@ -32,6 +52,8 @@ public actor ConnectServer {
     public static let defaultPorts: [UInt16] = [51517, 51518, 51519, 51520]
     public static let defaultCatchDeadline: Duration = .seconds(12)
     static let pairingRequestsPerMinute = 5
+    static let maximumSessions = 16
+    static let codeTries = 3
 
     private let ports: [UInt16]
     private let store: DownloadStore
@@ -48,9 +70,16 @@ public actor ConnectServer {
     private var recentPairingRequests: [Date] = []
     private var listenFailed = false
     private let testTimeout: Duration
+    private let scanTimeout: Duration
+    private let signInTimeout: Duration
+    private var waitingSignIns: [String: (session: UUID, answer: CheckedContinuation<SiteSignIn?, Never>)] = [:]
+    private var waitingScans: [String: (session: UUID, answer: CheckedContinuation<PageScanResult, Never>)] = [:]
     private let nameBrowser: @Sendable (String) -> String
     private let extensionVersion: String?
     private let peerApp: @Sendable (NWConnection) -> String?
+    private let extensionIDs: @Sendable () -> Set<String>?
+    private let silentTimeout: Duration
+    private let pairingTimeout: Duration
     private var toldToReload: Set<UUID> = []
     private var justAllowed: [UUID: Date] = [:]
     private let browserChange: AsyncStream<Void>.Continuation
@@ -66,6 +95,8 @@ public actor ConnectServer {
     private let sent: AsyncStream<SentLink>.Continuation
 
     public nonisolated let sentLinks: AsyncStream<SentLink>
+    private let sentPage: AsyncStream<SentPage>.Continuation
+    public nonisolated let sentPages: AsyncStream<SentPage>
 
     public nonisolated let catches: AsyncStream<CaughtDownload>
 
@@ -79,11 +110,19 @@ public actor ConnectServer {
         releaseWait: Duration = .seconds(2),
         preferences: CatchPreferences = CatchPreferences(),
         testTimeout: Duration = .seconds(2),
+        scanTimeout: Duration = .seconds(8),
+        signInTimeout: Duration = .seconds(1),
         nameBrowser: @escaping @Sendable (String) -> String = { $0 },
         extensionVersion: String? = nil,
         peerApp: @escaping @Sendable (NWConnection) -> String? = { PeerProcess.appName(of: $0) },
+        extensionIDs: @escaping @Sendable () -> Set<String>? = { nil },
+        silentTimeout: Duration = .seconds(10),
+        pairingTimeout: Duration = .seconds(120),
         approve: @escaping @Sendable (PairingRequest) async -> Bool
     ) {
+        self.extensionIDs = extensionIDs
+        self.silentTimeout = silentTimeout
+        self.pairingTimeout = pairingTimeout
         self.catcher = catcher
         self.catchDeadline = catchDeadline
         self.releaseWait = releaseWait
@@ -93,6 +132,8 @@ public actor ConnectServer {
         self.now = now
         self.approve = approve
         self.testTimeout = testTimeout
+        self.scanTimeout = scanTimeout
+        self.signInTimeout = signInTimeout
         self.nameBrowser = nameBrowser
         self.extensionVersion = extensionVersion
         self.peerApp = peerApp
@@ -100,6 +141,7 @@ public actor ConnectServer {
         (catches, caught) = AsyncStream.makeStream()
         (preferenceChanges, changeRequests) = AsyncStream.makeStream()
         (sentLinks, sent) = AsyncStream.makeStream()
+        (sentPages, sentPage) = AsyncStream.makeStream()
         (browserChanges, browserChange) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
 
@@ -131,9 +173,10 @@ public actor ConnectServer {
     private func listen(on port: UInt16) async throws -> NWListener {
         let webSocket = NWProtocolWebSocket.Options()
         webSocket.maximumMessageSize = Envelope.maximumSize
+        let extensionIDs = extensionIDs
         webSocket.setClientRequestHandler(queue) { _, headers in
             let origin = headers.first { $0.name.caseInsensitiveCompare("Origin") == .orderedSame }?.value ?? ""
-            let allowed = origin.hasPrefix("chrome-extension://")
+            let allowed = Self.isAllowed(origin: origin, ids: extensionIDs())
             return NWProtocolWebSocket.Response(status: allowed ? .accept : .reject, subprotocol: nil)
         }
         let parameters = NWParameters.tcp
@@ -161,10 +204,32 @@ public actor ConnectServer {
         return listener
     }
 
+    static func isAllowed(origin: String, ids: Set<String>?) -> Bool {
+        let prefix = "chrome-extension://"
+        guard origin.hasPrefix(prefix) else { return false }
+        guard let ids else { return true }
+        var id = String(origin.dropFirst(prefix.count))
+        if id.hasSuffix("/") { id.removeLast() }
+        return ids.contains(id)
+    }
+
+    private func isAllowed(extensionID: String) -> Bool {
+        extensionIDs()?.contains(extensionID) ?? true
+    }
+
     private func accept(_ connection: NWConnection) {
-        let session = Session(connection: connection)
         sessions = sessions.filter { $0.value.isOpen }
+        guard sessions.values.filter({ $0.pairing == nil }).count < Self.maximumSessions else {
+            connection.cancel()
+            return
+        }
+        let session = Session(connection: connection)
         sessions[session.id] = session
+        let silence = silentTimeout
+        Task {
+            try? await Task.sleep(for: silence)
+            self.closeIfSilent(session)
+        }
         connection.stateUpdateHandler = { state in
             switch state {
             case .failed, .cancelled: connection.cancel()
@@ -192,6 +257,11 @@ public actor ConnectServer {
         }
     }
 
+    private func closeIfSilent(_ session: Session) {
+        guard session.isOpen, session.pairing == nil, session.pairingCode == nil else { return }
+        _ = close(session)
+    }
+
     private func handle(_ data: Data, on session: Session) async -> Bool {
         guard let envelope = Envelope(data) else {
             if session.pairing == nil { return close(session) }
@@ -202,17 +272,43 @@ public actor ConnectServer {
         let requestID = envelope.requestID
         await resolveApp(of: session, for: envelope.message)
         switch envelope.message {
-        case let .pairRequest(code, browser, version, extensionID):
-            Task {
-                let reply = await pair(code: code, browser: browser, version: version, extensionID: extensionID, for: session)
-                send(reply.replying(to: requestID), to: session)
+        case let .pairRequest(browser, version, extensionID):
+            if let refusal = startPairing(browser: browser, version: version, extensionID: extensionID, for: session) {
+                send(refusal.replying(to: requestID), to: session)
+            } else {
+                send(Outgoing.pairCodeNeeded.replying(to: requestID), to: session)
             }
-        case let .hello(token, version):
-            guard let pairing = recognise(token, version: version) else {
+        case let .pairCode(code):
+            guard session.pairingCode != nil else { return close(session) }
+            send(confirm(code, for: session).replying(to: requestID), to: session)
+        case let .legacyHello(token):
+            if recognise(token) != nil {
+                send(.extensionReload, to: session, thenClose: true)
+            } else {
+                send(.helloRejected.replying(to: requestID), to: session, thenClose: true)
+            }
+            return false
+        case let .hello(key, nonce, version):
+            guard session.pairing == nil, let (pairing, secret) = pairing(forKey: key).map({ ($0.id, $0.secret) }) else {
                 send(.helloRejected.replying(to: requestID), to: session, thenClose: true)
                 return false
             }
+            let ours = ConnectProof.random(bytes: 24)
+            session.challenge = Challenge(pairing: pairing, secret: secret, client: nonce, server: ours, version: version)
+            send(Outgoing.helloChallenge(nonce: ours, proof: ConnectProof.server(secret, client: nonce, server: ours)).replying(to: requestID), to: session)
+        case let .helloProof(proof):
+            guard let challenge = session.challenge,
+                  ConnectProof.isClient(proof, challenge.secret, client: challenge.client, server: challenge.server),
+                  markSeen(challenge.pairing, version: challenge.version)
+            else {
+                send(.helloRejected.replying(to: requestID), to: session, thenClose: true)
+                return false
+            }
+            session.challenge = nil
+            let pairing = challenge.pairing
+            let version = challenge.version
             session.pairing = pairing
+            session.lastActive = now()
             rename(pairing, to: session.appName)
             justAllowed[pairing] = nil
             browserChange.yield()
@@ -229,6 +325,7 @@ public actor ConnectServer {
         case var .catchOffer(offer):
             guard let pairing = session.pairing else { return close(session) }
             offer.browser = (try? store.browserPairing(pairing))?.browserName
+            session.lastActive = now()
             Task { await take(offer, from: session, replyingTo: requestID) }
         case .catchReleased:
             guard session.pairing != nil else { return close(session) }
@@ -236,8 +333,25 @@ public actor ConnectServer {
         case let .linkSend(url, referrer, browser, cookies, userAgent):
             guard let pairing = session.pairing else { return close(session) }
             let name = session.appName ?? browser ?? (try? store.browserPairing(pairing))?.browserName
+            session.lastActive = now()
             sent.yield(SentLink(url: url, referrer: referrer, browser: name, cookies: cookies, userAgent: userAgent))
             send(.linkReceived.replying(to: requestID), to: session)
+        case var .pageSend(page):
+            guard let pairing = session.pairing else { return close(session) }
+            page.browser = session.appName ?? page.browser ?? (try? store.browserPairing(pairing))?.browserName
+            session.lastActive = now()
+            sentPage.yield(page)
+            send(.pageReceived.replying(to: requestID), to: session)
+            if let requestID { answerScan(requestID, from: session, with: .sent) }
+        case .pageNone:
+            guard session.pairing != nil else { return close(session) }
+            if let requestID { answerScan(requestID, from: session, with: .noPage) }
+        case let .siteSignIn(cookies, userAgent):
+            guard session.pairing != nil else { return close(session) }
+            if let requestID, let waiting = waitingSignIns[requestID], waiting.session == session.id {
+                waitingSignIns[requestID] = nil
+                waiting.answer.resume(returning: SiteSignIn(cookies: cookies, userAgent: userAgent))
+            }
         case let .settingsChange(change):
             guard session.pairing != nil else { return close(session) }
             changeRequests.yield(change)
@@ -266,29 +380,76 @@ public actor ConnectServer {
         session.appName = await Task.detached { lookup(connection) }.value
     }
 
-    private func pair(code: String, browser: String, version: String, extensionID: String, for session: Session) async -> Outgoing {
+    private func startPairing(browser: String, version: String, extensionID: String, for session: Session) -> Outgoing? {
+        guard isAllowed(extensionID: extensionID) else { return .pairRefused("denied") }
         let time = now()
         recentPairingRequests.removeAll { time.timeIntervalSince($0) >= 60 }
         guard recentPairingRequests.count < Self.pairingRequestsPerMinute else { return .pairRefused("tooManyRequests") }
         recentPairingRequests.append(time)
         guard !isPairingPending else { return .pairRefused("busy") }
         isPairingPending = true
-        let browser = session.appName ?? nameBrowser(browser)
-        let allowed = await approve(PairingRequest(code: code, browser: browser, extensionVersion: version))
-        isPairingPending = false
-        guard allowed else { return .pairRefused("denied") }
-        guard session.isOpen else { return .pairRefused("gone") }
+        let code = ConnectProof.pairingCode()
+        let found = session.appName
+        let request = PairingRequest(code: code, browser: found ?? nameBrowser(browser), extensionVersion: version, isIdentified: found != nil)
+        session.pairingCode = code
+        session.pairingRequest = request
+        session.pairingExtensionID = extensionID
+        session.codeTries = 0
+        let approve = approve
+        session.asking = Task {
+            let stillAllowed = await approve(request)
+            guard !Task.isCancelled, !stillAllowed else { return }
+            self.endPairing(session, with: .pairRefused("denied"))
+        }
+        let limit = pairingTimeout
+        Task {
+            try? await Task.sleep(for: limit)
+            if session.pairingCode == code { self.endPairing(session, with: .pairRefused("timeout")) }
+        }
+        return nil
+    }
+
+    private func confirm(_ code: String, for session: Session) -> Outgoing {
+        guard let expected = session.pairingCode, let request = session.pairingRequest, let extensionID = session.pairingExtensionID else { return .pairRefused("denied") }
+        guard ConnectProof.isSameCode(code, as: expected) else {
+            session.codeTries += 1
+            let left = Self.codeTries - session.codeTries
+            guard left > 0 else {
+                endPairing(session, with: nil)
+                return .pairRefused("denied")
+            }
+            return .pairCodeWrong(left: left)
+        }
+        endPairing(session, with: nil)
         let token = PairingToken.make()
-        let pairing = BrowserPairing(id: UUID(), browserName: browser, extensionID: extensionID, extensionVersion: version, pairedAt: now())
+        let pairing = BrowserPairing(id: UUID(), browserName: request.browser, extensionID: extensionID, extensionVersion: request.extensionVersion, pairedAt: now())
         do {
             try store.save(pairing)
+            try vault.save(hash: PairingToken.hash(token), for: pairing.id)
             justAllowed[pairing.id] = now()
             browserChange.yield()
-            try vault.save(hash: PairingToken.hash(token), for: pairing.id)
         } catch {
             return .pairRefused("error")
         }
         return .pairApproved(token: token)
+    }
+
+    private func endPairing(_ session: Session, with reply: Outgoing?) {
+        guard session.pairingCode != nil else { return }
+        session.pairingCode = nil
+        session.pairingRequest = nil
+        session.pairingExtensionID = nil
+        session.asking?.cancel()
+        session.asking = nil
+        isPairingPending = false
+        if let reply, session.isOpen { send(reply, to: session) }
+    }
+
+    private func pairing(forKey key: String) -> (id: UUID, secret: Data)? {
+        for hash in (try? vault.hashes()) ?? [] where ConnectProof.key(hash) == key {
+            if let id = try? vault.pairing(for: hash), (try? store.browserPairing(id)) != nil { return (id, hash) }
+        }
+        return nil
     }
 
     public func browserLinks() -> [BrowserLink] {
@@ -328,14 +489,65 @@ public actor ConnectServer {
         }
     }
 
+    public func scanPage(in app: String) async -> PageScanResult {
+        let browser = sessions.values.first {
+            $0.isOpen && $0.pairing != nil && $0.appName?.caseInsensitiveCompare(app) == .orderedSame
+        }
+        guard let browser else { return .notConnected }
+        let requestID = "scan-\(UUID().uuidString)"
+        let deadline = scanTimeout
+        Task {
+            try? await Task.sleep(for: deadline)
+            self.answerScan(requestID, with: .noAnswer)
+        }
+        return await withCheckedContinuation { continuation in
+            waitingScans[requestID] = (browser.id, continuation)
+            send(Outgoing.pageScan.replying(to: requestID), to: browser)
+        }
+    }
+
+    public func signIn(for link: URL, frontBrowser app: String?) async -> SiteSignIn? {
+        let connected = sessions.values.filter { $0.isOpen && $0.pairing != nil }
+        let front = app.flatMap { name in connected.first { $0.appName?.caseInsensitiveCompare(name) == .orderedSame } }
+        let recent = connected.max { ($0.lastActive ?? .distantPast) < ($1.lastActive ?? .distantPast) }
+        guard let browser = front ?? recent else { return nil }
+        let requestID = "signin-\(UUID().uuidString)"
+        let deadline = signInTimeout
+        Task {
+            try? await Task.sleep(for: deadline)
+            self.answerSignIn(requestID, with: nil)
+        }
+        return await withCheckedContinuation { continuation in
+            waitingSignIns[requestID] = (browser.id, continuation)
+            send(Outgoing.siteSignIn(for: link).replying(to: requestID), to: browser)
+        }
+    }
+
+    private func answerSignIn(_ requestID: String, with result: SiteSignIn?) {
+        waitingSignIns.removeValue(forKey: requestID)?.answer.resume(returning: result)
+    }
+
+    private func answerScan(_ requestID: String, from session: Session? = nil, with result: PageScanResult) {
+        guard let waiting = waitingScans[requestID], session.map({ $0.id == waiting.session }) ?? true else { return }
+        waitingScans[requestID] = nil
+        waiting.answer.resume(returning: result)
+    }
+
     private func giveUp(on requestID: String) {
         waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .noAnswer)
     }
 
     private func closed(_ session: Session) {
+        endPairing(session, with: nil)
         browserChange.yield()
         for (requestID, waiting) in waitingPongs where waiting.session == session.id {
             waitingPongs.removeValue(forKey: requestID)?.answer.resume(returning: .notConnected)
+        }
+        for (requestID, waiting) in waitingScans where waiting.session == session.id {
+            answerScan(requestID, with: .notConnected)
+        }
+        for (requestID, waiting) in waitingSignIns where waiting.session == session.id {
+            answerSignIn(requestID, with: nil)
         }
     }
 
@@ -419,8 +631,8 @@ public actor ConnectServer {
         }
     }
 
-    private func recognise(_ token: String, version: String) -> UUID? {
-        guard let id = try? vault.pairing(for: PairingToken.hash(token)), markSeen(id, version: version) else { return nil }
+    private func recognise(_ token: String) -> UUID? {
+        guard let id = try? vault.pairing(for: PairingToken.hash(token)), (try? store.browserPairing(id)) != nil else { return nil }
         return id
     }
 
@@ -433,6 +645,7 @@ public actor ConnectServer {
     }
 
     private func close(_ session: Session) -> Bool {
+        endPairing(session, with: nil)
         session.isOpen = false
         session.connection.cancel()
         browserChange.yield()
@@ -465,6 +678,13 @@ final class Session: @unchecked Sendable {
     let connection: NWConnection
     var appName: String?
     var resolvedApp = false
+    var lastActive: Date?
+    var pairingCode: String?
+    var pairingRequest: PairingRequest?
+    var pairingExtensionID: String?
+    var codeTries = 0
+    var asking: Task<Void, Never>?
+    var challenge: Challenge?
     private let lock = NSLock()
     private var open = true
     var pairing: UUID?
@@ -477,6 +697,14 @@ final class Session: @unchecked Sendable {
     init(connection: NWConnection) {
         self.connection = connection
     }
+}
+
+struct Challenge {
+    let pairing: UUID
+    let secret: Data
+    let client: String
+    let server: String
+    let version: String
 }
 
 final class Once: @unchecked Sendable {

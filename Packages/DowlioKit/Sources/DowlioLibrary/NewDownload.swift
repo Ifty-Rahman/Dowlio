@@ -1,7 +1,7 @@
 import DowlioCore
 import Foundation
 
-/// Pasted or dropped text as the New Download sheet reads it: one link per line.
+/// Pasted or dropped text as the New Download sheet reads it: one link per line, or several on a line with spaces between.
 public enum PastedLinks {
     public enum Line: Equatable, Sendable {
         case link(URL)
@@ -30,11 +30,13 @@ public enum PastedLinks {
         for raw in text.split(whereSeparator: \.isNewline) {
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
-            let line = Self.line(trimmed)
-            if case .link(let url) = line {
-                guard seen.insert(url.absoluteString).inserted else { continue }
+            let words = trimmed.split(whereSeparator: \.isWhitespace).map { Self.line(String($0)) }
+            for line in words.allSatisfy({ $0.url != nil }) ? words : [Self.line(trimmed)] {
+                if case .link(let url) = line {
+                    guard seen.insert(url.absoluteString).inserted else { continue }
+                }
+                lines.append(line)
             }
-            lines.append(line)
         }
         return lines
     }
@@ -141,7 +143,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public var startImmediately = true
 
     private var checks: [URL: (check: Check, headers: RequestOptions)] = [:]
-    private var renamed: (url: URL, name: String)?
     private var cookiesByLink: [URL: [Cookie]] = [:]
     private var originByLink: [URL: DownloadOrigin] = [:]
 
@@ -151,12 +152,20 @@ public struct NewDownloadDraft: Equatable, Sendable {
         lines = PastedLinks.parse(text)
     }
 
-    public var links: [URL] { lines.compactMap(\.url) }
+    /// The one link the draft downloads. Empty when the field has no link, or more than one.
+    public var links: [URL] {
+        let found = lines.compactMap(\.url)
+        return found.count == 1 ? found : []
+    }
 
-    public mutating func append(_ more: String) {
-        guard !more.isEmpty else { return }
-        let current = text.trimmingCharacters(in: .newlines)
-        text = current.isEmpty ? more : "\(current)\n\(more)"
+    public var hasSeveralLinks: Bool {
+        lines.compactMap(\.url).count > 1
+    }
+
+    public mutating func replace(with link: String) {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        text = trimmed
     }
 
     public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = [], browser: String? = nil, userAgent agent: String? = nil) {
@@ -164,15 +173,20 @@ public struct NewDownloadDraft: Equatable, Sendable {
         if userAgent.trimmingCharacters(in: .whitespaces).isEmpty, let agent { userAgent = agent }
         if !cookies.isEmpty { cookiesByLink[link] = cookies }
         originByLink[link] = DownloadOrigin(kind: .sent, browser: browser)
-        guard !links.contains(link) else { return }
-        append(link.absoluteString)
+        guard links != [link] else { return }
+        replace(with: link.absoluteString)
+    }
+
+    public mutating func addSignIn(for link: URL, cookies: [Cookie], userAgent agent: String?) {
+        if userAgent.trimmingCharacters(in: .whitespaces).isEmpty, let agent { userAgent = agent }
+        cookiesByLink[link] = cookies
     }
 
     public mutating func merge(_ other: NewDownloadDraft) {
         if referrer.trimmingCharacters(in: .whitespaces).isEmpty { referrer = other.referrer }
         cookiesByLink.merge(other.cookiesByLink) { _, new in new }
         originByLink.merge(other.originByLink) { _, new in new }
-        append(other.text)
+        replace(with: other.text)
     }
 
     public func origin(for url: URL) -> DownloadOrigin? {
@@ -191,8 +205,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
         return options
     }
 
-    public var isSingleLink: Bool { links.count == 1 }
-
     public var canDownload: Bool { !links.isEmpty }
 
     /// Some link couldn't be checked, so Download adds it anyway.
@@ -202,25 +214,13 @@ public struct NewDownloadDraft: Equatable, Sendable {
 
     /// Why Download is off, once the field has text.
     public var explanation: String? {
+        if hasSeveralLinks { return "Dowlio adds one link at a time. Remove the other links." }
         guard links.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return "Paste an http or https link, one per line."
+        return "Paste an http or https link."
     }
 
     public func check(for url: URL) -> Check? {
         checks[url]?.check
-    }
-
-    /// The single link's name: the user's edit, then the inspected name, then the link's own.
-    public var fileName: String {
-        guard isSingleLink, let url = links.first else { return "" }
-        if let renamed, renamed.url == url { return renamed.name }
-        if case .inspected(let inspection) = check(for: url) { return inspection.fileName }
-        return url.lastPathComponent
-    }
-
-    public mutating func rename(_ name: String) {
-        guard isSingleLink, let url = links.first else { return }
-        renamed = (url, name)
     }
 
     /// The headers a check is made with. A change means every link needs checking again.
@@ -233,14 +233,9 @@ public struct NewDownloadDraft: Equatable, Sendable {
         return options
     }
 
-    /// What Download adds each link with.
     public var options: RequestOptions {
         var options = inspectionOptions
         options.connections = connections
-        if isSingleLink, let url = links.first, let renamed, renamed.url == url {
-            let name = renamed.name.trimmingCharacters(in: .whitespaces)
-            options.fileName = name.isEmpty ? nil : name
-        }
         return options
     }
 
@@ -268,7 +263,6 @@ public struct NewDownloadDraft: Equatable, Sendable {
     public static func == (lhs: NewDownloadDraft, rhs: NewDownloadDraft) -> Bool {
         lhs.text == rhs.text && lhs.folder == rhs.folder && lhs.connections == rhs.connections
             && lhs.referrer == rhs.referrer && lhs.userAgent == rhs.userAgent && lhs.startImmediately == rhs.startImmediately
-            && lhs.renamed?.url == rhs.renamed?.url && lhs.renamed?.name == rhs.renamed?.name
             && lhs.checks.mapValues(\.check) == rhs.checks.mapValues(\.check)
             && lhs.cookiesByLink == rhs.cookiesByLink && lhs.originByLink == rhs.originByLink
     }

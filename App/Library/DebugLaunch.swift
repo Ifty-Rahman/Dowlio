@@ -1,4 +1,5 @@
 import AppKit
+import DowlioMedia
 
 /// For checking the interface by hand without touching the real History: debug builds read a
 /// support folder, a download folder and links to add from the environment.
@@ -26,6 +27,29 @@ enum DebugLaunch {
             open(links.replacingOccurrences(of: " ", with: "\n"))
             try? await Task.sleep(for: .seconds(2))
             download()
+        }
+        #endif
+    }
+
+    @MainActor
+    static func sendPage(_ send: @escaping @MainActor (SentPage) -> Void) {
+        #if DEBUG
+        guard let path = ProcessInfo.processInfo.environment["DOWLIO_DEBUG_SENT_PAGE"],
+              let page = SentPageRecord.read(URL(filePath: path)) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            send(page)
+        }
+        #endif
+    }
+
+    @MainActor
+    static func pageWindow(_ open: @escaping @MainActor (SentPage) -> Void) {
+        #if DEBUG
+        guard let text = ProcessInfo.processInfo.environment["DOWLIO_DEBUG_PAGE_WINDOW"], let url = URL(string: text) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            open(SentPage(url: url))
         }
         #endif
     }
@@ -76,6 +100,22 @@ enum DebugLaunch {
         var frame = window.frame
         frame.size.width = width
         window.setFrame(frame, display: true)
+        #endif
+    }
+
+    static var updateFeed: String? {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["DOWLIO_DEBUG_UPDATE_FEED"]
+        #else
+        nil
+        #endif
+    }
+
+    static var checksForUpdates: Bool {
+        #if DEBUG
+        updateFeed != nil
+        #else
+        true
         #endif
     }
 

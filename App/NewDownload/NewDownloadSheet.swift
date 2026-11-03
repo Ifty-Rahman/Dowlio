@@ -4,22 +4,39 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NewDownloadSheet: View {
+    let model: AppModel
     @Bindable var sheet: NewDownloadModel
-    let onDownload: (NewDownloadDraft) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let close: () -> Void
     @State private var choosingFolder = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.lg) {
-            Text("New Download").font(DowlioDesign.TypeRole.title)
+            HStack(alignment: .firstTextBaseline) {
+                Text("New Download").font(DowlioDesign.TypeRole.title)
+                Spacer()
+                if let sentFrom {
+                    Text(sentFrom).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                }
+            }
             linkField
-            if !sheet.draft.lines.isEmpty { cards }
+            if let state = sheet.frontPage {
+                FrontPageBody(sheet: sheet, state: state)
+            }
+            let items = sheet.list.items
+            if items.count > 1 {
+                LinkPager(sheet: sheet, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
+                Text(sheet.list.includedLine).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+            } else if let item = items.first {
+                singleItem(item)
+                    .showsInList(item, of: sheet.list)
+            }
+            skippedLines
             if let explanation = sheet.draft.explanation {
                 Text(explanation).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
             }
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.md) {
-                GridRow {
-                    Text("Save to")
+            HStack(alignment: .top, spacing: DowlioDesign.Spacing.lg) {
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                    Text("Save to").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     HStack {
                         Label(sheet.draft.folder.lastPathComponent, systemImage: "folder")
                             .lineLimit(1)
@@ -29,8 +46,9 @@ struct NewDownloadSheet: View {
                         Button("Choose…") { choosingFolder = true }
                     }
                 }
-                GridRow {
-                    Text("Connections")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                    Text("Connections").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     HStack {
                         Stepper(value: $sheet.draft.connections, in: 1...16) {
                             Text("\(sheet.draft.connections)").monospacedDigit()
@@ -38,8 +56,12 @@ struct NewDownloadSheet: View {
                         Text("8 to 16 is fastest").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            DisclosureGroup("Advanced") {
+            Toggle("Start immediately", isOn: $sheet.draft.startImmediately)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            DisclosureGroup("Advanced: referrer and user agent") {
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DowlioDesign.Spacing.md, verticalSpacing: DowlioDesign.Spacing.sm) {
                     GridRow {
                         Text("Referrer")
@@ -53,26 +75,85 @@ struct NewDownloadSheet: View {
                 .padding(.top, DowlioDesign.Spacing.sm)
             }
             HStack {
-                Toggle("Start immediately", isOn: $sheet.draft.startImmediately)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
                 Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel, action: close)
                     .keyboardShortcut(.cancelAction)
-                Button(sheet.draft.downloadsAnyway ? "Download Anyway" : "Download") {
-                    onDownload(sheet.draft)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!sheet.draft.canDownload)
+                Button(sheet.downloadTitle, action: download)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!sheet.canDownload)
             }
         }
         .padding(DowlioDesign.Spacing.xl)
-        .frame(width: 520)
+        .frame(width: 560)
         .task { sheet.checkLinks() }
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let folder) = result { sheet.draft.folder = folder }
         }
+    }
+
+    @ViewBuilder private func singleItem(_ item: LinkItem) -> some View {
+        switch item.kind {
+        case .checking(let url), .file(let url, _):
+            FileCard(line: .link(url), sheet: sheet, item: item)
+        case .page(let page), .video(let page, _):
+            mediaBlock(page, item: item)
+        }
+    }
+
+    @ViewBuilder private func mediaBlock(_ media: SentPageModel, item: LinkItem) -> some View {
+        switch media.draft.phase {
+        case .looking, .playing:
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
+                MediaHeader(media: media)
+                SkeletonRows()
+                LookingLine(media: media)
+            }
+        case .found, .restricted:
+            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
+                MediaHeader(media: media, subtitle: versionsLine(media))
+                MediaChoices(media: media, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
+                if item.savesAFile {
+                    VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                        Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                        TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+        case .nothingFound:
+            MediaHeader(media: media)
+            NothingFoundBody(media: media)
+            if item.savesAFile {
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                    Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                    TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+        case .needsSignIn:
+            MediaHeader(media: media)
+            NeedsSignInBody(media: media)
+        case .blocked:
+            MediaHeader(media: media)
+            BlockedBody(media: media)
+        }
+    }
+
+    private func versionsLine(_ media: SentPageModel) -> String {
+        let count = media.draft.selectedCandidate?.versions.count ?? 0
+        return "\(media.draft.host) · \(count) \(count == 1 ? "version" : "versions")"
+    }
+
+    private var sentFrom: String? {
+        guard let url = sheet.draft.links.first, let origin = sheet.draft.origin(for: url), origin.kind == .sent else { return nil }
+        let signedIn = !sheet.draft.options(for: url).cookies.isEmpty
+        return "Sent from \(origin.browser ?? "your browser")" + (signedIn ? ", signed in" : "")
+    }
+
+    private func download() {
+        model.addList(sheet)
+        close()
     }
 
     private var linkField: some View {
@@ -92,16 +173,9 @@ struct NewDownloadSheet: View {
         }
     }
 
-    @ViewBuilder private var cards: some View {
-        let list = VStack(spacing: DowlioDesign.Spacing.sm) {
-            ForEach(Array(sheet.draft.lines.enumerated()), id: \.offset) { _, line in
-                FileCard(line: line, sheet: sheet)
-            }
-        }
-        if sheet.draft.lines.count > 3 {
-            ScrollView { list }.frame(height: 260)
-        } else {
-            list
+    @ViewBuilder private var skippedLines: some View {
+        ForEach(Array(sheet.draft.lines.enumerated()), id: \.offset) { _, line in
+            if line.problem != nil { FileCard(line: line, sheet: sheet, item: nil) }
         }
     }
 }
@@ -109,6 +183,7 @@ struct NewDownloadSheet: View {
 private struct FileCard: View {
     let line: PastedLinks.Line
     @Bindable var sheet: NewDownloadModel
+    let item: LinkItem?
 
     var body: some View {
         HStack(alignment: .top, spacing: DowlioDesign.Spacing.md) {
@@ -144,8 +219,8 @@ private struct FileCard: View {
     }
 
     @ViewBuilder private var name: some View {
-        if sheet.draft.isSingleLink, line.problem == nil {
-            TextField("File name", text: Binding(get: { sheet.draft.fileName }, set: { sheet.draft.rename($0) }))
+        if let item, line.problem == nil {
+            TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
                 .textFieldStyle(.plain)
                 .font(DowlioDesign.TypeRole.heading)
         } else {

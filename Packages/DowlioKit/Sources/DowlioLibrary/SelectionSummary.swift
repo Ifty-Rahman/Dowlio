@@ -48,8 +48,7 @@ public struct SelectionSummary: Equatable, Sendable {
     }
 
     public var trashQuestion: String {
-        let files = rows.filter { $0.finishedFile != nil }
-        return files.count == 1 ? "Move “\(files[0].fileName)” to the Trash?" : "Move \(files.count) files to the Trash?"
+        rows.count == 1 ? "Move “\(rows[0].fileName)” to the Trash?" : "Move \(rows.count) downloads to the Trash?"
     }
 
     /// The bytes Cancel or Remove would delete, or `nil` when none would be lost.

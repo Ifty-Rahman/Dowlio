@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><head><title>Sample clip</title><meta property="og:duration" content="12"></head>
+<body>
+<div id="player" data-config="{&quot;hlsUrl&quot;:&quot;\/media\/clip\/index.m3u8&quot;}"></div>
+<script>
+  window.playerConfig = {"video_url":"{{server}}\/media\/clip\/720.mp4","poster":"\/media\/clip\/poster.jpg"};
+  var fallback = "{{server}}/media/clip/480.mp4";
+  var shared = "{{escaped}}%2Fmedia%2Fclip%2F360.mp4";
+  var pre = "{{other}}/ads/preroll.mp4";
+</script>
+</body></html>

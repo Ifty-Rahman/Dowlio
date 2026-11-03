@@ -7,7 +7,7 @@ extension DownloadEngine {
     public nonisolated func inspect(_ url: URL, options: RequestOptions = RequestOptions()) async throws -> LinkInspection {
         let connections = ConnectionOpener(
             originalURL: url, options: options, idleTimeout: configuration.idleTimeout,
-            sessions: configuration.sessions, now: configuration.now
+            sessions: configuration.sessions, identity: configuration.identity(), now: configuration.now
         )
         let probed: Probed
         do {

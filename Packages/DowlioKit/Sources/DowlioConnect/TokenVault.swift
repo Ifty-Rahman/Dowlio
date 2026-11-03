@@ -5,20 +5,77 @@ import Security
 public protocol TokenVault: Sendable {
     func save(hash: Data, for pairing: UUID) throws
     func pairing(for hash: Data) throws -> UUID?
+    func hashes() throws -> [Data]
+    func remove(pairing: UUID) throws
 }
 
 enum PairingToken {
     static func make() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes).base64EncodedString()
+        ConnectProof.random(bytes: 32)
+    }
+
+    static func hash(_ token: String) -> Data {
+        Data(SHA256.hash(data: Data(token.utf8)))
+    }
+}
+
+enum ConnectProof {
+    static func key(_ secret: Data) -> String {
+        code(secret, "dowlio-connect key")
+    }
+
+    static func server(_ secret: Data, client: String, server: String) -> String {
+        code(secret, said(by: "server", client: client, server: server))
+    }
+
+    static func client(_ secret: Data, client: String, server: String) -> String {
+        code(secret, said(by: "client", client: client, server: server))
+    }
+
+    static func isClient(_ proof: String, _ secret: Data, client: String, server: String) -> Bool {
+        guard let raw = Data(base64URL: proof) else { return false }
+        return HMAC<SHA256>.isValidAuthenticationCode(
+            raw, authenticating: Data(said(by: "client", client: client, server: server).utf8), using: SymmetricKey(data: secret)
+        )
+    }
+
+    static func isSameCode(_ typed: String, as shown: String) -> Bool {
+        let key = SymmetricKey(size: .bits256)
+        let mac = HMAC<SHA256>.authenticationCode(for: Data(shown.utf8), using: key)
+        return HMAC<SHA256>.isValidAuthenticationCode(mac, authenticating: Data(typed.utf8), using: key)
+    }
+
+    static func pairingCode() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return String(format: "%06u", UInt32.random(in: 0..<1_000_000, using: &generator))
+    }
+
+    static func random(bytes count: Int) -> String {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }).base64URL
+    }
+
+    private static func said(by side: String, client: String, server: String) -> String {
+        "dowlio-connect \(side) \(client) \(server)"
+    }
+
+    private static func code(_ secret: Data, _ text: String) -> String {
+        Data(HMAC<SHA256>.authenticationCode(for: Data(text.utf8), using: SymmetricKey(data: secret))).base64URL
+    }
+}
+
+extension Data {
+    var base64URL: String {
+        base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
 
-    static func hash(_ token: String) -> Data {
-        Data(SHA256.hash(data: Data(token.utf8)))
+    init?(base64URL text: String) {
+        var base64 = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        self.init(base64Encoded: base64)
     }
 }
 
@@ -36,6 +93,14 @@ public final class MemoryTokenVault: TokenVault, @unchecked Sendable {
 
     public func pairing(for hash: Data) throws -> UUID? {
         lock.withLock { pairings[hash] }
+    }
+
+    public func hashes() throws -> [Data] {
+        storedHashes
+    }
+
+    public func remove(pairing: UUID) throws {
+        lock.withLock { pairings = pairings.filter { $0.value != pairing } }
     }
 }
 
@@ -66,6 +131,46 @@ public struct KeychainTokenVault: TokenVault {
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else { throw Failure.keychain(status) }
         return UUID(uuidString: String(decoding: data, as: UTF8.self))
+    }
+
+    public func hashes() throws -> [Data] {
+        try items().compactMap { item in
+            (item[kSecAttrAccount as String] as? String).flatMap(Self.hash(fromHex:))
+        }
+    }
+
+    public func remove(pairing: UUID) throws {
+        for hash in try hashes() where try self.pairing(for: hash) == pairing {
+            let status = SecItemDelete(baseQuery(for: hash) as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else { throw Failure.keychain(status) }
+        }
+    }
+
+    private func items() throws -> [[String: Any]] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess else { throw Failure.keychain(status) }
+        return result as? [[String: Any]] ?? []
+    }
+
+    private static func hash(fromHex text: String) -> Data? {
+        guard text.count == 64 else { return nil }
+        var bytes: [UInt8] = []
+        var index = text.startIndex
+        while index < text.endIndex {
+            let next = text.index(index, offsetBy: 2)
+            guard let byte = UInt8(text[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return Data(bytes)
     }
 
     private func baseQuery(for hash: Data) -> [String: Any] {

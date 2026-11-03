@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct InstalledBrowser: Equatable, Sendable {
@@ -64,6 +65,12 @@ public struct BrowserRow: Equatable, Identifiable, Sendable {
     public let appURL: URL?
     public let link: BrowserLink?
 
+    public init(name: String, appURL: URL?, link: BrowserLink?) {
+        self.name = name
+        self.appURL = appURL
+        self.link = link
+    }
+
     public var id: String { name }
     public var state: BrowserState { link?.state ?? .notInstalled }
 }
@@ -126,6 +133,12 @@ public enum ExtensionVersion {
 }
 
 public enum ExtensionFolder {
+    public static func extensionID(at folder: URL) -> String {
+        let digest = SHA256.hash(data: Data(folder.path(percentEncoded: false).trimmingSuffix("/").utf8))
+        let letters = Array("abcdefghijklmnop")
+        return String(digest.prefix(16).flatMap { [letters[Int($0 >> 4)], letters[Int($0 & 0x0f)]] })
+    }
+
     public static func version(at folder: URL) -> String? {
         guard let data = try? Data(contentsOf: folder.appending(path: "manifest.json")),
               let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -133,11 +146,30 @@ public enum ExtensionFolder {
         return manifest["version"] as? String
     }
 
-    public static func updateIfOlder(from bundled: URL, to destination: URL) throws -> Bool {
-        guard FileManager.default.fileExists(atPath: destination.path), let new = version(at: bundled) else { return false }
-        guard ExtensionVersion.isOlder(version(at: destination) ?? "0", than: new) else { return false }
+    public static func updateIfChanged(from bundled: URL, to destination: URL) throws -> Bool {
+        guard FileManager.default.fileExists(atPath: destination.path), version(at: bundled) != nil else { return false }
+        guard fingerprint(of: destination) != fingerprint(of: bundled) else { return false }
         try install(from: bundled, to: destination)
         return true
+    }
+
+    static func fingerprint(of folder: URL) -> Data? {
+        let base = folder.resolvingSymlinksInPath().path(percentEncoded: false)
+        guard let walker = FileManager.default.enumerator(at: folder.resolvingSymlinksInPath(), includingPropertiesForKeys: [.isRegularFileKey]) else { return nil }
+        var files: [(String, URL)] = []
+        for case let url as URL in walker where (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            let path = url.resolvingSymlinksInPath().path(percentEncoded: false)
+            let relative = path.hasPrefix(base) ? String(path.dropFirst(base.count)) : path
+            if relative.hasSuffix(".DS_Store") { continue }
+            files.append((relative, url))
+        }
+        var hash = SHA256()
+        for (relative, url) in files.sorted(by: { $0.0 < $1.0 }) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            hash.update(data: Data(relative.utf8))
+            hash.update(data: Data(SHA256.hash(data: data)))
+        }
+        return Data(hash.finalize())
     }
 
     public static func install(from bundled: URL, to destination: URL) throws {
@@ -155,5 +187,11 @@ public enum ExtensionFolder {
             try? fileManager.removeItem(at: staged)
             throw error
         }
+    }
+}
+
+private extension String {
+    func trimmingSuffix(_ suffix: String) -> String {
+        hasSuffix(suffix) && count > 1 ? String(dropLast(suffix.count)) : self
     }
 }

@@ -61,7 +61,7 @@ struct CookieTests {
         let token = try await fixture.pairedToken()
         let client = try await fixture.client()
 
-        try await client.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        try await fixture.sayHello(on: client, token: token, version: "0.2.0")
         _ = try await client.receive()
         let update = try await client.receive()
 

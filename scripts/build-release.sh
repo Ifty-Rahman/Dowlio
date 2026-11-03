@@ -40,9 +40,20 @@ if [ -z "$IDENTITY" ]; then
   fi
 fi
 
-# Sign nested code first, then the app. Phase 1 has no nested code yet.
+sign() {
+  codesign --force --options runtime --timestamp=none ${KEYCHAIN:+--keychain "$KEYCHAIN"} --sign "$IDENTITY" "$@"
+}
+
+# Sign nested code first, then the app.
 log "Signing with identity: $IDENTITY"
-codesign --force --options runtime --timestamp=none ${KEYCHAIN:+--keychain "$KEYCHAIN"} --sign "$IDENTITY" "$APP_PATH"
+SPARKLE="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+[ -d "$SPARKLE" ] || die "Build did not embed Sparkle.framework"
+sign "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
+sign "$SPARKLE/Versions/B/Autoupdate"
+sign "$SPARKLE/Versions/B/Updater.app"
+sign "$SPARKLE"
+sign --entitlements "$ROOT/App/Dowlio.entitlements" "$APP_PATH"
 
 log "Verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"

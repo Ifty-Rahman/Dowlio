@@ -9,7 +9,7 @@ async function connected({ stored = {} } = {}) {
   startWorker({ chrome, WebSocket: net.FakeWebSocket, timers: new FakeTimers(), navigator: navigatorLike() });
   await flush();
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
   return { chrome, socket: net.last() };
 }
 
@@ -108,7 +108,7 @@ test("a download right after the worker wakes waits for the saved settings", asy
   const net = fakeSockets();
   startWorker({ chrome, WebSocket: net.FakeWebSocket, timers: new FakeTimers(), navigator: navigatorLike() });
   await net.last().accept();
-  await net.last().reply({ type: "hello.ok" });
+  await net.last().prove();
 
   await chrome.downloads.create(download());
 

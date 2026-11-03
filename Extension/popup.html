@@ -9,8 +9,13 @@
     <img src="icons/32.png" alt="" width="20" height="20">
     <h1>Dowlio Connect</h1>
   </header>
+  <button id="send-page" class="primary" hidden>Send this page to Dowlio</button>
   <p id="headline"></p>
-  <p id="code" hidden></p>
+  <form id="code-form" hidden>
+    <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*" placeholder="123 456" aria-label="Code from Dowlio">
+    <button id="connect" type="submit" class="primary">Connect</button>
+    <p id="code-error" hidden></p>
+  </form>
   <p id="detail"></p>
   <p id="last-decline" hidden></p>
   <button id="retry" hidden>Ask Again</button>

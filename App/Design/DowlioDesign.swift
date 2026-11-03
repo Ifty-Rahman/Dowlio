@@ -33,6 +33,11 @@ enum DowlioDesign {
     static var brandAccent: Color { Color("AccentColor") }
 }
 
+extension DownloadRow {
+    var tone: Color { needsAttention ? Color(nsColor: .systemRed) : state.tone }
+    var symbolName: String { needsAttention ? "exclamationmark.triangle.fill" : state.symbolName }
+}
+
 /// A download state's colour, word and icon. Colour never carries meaning alone.
 extension DownloadRow.State {
     var tone: Color {

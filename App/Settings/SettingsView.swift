@@ -23,14 +23,16 @@ struct SettingsView: View {
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .hidingToolbarBackground()
+        .background(SettingsWindowBehavior(model: model))
     }
 }
 
 private struct GeneralSettings: View {
     let model: AppModel
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
+    @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
-    @State private var notificationsDenied = false
+    @State private var permission = NotificationPermission()
 
     var body: some View {
         Form {
@@ -39,36 +41,36 @@ private struct GeneralSettings: View {
             }
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
-                if notifies, notificationsDenied {
-                    HStack {
-                        Text("macOS isn't letting Dowlio show notifications.")
-                            .font(DowlioDesign.TypeRole.detail)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Open System Settings…") { openNotificationSettings() }
-                    }
-                }
+                if notifies && permission.needsAttention { NotificationPermissionRow(permission: permission) }
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
+            Section("When a download fails or can't resume") {
+                Toggle("Show a notification", isOn: $notifiesOnProblems)
+            }
+            UpdateSettings(updater: model.updater)
         }
         .settingsForm()
-        .task { await checkNotifications() }
+        .task { await permission.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await checkNotifications() }
+            Task { await permission.refresh() }
         }
     }
+}
 
-    private func checkNotifications() async {
-        notificationsDenied = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
-    }
+private struct UpdateSettings: View {
+    @Bindable var updater: AppUpdater
 
-    private func openNotificationSettings() {
-        let id = Bundle.main.bundleIdentifier ?? ""
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") {
-            NSWorkspace.shared.open(url)
+    var body: some View {
+        Section("Updates") {
+            LabeledContent {
+                Button("Check Now") { updater.checkNow() }
+                    .disabled(!updater.canCheck)
+            } label: {
+                Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
+            }
         }
     }
 }
@@ -138,6 +140,8 @@ private struct DownloadsSettings: View {
     @AppStorage(SettingsKey.downloadFolder) private var folderPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].path
     @AppStorage(SettingsKey.sortsIntoCategoryFolders) private var sortsIntoCategoryFolders = false
     @AppStorage(SettingsKey.nameConflictPolicy) private var policy = NameConflictPolicy.keepBoth.rawValue
+    @AppStorage(SettingsKey.videoQualityCap) private var videoQualityCap = 0
+    @AppStorage(SettingsKey.prefersH264) private var prefersH264 = true
     @State private var choosingFolder = false
     @State private var confirmingReplace = false
     @State private var confirmingClear = false
@@ -156,6 +160,14 @@ private struct DownloadsSettings: View {
                 Text("Replace").tag(NameConflictPolicy.replace.rawValue)
                 Text("Skip").tag(NameConflictPolicy.skip.rawValue)
             }
+            Picker("Video quality", selection: $videoQualityCap) {
+                Text("Best available").tag(0)
+                ForEach(VideoQuality.caps, id: \.self) { cap in
+                    Text(verbatim: "Up to \(cap)p").tag(cap)
+                }
+            }
+            Toggle("Prefer H.264 MP4", isOn: $prefersH264)
+                .help("H.264 MP4 plays everywhere, including QuickTime, even when a higher resolution is offered in VP9 or AV1.")
             LabeledContent("History") {
                 Button("Clear History…") { confirmingClear = true }
             }
@@ -258,12 +270,27 @@ private struct ConnectionsSettings: View {
 
 private struct BrowsersSettings: View {
     @Bindable var model: AppModel
+    @AppStorage(SettingsKey.usesBrowserSignIn) private var usesBrowserSignIn = false
 
     var body: some View {
         Form {
             if let setup = model.browserSetup {
                 Section {
                     BrowsersList(setup: setup)
+                }
+            }
+            Section {
+                SendShortcutRecorder()
+            }
+            Section {
+                Toggle(isOn: $usesBrowserSignIn) {
+                    HStack(spacing: DowlioDesign.Spacing.xs) {
+                        Text("Use my browser's sign-in for pasted links")
+                        InfoButton(
+                            topic: "Browser sign-in",
+                            text: "When you paste a link, Dowlio asks the browser in front, or the one you used with Dowlio last, for that site's cookies, so videos behind a sign-in work without sending the page. The cookies stay in memory for that link and its download. Dowlio doesn't save them."
+                        )
+                    }
                 }
             }
             Section {

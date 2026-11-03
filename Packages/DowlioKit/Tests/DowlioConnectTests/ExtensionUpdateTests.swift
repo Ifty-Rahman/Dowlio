@@ -8,7 +8,7 @@ struct ExtensionUpdateTests {
     private func hello(_ fixture: ConnectFixture, version: String) async throws -> ConnectClient {
         let token = try await fixture.pairedToken()
         let client = try await fixture.client()
-        try await client.send(["v": 1, "type": "hello", "token": token, "version": version])
+        try await fixture.sayHello(on: client, token: token, version: version)
         return client
     }
 
@@ -25,12 +25,12 @@ struct ExtensionUpdateTests {
         let fixture = try await ConnectFixture(extensionVersion: "0.3.0")
         let token = try await fixture.pairedToken()
         let first = try await fixture.client()
-        try await first.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        try await fixture.sayHello(on: first, token: token, version: "0.2.0")
         for _ in 0..<3 { _ = try await first.receive() }
         first.close()
 
         let again = try await fixture.client()
-        try await again.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        try await fixture.sayHello(on: again, token: token, version: "0.2.0")
         _ = try await again.receive()
         _ = try await again.receive()
 
@@ -67,12 +67,12 @@ struct ExtensionUpdateTests {
         let fixture = try await ConnectFixture(extensionVersion: "0.3.0")
         let token = try await fixture.pairedToken()
         let old = try await fixture.client()
-        try await old.send(["v": 1, "type": "hello", "token": token, "version": "0.2.0"])
+        try await fixture.sayHello(on: old, token: token, version: "0.2.0")
         for _ in 0..<3 { _ = try await old.receive() }
         old.close()
 
         let new = try await fixture.client()
-        try await new.send(["v": 1, "type": "hello", "token": token, "version": "0.3.0"])
+        try await fixture.sayHello(on: new, token: token, version: "0.3.0")
         let reply = try await new.receive()
 
         #expect(reply["type"] as? String == "hello.ok")
@@ -93,6 +93,18 @@ struct ExtensionVersionTests {
         #expect(ExtensionVersion.isOlder(installed, than: bundled) == older)
     }
 
+    @Test func aChangedFolderIsPutBackEvenAtTheSameVersion() throws {
+        let bundled = try TestFiles.makeFolder()
+        try Data(#"{"version":"0.3.0"}"#.utf8).write(to: bundled.appending(path: "manifest.json"))
+        try Data("start()".utf8).write(to: bundled.appending(path: "worker.js"))
+        let folder = try TestFiles.makeFolder().appending(path: "Browser Extension", directoryHint: .isDirectory)
+        try ExtensionFolder.install(from: bundled, to: folder)
+        try Data("stealCookies()".utf8).write(to: folder.appending(path: "worker.js"))
+
+        #expect(try ExtensionFolder.updateIfChanged(from: bundled, to: folder))
+        #expect(try String(contentsOf: folder.appending(path: "worker.js"), encoding: .utf8) == "start()")
+    }
+
     @Test func aNewerBundledCopyReplacesTheFolderAndAnEqualOneDoesnt() throws {
         let bundled = try TestFiles.makeFolder()
         try Data(#"{"version":"0.3.0"}"#.utf8).write(to: bundled.appending(path: "manifest.json"))
@@ -100,8 +112,8 @@ struct ExtensionVersionTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(#"{"version":"0.2.0"}"#.utf8).write(to: folder.appending(path: "manifest.json"))
 
-        #expect(try ExtensionFolder.updateIfOlder(from: bundled, to: folder))
-        #expect(try !ExtensionFolder.updateIfOlder(from: bundled, to: folder))
+        #expect(try ExtensionFolder.updateIfChanged(from: bundled, to: folder))
+        #expect(try !ExtensionFolder.updateIfChanged(from: bundled, to: folder))
         #expect(ExtensionFolder.version(at: folder) == "0.3.0")
     }
 
@@ -110,7 +122,7 @@ struct ExtensionVersionTests {
         try Data(#"{"version":"0.3.0"}"#.utf8).write(to: bundled.appending(path: "manifest.json"))
         let folder = try TestFiles.makeFolder().appending(path: "Browser Extension", directoryHint: .isDirectory)
 
-        #expect(try !ExtensionFolder.updateIfOlder(from: bundled, to: folder))
+        #expect(try !ExtensionFolder.updateIfChanged(from: bundled, to: folder))
         #expect(!FileManager.default.fileExists(atPath: folder.path))
     }
 }

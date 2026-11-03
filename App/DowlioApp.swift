@@ -19,10 +19,11 @@ struct DowlioApp: App {
         Window("Dowlio", id: LibraryWindow.sceneID) {
             LibraryWindow(model: model)
         }
-        .defaultSize(width: 700, height: 520)
+        .defaultSize(LibraryWindow.firstSize)
         .windowResizability(.contentSize)
         .commands {
             NewDownloadCommands(model: model)
+            UpdateCommands(updater: model.updater)
             DownloadCommands(model: model)
             FindCommands()
             PanelCommands()
@@ -35,6 +36,17 @@ struct DowlioApp: App {
 
         Settings {
             SettingsView(model: model)
+        }
+    }
+}
+
+struct UpdateCommands: Commands {
+    let updater: AppUpdater
+
+    var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { updater.checkNow() }
+                .disabled(!updater.canCheck)
         }
     }
 }

@@ -81,7 +81,7 @@ struct LibraryWindow: View {
         hasSeenWelcome = true
         guard let window = model.libraryWindow else { return }
         DispatchQueue.main.async {
-            window.setContentSize(NSSize(width: Self.toolbarMinimumWidth, height: 520))
+            window.setContentSize(Self.firstSize)
             window.center()
         }
     }
@@ -101,6 +101,7 @@ struct LibraryWindow: View {
                 model.openLibraryWindow = { [openWindow] in openWindow(id: LibraryWindow.sceneID) }
                 model.openSettingsWindow = { [openSettings] in openSettings() }
                 revealCaught()
+                if hasSeenWelcome { model.askNotificationPermission() }
             }
             .onDisappear { model.isLibraryWindowOpen = false }
             .onChange(of: model.revealing) { revealCaught() }
@@ -129,7 +130,10 @@ struct LibraryWindow: View {
                 return true
             }
             .sheet(item: newDownloadSheet) { sheet in
-                NewDownloadSheet(sheet: sheet) { model.add($0) }
+                NewDownloadSheet(model: model, sheet: sheet) {
+                    sheet.discardSentPage()
+                    model.newDownload = nil
+                }
             }
             .focusedSceneValue(\.findInLibrary, SearchFocus.isAvailable ? FindInLibrary { isSearching = true } : nil)
             .focusedSceneValue(\.selectedDownloads, SelectedDownloads(
@@ -213,6 +217,7 @@ struct LibraryWindow: View {
     /// The toolbar spans the whole window and never changes with the panels, so this one width
     /// keeps every button out of the overflow menu.
     private static let toolbarMinimumWidth: CGFloat = 700
+    static let firstSize = NSSize(width: 870, height: 472)
     private static let listMinimumWidth: CGFloat = 360
     private static let sidebarWidth: CGFloat = 230
     private static let inspectorWidth: CGFloat = 280

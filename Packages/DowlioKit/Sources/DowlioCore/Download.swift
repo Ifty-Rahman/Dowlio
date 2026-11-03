@@ -69,6 +69,7 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// The file changed on the server twice in a row while downloading, so Dowlio stopped instead
     /// of mixing versions.
     case serverChangedFile
+    case mediaUnplayable
 }
 
 /// What went wrong with the network: the URL loading system's error code and its description.
@@ -107,6 +108,9 @@ public struct RequestOptions: Equatable, Sendable {
     /// Sent as `Referer` on every request. Some servers only give the file to visitors who come
     /// from their own page.
     public var referrer: URL?
+    /// Sent as `Origin` on every request when set, for media a site's player reads from another
+    /// origin. Otherwise a player's request takes the referrer's origin.
+    public var origin: String?
     /// Sent as `User-Agent` on every request when set. Otherwise the system's default is sent.
     public var userAgent: String?
     /// Sent as one `Cookie` header on every request, for servers that only give the file to a
@@ -144,10 +148,48 @@ public struct DownloadOrigin: Equatable, Sendable {
 public struct Cookie: Equatable, Sendable {
     public var name: String
     public var value: String
+    public var domain: String?
+    public var path: String?
+    public var hostOnly: Bool
+    public var secure: Bool
+    public var httpOnly: Bool
 
-    public init(name: String, value: String) {
+    public init(name: String, value: String, domain: String? = nil, path: String? = nil, hostOnly: Bool = false, secure: Bool = false, httpOnly: Bool = true) {
         self.name = name
         self.value = value
+        self.domain = domain
+        self.path = path
+        self.hostOnly = hostOnly
+        self.secure = secure
+        self.httpOnly = httpOnly
+    }
+
+    public func isSent(to url: URL, from origin: URL) -> Bool {
+        guard let host = url.host(percentEncoded: false)?.lowercased() else { return false }
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https" else { return false }
+        if secure, scheme != "https" { return false }
+        if let path, path.count > 1, !Self.pathMatches(url.path(percentEncoded: true), path) { return false }
+        guard let domain = domain?.lowercased(), !domain.isEmpty else {
+            return host == origin.host(percentEncoded: false)?.lowercased()
+        }
+        let bare = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
+        if hostOnly { return host == bare }
+        return host == bare || host.hasSuffix("." + bare)
+    }
+}
+
+extension Cookie {
+    static func pathMatches(_ requested: String, _ path: String) -> Bool {
+        let requested = requested.isEmpty ? "/" : requested
+        guard requested.hasPrefix(path) else { return false }
+        return requested.count == path.count || path.hasSuffix("/") || requested.dropFirst(path.count).first == "/"
+    }
+}
+
+extension Array where Element == Cookie {
+    public func sent(to url: URL, from origin: URL) -> [Cookie] {
+        filter { $0.isSent(to: url, from: origin) }
     }
 }
 

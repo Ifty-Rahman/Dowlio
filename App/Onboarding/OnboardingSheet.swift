@@ -12,7 +12,9 @@ struct OnboardingSheet: View {
     enum Page: Int, CaseIterable {
         case welcome
         case setup
+        case notifications
         case browsers
+        case shortcut
     }
 
     var body: some View {
@@ -32,7 +34,9 @@ struct OnboardingSheet: View {
         switch page {
         case .welcome: WelcomePage()
         case .setup: SetupPage(model: model)
+        case .notifications: NotificationsPage()
         case .browsers: BrowsersPage(model: model)
+        case .shortcut: ShortcutPage()
         }
     }
 
@@ -44,7 +48,7 @@ struct OnboardingSheet: View {
             if let previous = Page(rawValue: page.rawValue - 1) {
                 Button("Back") { page = previous }
             }
-            Button(page == .browsers ? "Get Started" : "Continue") {
+            Button(page == Page.allCases.last ? "Get Started" : "Continue") {
                 if let next = Page(rawValue: page.rawValue + 1) { page = next } else { finish() }
             }
             .buttonStyle(.borderedProminent)
@@ -140,6 +144,25 @@ private struct SetupPage: View {
     }
 }
 
+private struct NotificationsPage: View {
+    @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
+    @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
+    @State private var permission = NotificationPermission()
+
+    var body: some View {
+        Form {
+            Section {
+                NotificationPermissionRow(permission: permission)
+                Toggle("When a download finishes", isOn: $notifies)
+                Toggle("When a download fails or can't resume", isOn: $notifiesOnProblems)
+            } header: {
+                PageHeader(symbol: "bell.badge.fill", title: "Know when downloads are done", subtitle: "Dowlio can tell you when a download finishes or runs into a problem. You can change this later in Settings.")
+            }
+        }
+        .onboardingForm()
+    }
+}
+
 private struct BrowsersPage: View {
     let model: AppModel
 
@@ -151,6 +174,23 @@ private struct BrowsersPage: View {
                 }
             } header: {
                 PageHeader(symbol: "puzzlepiece.extension.fill", title: "Catch downloads from your browser", subtitle: "Add Dowlio Connect to a browser, and files you download there finish in Dowlio.")
+            }
+        }
+        .onboardingForm()
+    }
+}
+
+private struct ShortcutPage: View {
+    var body: some View {
+        Form {
+            Section {
+                SendShortcutRecorder()
+            } header: {
+                PageHeader(symbol: "keyboard.fill", title: "Your shortcut", subtitle: "Press it on a page with a video, and Dowlio lists what it finds there.")
+            } footer: {
+                Text("Try it now. Open a page with a video and press the shortcut. In a browser without Dowlio Connect, macOS first asks whether Dowlio may read its page.")
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
             }
         }
         .onboardingForm()
@@ -190,6 +230,7 @@ private struct FillingBar: View {
     private static let cycle: TimeInterval = 10
     private static let fillTime: TimeInterval = 8
     private static let count = 8
+    @State private var start = Date()
 
     var body: some View {
         Group {
@@ -197,7 +238,7 @@ private struct FillingBar: View {
                 SegmentedBar(segments: Self.segments(filled: Array(repeating: 1, count: Self.count)), fraction: nil, tint: DowlioDesign.brandAccent, height: 8)
             } else {
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                    let time = context.date.timeIntervalSinceReferenceDate
+                    let time = max(context.date.timeIntervalSince(start), 0)
                     let filled = Self.fills(round: Int(time / Self.cycle), at: time.truncatingRemainder(dividingBy: Self.cycle))
                     let done = filled.allSatisfy { $0 >= 1 }
                     SegmentedBar(

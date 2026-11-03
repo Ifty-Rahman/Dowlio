@@ -40,6 +40,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var nameConflictPolicy: NameConflictPolicy
     public var referrer: URL?
     public var userAgent: String?
+    public var requestOrigin: String?
     public var maximumFailures: Int?
     /// The name the user typed in the New Download sheet, kept so a download that starts later
     /// still gets it.
@@ -54,6 +55,11 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var usedCookies: Bool?
     public var originKind: String?
     public var originBrowser: String?
+    public var mediaSource: MediaSource?
+
+    public var source: DownloadSource {
+        mediaSource.map(DownloadSource.media) ?? .file(sourceURL)
+    }
 
     public var origin: DownloadOrigin? {
         get {
@@ -74,8 +80,21 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         state: State,
         addedAt: Date
     ) {
+        self.init(id: id, source: .file(sourceURL), destination: destination, options: options, state: state, addedAt: addedAt)
+    }
+
+    public init(
+        id: UUID,
+        source: DownloadSource,
+        destination: Destination,
+        options: RequestOptions,
+        state: State,
+        addedAt: Date
+    ) {
+        let sourceURL = source.url
         self.id = id
         self.sourceURL = sourceURL
+        if case .media(let media) = source { mediaSource = media }
         displayHost = sourceURL.host(percentEncoded: false)?.lowercased()
         let last = sourceURL.lastPathComponent
         fileName = options.fileName ?? (last.isEmpty || last == "/" ? "download" : last)
@@ -95,6 +114,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         nameConflictPolicy = options.nameConflictPolicy
         referrer = options.referrer
         userAgent = options.userAgent
+        requestOrigin = options.origin
         maximumFailures = options.maximumFailures
         usedCookies = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
     }
@@ -111,6 +131,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         options.nameConflictPolicy = nameConflictPolicy
         options.referrer = referrer
         options.userAgent = userAgent
+        options.origin = requestOrigin
         options.maximumFailures = maximumFailures
         options.fileName = chosenName
         options.allowsWorkStealing = allowsWorkStealing ?? true
@@ -222,6 +243,16 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("used cookies") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.rename(column: "usedSignIn", to: "usedCookies")
+            }
+        }
+        migrator.registerMigration("media source") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "mediaSource", .text)
+            }
+        }
+        migrator.registerMigration("request origin") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "requestOrigin", .text)
             }
         }
         return migrator

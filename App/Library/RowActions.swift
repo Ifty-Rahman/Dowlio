@@ -70,8 +70,7 @@ struct RowActions {
     }
 
     func moveToTrash(_ rows: [DownloadRow]) {
-        let finished = rows.filter { $0.finishedFile != nil }
-        if !finished.isEmpty { confirm(.moveToTrash(finished)) }
+        if !rows.isEmpty { confirm(.moveToTrash(rows)) }
     }
 
     func clearCompleted() { model.clearCompleted() }
@@ -169,7 +168,6 @@ struct SelectionMenuItems: View {
             .keyboardShortcut(.delete, modifiers: .command)
         Button("Move to Trash…", role: .destructive) { actions.moveToTrash(rows) }
             .keyboardShortcut(.delete, modifiers: [.command, .shift])
-            .disabled(summary.finishedFiles.isEmpty)
         Divider()
         Button("Clear Completed") { actions.clearCompleted() }
     }

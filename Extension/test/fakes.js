@@ -1,3 +1,5 @@
+import { serverProof } from "../lib/proof.js";
+
 export function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -98,7 +100,7 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
     webRequest: {
       listeners: {},
       ...Object.fromEntries(
-        ["onBeforeRequest", "onSendHeaders"].map((event) => [
+        ["onBeforeRequest", "onSendHeaders", "onHeadersReceived", "onErrorOccurred"].map((event) => [
           event,
           {
             addListener: (listener, filter, extra) => {
@@ -164,10 +166,46 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
       onAdded: { addListener: (listener) => chrome.permissions.addedListeners.push(listener) },
       onRemoved: { addListener: (listener) => chrome.permissions.removedListeners.push(listener) },
     },
+    scripting: {
+      frames: [],
+      calls: [],
+      fails: false,
+      visibility: {},
+      async executeScript(injection) {
+        chrome.scripting.calls.push(injection);
+        if (chrome.scripting.fails) throw new Error("Cannot access contents of the page");
+        if (!injection.target.allFrames) return [{ frameId: 0, result: chrome.scripting.visibility[injection.target.tabId] ?? "hidden" }];
+        return chrome.scripting.frames;
+      },
+    },
+    tabs: {
+      byId: {},
+      removedListeners: [],
+      onRemoved: { addListener: (listener) => chrome.tabs.removedListeners.push(listener) },
+      close: (tabId) => chrome.tabs.removedListeners.forEach((listener) => listener(tabId)),
+      async get(tabId) {
+        const tab = chrome.tabs.byId[tabId];
+        if (!tab) throw new Error(`No tab with id: ${tabId}`);
+        return tab;
+      },
+    },
+    windows: {
+      list: [],
+      lastFocused: null,
+      async getAll({ windowTypes } = {}) {
+        return chrome.windows.list.filter((window) => !windowTypes || windowTypes.includes(window.type));
+      },
+      async getLastFocused({ windowTypes } = {}) {
+        const window = chrome.windows.list.find((candidate) => candidate.id === chrome.windows.lastFocused);
+        if (!window || (windowTypes && !windowTypes.includes(window.type))) throw new Error("No last-focused window");
+        return window;
+      },
+    },
     cookies: {
       jar: {},
-      async getAll({ url }) {
-        return chrome.cookies.jar[new URL(url).origin] ?? [];
+      async getAll({ url, partitionKey }) {
+        const found = chrome.cookies.jar[new URL(url).origin] ?? [];
+        return partitionKey && !partitionKey.topLevelSite ? found : found.filter((cookie) => !cookie.partitionKey);
       },
     },
     notifications: {
@@ -245,6 +283,25 @@ export function fakeSockets() {
     async reply(message) {
       this.onmessage?.({ data: JSON.stringify({ v: 1, ...message }) });
       await flush();
+    }
+
+    async sentMessage(type) {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const found = [...this.sent].reverse().find((message) => message.type === type);
+        if (found) return found;
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      throw new Error(`Dowlio Connect never sent ${type}`);
+    }
+
+    async prove(token = "tok", { proof } = {}) {
+      const hello = await this.sentMessage("hello");
+      const server = "server-nonce-abcdefghijklmnop";
+      await this.reply({ type: "hello.challenge", nonce: server, proof: proof ?? (await serverProof(token, hello.nonce, server)) });
+      if (proof) return;
+      await this.sentMessage("hello.proof");
+      await this.reply({ type: "hello.ok" });
     }
 
     async fail() {

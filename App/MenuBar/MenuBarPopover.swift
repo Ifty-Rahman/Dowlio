@@ -10,15 +10,13 @@ struct MenuBarPopover: View {
     let toggleMore: () -> Void
 
     var body: some View {
-        Group {
-            if panel.showsQuickAdd {
-                QuickAddView(model: model, panel: panel, close: close)
-            } else {
-                summary
-            }
+        if panel.showsQuickAdd {
+            QuickAddView(model: model, panel: panel, close: close)
+        } else {
+            summary
+                .padding(DowlioDesign.Spacing.lg)
+                .frame(width: 340, alignment: .leading)
         }
-        .padding(DowlioDesign.Spacing.lg)
-        .frame(width: 320, alignment: .leading)
     }
 
     private var summary: some View {
@@ -83,9 +81,13 @@ struct MenuBarPopover: View {
     private var moreMenu: some View {
         Button(action: toggleMore) {
             Image(systemName: "ellipsis.circle")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
         }
         .background(MoreMenuAnchor { panel.moreAnchor = $0 })
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .help("More")
         .accessibilityLabel("More")
     }
@@ -125,9 +127,15 @@ private struct PopoverRow: View {
                     Spacer(minLength: DowlioDesign.Spacing.xs)
                     Text(row.speedText ?? row.stateWord)
                         .font(DowlioDesign.TypeRole.caption.monospacedDigit())
-                        .foregroundStyle(row.state.tone)
+                        .foregroundStyle(row.tone)
                 }
-                SegmentedBar(segments: row.displaySegments, fraction: row.fractionDone, tint: row.state.tone, height: 3)
+                SegmentedBar(segments: row.barSegments, fraction: row.barFraction, tint: row.tone, height: 3, needsAttention: row.needsAttention)
+                if row.needsAttention {
+                    Text(row.detailLine)
+                        .font(DowlioDesign.TypeRole.detail.weight(.medium))
+                        .foregroundStyle(row.tone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.spokenSummary)
@@ -141,6 +149,11 @@ private struct PopoverRow: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help("Resume")
+            } else if case .failed = row.state {
+                Button("Retry", systemImage: "arrow.clockwise") { model.retry(row) }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Retry")
             }
             cancelButton
         }

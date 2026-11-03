@@ -304,6 +304,6 @@ extension RestoreTests {
         let manifest = try PartialFile.readManifest(in: package)
 
         #expect(manifest.nameConflictPolicy == nil)
-        #expect(PartialFileManifest.currentFormatVersion == 3)
+        #expect(PartialFileManifest.currentFormatVersion == 4)
     }
 }

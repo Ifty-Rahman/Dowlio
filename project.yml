@@ -7,13 +7,19 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.2.0"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "3"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Manual
 packages:
   DowlioKit:
     path: Packages/DowlioKit
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    exactVersion: 3.1.0
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 targets:
   Dowlio:
     type: application
@@ -31,6 +37,10 @@ targets:
         product: DowlioLibrary
       - package: DowlioKit
         product: DowlioConnect
+      - package: DowlioKit
+        product: DowlioMedia
+      - package: KeyboardShortcuts
+      - package: Sparkle
     postCompileScripts:
       - name: Bundle Dowlio Connect
         basedOnDependencyAnalysis: false
@@ -38,7 +48,7 @@ targets:
           destination="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Dowlio Connect"
           rm -rf "$destination"
           mkdir -p "$destination"
-          rsync -a --exclude /test --exclude /package.json --exclude /node_modules --exclude .DS_Store "${SRCROOT}/Extension/" "$destination/"
+          rsync -a --exclude /test --exclude /package.json --exclude /package-lock.json --exclude /node_modules --exclude .DS_Store "${SRCROOT}/Extension/" "$destination/"
     info:
       path: App/Info.plist
       properties:
@@ -52,6 +62,17 @@ targets:
         # Plain http:// downloads are allowed and marked "Not secure" (docs/adr/0003).
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        SUFeedURL: https://github.com/Ifty-Rahman/Dowlio/releases/latest/download/appcast.xml
+        SUPublicEDKey: PGE9QpcxoUUbgMW7kQmdMDT9XYwbz8SeyritVI/wANM=
+        SUEnableAutomaticChecks: true
+        SURequireSignedFeed: true
+        SUVerifyUpdateBeforeExtraction: true
+        NSAppleEventsUsageDescription: Dowlio reads the address of the page in front when you press the Send to Dowlio shortcut in a browser without Dowlio Connect.
+    entitlements:
+      path: App/Dowlio.entitlements
+      properties:
+        com.apple.security.automation.apple-events: true
+        com.apple.security.cs.disable-library-validation: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ifty-rahman.Dowlio

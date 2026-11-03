@@ -96,10 +96,21 @@ public actor Library {
         startImmediately: Bool = true,
         origin: DownloadOrigin? = nil
     ) async -> DownloadID {
+        await add(.file(url), destination: destination, options: options, startImmediately: startImmediately, origin: origin)
+    }
+
+    @discardableResult
+    public func add(
+        _ source: DownloadSource,
+        destination: Destination,
+        options: RequestOptions = RequestOptions(),
+        startImmediately: Bool = true,
+        origin: DownloadOrigin? = nil
+    ) async -> DownloadID {
         let id = DownloadID()
         let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
         var record = StoredDownload(
-            id: id.rawValue, sourceURL: url, destination: destination, options: options, state: state, addedAt: now()
+            id: id.rawValue, source: source, destination: destination, options: options, state: state, addedAt: now()
         )
         record.origin = origin
         records[id] = record
@@ -178,6 +189,12 @@ public actor Library {
         starting.insert(id)
         setState(.downloading, of: id)
         if failed { await engine.retry(id) } else { await engine.resume(id) }
+        await settle(id)
+    }
+
+    private func settle(_ id: DownloadID) async {
+        guard starting.remove(id) != nil, let snapshot = await engine.snapshot(of: id) else { return }
+        await apply(snapshot)
     }
 
     private func fillSlots() async {
@@ -193,7 +210,7 @@ public actor Library {
     }
 
     /// Throws the download away: its partial file, its row and its record.
-    public func cancel(_ id: DownloadID) async {
+    public func cancel(_ id: DownloadID, trashingPartial: Bool = false) async {
         guard let record = records[id], record.state != .completed else { return }
         records[id] = nil
         snapshots[id] = nil
@@ -203,14 +220,16 @@ public actor Library {
         try? store.delete(id.rawValue)
         publish()
         await engine.cancel(id)
-        if let package = record.partialFile { try? FileManager.default.removeItem(at: package) }
+        if let package = record.partialFile {
+            if !trashingPartial || (try? trash(package)) == nil { try? FileManager.default.removeItem(at: package) }
+        }
         await fillSlots()
     }
 
     public func discard(_ id: DownloadID) async {
         guard let record = records[id] else { return }
         guard record.state == .completed else { return await cancel(id) }
-        try? moveToTrash(id)
+        try? await moveToTrash(id)
     }
 
     /// Takes the row off the list. A Completed download's file stays. Anything with a partial
@@ -223,9 +242,11 @@ public actor Library {
     }
 
     /// Sends a Completed download's file to the Trash and takes the row off the list. Throws, and
-    /// keeps the row, when the Trash refuses the file.
-    public func moveToTrash(_ id: DownloadID) throws {
-        guard let record = records[id], record.state == .completed else { return }
+    /// keeps the row, when the Trash refuses the file. A download that isn't finished is stopped,
+    /// and its partial file goes to the Trash.
+    public func moveToTrash(_ id: DownloadID) async throws {
+        guard let record = records[id] else { return }
+        guard record.state == .completed else { return await cancel(id, trashingPartial: true) }
         if Self.finishedFileExists(record) {
             try trash(record.folder.appending(path: record.fileName))
         }
@@ -272,7 +293,8 @@ public actor Library {
         publish()
         inEngine.insert(id)
         starting.insert(id)
-        await engine.add(url: record.sourceURL, destination: record.destination, options: options, id: id)
+        await engine.add(source: record.source, destination: record.destination, options: options, id: id)
+        await settle(id)
     }
 
     private func restore(_ record: StoredDownload) async -> Bool {
@@ -375,9 +397,10 @@ public actor Library {
     private func row(for record: StoredDownload) -> DownloadRow {
         let id = DownloadID(rawValue: record.id)
         let live = snapshots[id]
+        let state = record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state)
         var row = DownloadRow(
             id: id,
-            state: record.state == .queued ? .queued : live.map { Self.rowState(for: $0.state) } ?? Self.rowState(for: record.state),
+            state: state,
             fileName: live?.fileName ?? record.fileName,
             sourceURL: record.sourceURL,
             host: live?.displayHost ?? record.displayHost,
@@ -386,7 +409,7 @@ public actor Library {
             receivedBytes: live?.receivedBytes ?? record.receivedBytes,
             totalBytes: live?.totalBytes ?? record.totalBytes,
             segments: live?.segments ?? [],
-            displaySegments: SegmentLayout.shown(planned: record.plannedSegments ?? [], current: live?.segments ?? []),
+            displaySegments: state == .completed ? [] : SegmentLayout.shown(planned: record.plannedSegments ?? [], current: live?.segments ?? []),
             activeConnections: live?.activeConnections ?? 0,
             bytesPerSecond: live?.bytesPerSecond ?? 0,
             timeRemaining: live?.timeRemaining,
@@ -400,6 +423,7 @@ public actor Library {
         )
         row.lostCookies = lostCookies.contains(id)
         row.origin = record.origin
+        row.isMedia = record.mediaSource != nil
         return row
     }
 

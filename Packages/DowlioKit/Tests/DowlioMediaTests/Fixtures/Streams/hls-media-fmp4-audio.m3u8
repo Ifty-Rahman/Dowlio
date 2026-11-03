@@ -1,0 +1,15 @@
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-TARGETDURATION:3
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXT-X-MAP:URI="/amplify_video/1900000000000000001/aud/mp4a/0/0/128000/aaaaaaaaaaaaaaaa.mp4"
+#EXTINF:3.000,
+/amplify_video/1900000000000000001/aud/mp4a/0/3000/128000/aaaaaaaaaaaaaaaa.m4s
+#EXTINF:3.000,
+/amplify_video/1900000000000000001/aud/mp4a/3000/6000/128000/aaaaaaaaaaaaaaaa.m4s
+#EXTINF:3.000,
+/amplify_video/1900000000000000001/aud/mp4a/6000/9000/128000/aaaaaaaaaaaaaaaa.m4s
+#EXTINF:3.000,
+/amplify_video/1900000000000000001/aud/mp4a/9000/12000/128000/aaaaaaaaaaaaaaaa.m4s
+#EXT-X-ENDLIST

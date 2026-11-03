@@ -54,6 +54,9 @@ public final class TestServer: @unchecked Sendable {
         public var omitsLength: Bool
         public var requiredCookie: String?
         public var requiredForm: Data?
+        public var requiredReferrer: String?
+        public var requiredUserAgent: String?
+        public var requiredOrigin: String?
 
         public init(
             data: Data,
@@ -78,9 +81,15 @@ public final class TestServer: @unchecked Sendable {
             maxRangeReplyBytes: Int? = nil,
             omitsLength: Bool = false,
             requiredCookie: String? = nil,
-            requiredForm: Data? = nil
+            requiredForm: Data? = nil,
+            requiredReferrer: String? = nil,
+            requiredUserAgent: String? = nil,
+            requiredOrigin: String? = nil
         ) {
+            self.requiredUserAgent = requiredUserAgent
+            self.requiredOrigin = requiredOrigin
             self.requiredCookie = requiredCookie
+            self.requiredReferrer = requiredReferrer
             self.requiredForm = requiredForm
             self.omitsLength = omitsLength
             self.misreportOnlyRangesFrom = misreportOnlyRangesFrom
@@ -132,11 +141,13 @@ public final class TestServer: @unchecked Sendable {
         public var status: Int
         public var count: Int
         public var headers: [String: String]
+        public var body: Data
 
-        public init(status: Int, count: Int = .max, headers: [String: String] = [:]) {
+        public init(status: Int, count: Int = .max, headers: [String: String] = [:], body: Data = Data()) {
             self.status = status
             self.count = count
             self.headers = headers
+            self.body = body
         }
     }
 
@@ -365,7 +376,8 @@ public final class TestServer: @unchecked Sendable {
         let request = Request(method: String(parts[0]), path: String(parts[1]), headers: headers, body: body)
         let (file, redirect): (File?, String?) = lock.withLock {
             recorded.append(request)
-            return (files[request.path], redirects[request.path])
+            let bare = String(request.path.prefix { $0 != "?" })
+            return (files[request.path] ?? files[bare], redirects[request.path])
         }
         watchClose(of: connection, for: request.path)
 
@@ -381,12 +393,24 @@ public final class TestServer: @unchecked Sendable {
             return send(status: "401 Unauthorized", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
+        if let referrer = file.requiredReferrer, !(headers["referer"] ?? "").hasPrefix(referrer) {
+            return send(status: "403 Forbidden", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
+        if let agent = file.requiredUserAgent, headers["user-agent"] != agent {
+            return send(status: "403 Forbidden", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
+        if let origin = file.requiredOrigin, headers["origin"] != origin {
+            return send(status: "404 Not Found", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
         if let form = file.requiredForm, request.method != "POST" || request.body != form {
             return send(status: "405 Method Not Allowed", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
         if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {
-            return send(status: "\(fault.status) Fault", headers: fault.headers, body: Data(), hold: nil, on: connection)
+            return send(status: "\(fault.status) Fault", headers: fault.headers, body: fault.body, hold: nil, on: connection)
         }
 
         // A reply stays in flight until the server closes its connection. The count goes down

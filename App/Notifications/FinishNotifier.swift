@@ -1,4 +1,5 @@
 import AppKit
+import DowlioCore
 import DowlioLibrary
 import os
 import UserNotifications
@@ -8,85 +9,97 @@ private let log = Logger(subsystem: "io.github.ifty-rahman.Dowlio", category: "n
 @MainActor
 final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
     private static let category = "finished"
+    nonisolated private static let problemCategory = "problem"
+    nonisolated private static let retryAction = "retry"
+    nonisolated private static let showAction = "show"
 
     private var watcher = FinishWatcher()
-    private var grouper = FinishGrouper()
-    private var armedFor: Date?
+    private var grouper = NoticeGrouper()
+    private var problemWatcher = ProblemWatcher()
+    private var problemGrouper = NoticeGrouper()
     private let center = UNUserNotificationCenter.current()
 
     override init() {
         super.init()
-        UserDefaults.standard.register(defaults: [SettingsKey.notifiesWhenFinished: true])
+        UserDefaults.standard.register(defaults: [SettingsKey.notifiesWhenFinished: true, SettingsKey.notifiesOnProblems: true])
         center.delegate = self
         center.setNotificationCategories(CatchNotifier.categories.union([UNNotificationCategory(
             identifier: Self.category,
             actions: [
                 UNNotificationAction(identifier: ThenAction.showInFinder.rawValue, title: "Show in Finder"),
-                UNNotificationAction(identifier: ThenAction.open.rawValue, title: "Open"),
+                UNNotificationAction(identifier: Self.openAction, title: "Open"),
+            ],
+            intentIdentifiers: []
+        ), UNNotificationCategory(
+            identifier: Self.problemCategory,
+            actions: [
+                UNNotificationAction(identifier: Self.retryAction, title: "Retry"),
+                UNNotificationAction(identifier: Self.showAction, title: "Show in Dowlio"),
             ],
             intentIdentifiers: []
         )]))
     }
 
-    /// The question comes when the first download is added, so it has a reason.
     func askPermissionIfNeeded() {
         Task {
-            let status = await center.notificationSettings().authorizationStatus
-            log.info("Notification permission is \(status.rawValue, privacy: .public)")
-            guard status == .notDetermined else { return }
-            do {
-                let granted = try await center.requestAuthorization(options: [.alert, .sound])
-                log.info("Notification permission granted: \(granted, privacy: .public)")
-            } catch {
-                log.error("Notification permission request failed: \(error.localizedDescription, privacy: .public)")
-            }
+            let permission = NotificationPermission()
+            await permission.refresh()
+            log.info("Notification permission state: \(String(describing: permission.state), privacy: .public)")
+            guard permission.state == .notAsked else { return }
+            await permission.request()
         }
     }
 
     func update(_ rows: [DownloadRow]) {
-        for row in watcher.newlyFinished(in: rows) { grouper.add(row, at: Date()) }
-        guard let due = grouper.dueDate, armedFor != due else { return }
-        armedFor = due
-        Task { [weak self] in
-            // A little past the due time, so the timer never wakes to find nothing due.
-            try? await Task.sleep(for: .seconds(max(due.timeIntervalSinceNow, 0) + 0.05))
-            guard let self else { return }
-            armedFor = nil
-            if let notice = grouper.takeDue(at: Date()) {
-                log.info("Delivering a notice for \(notice.rows.count, privacy: .public) finished downloads")
-                deliver(notice)
-            }
+        let now = Date()
+        for row in watcher.newlyFinished(in: rows) {
+            let shown = grouper.add(row, at: now)
+            deliver(FinishNotice(rows: shown.rows, group: shown.group))
+        }
+        for row in problemWatcher.newProblems(in: rows) {
+            let shown = problemGrouper.add(row, at: now)
+            deliver(ProblemNotice(rows: shown.rows, group: shown.group))
         }
     }
 
     private func deliver(_ notice: FinishNotice) {
-        if UserDefaults.standard.bool(forKey: SettingsKey.notifiesWhenFinished) { post(notice) }
+        if UserDefaults.standard.bool(forKey: SettingsKey.notifiesWhenFinished) {
+            let content = UNMutableNotificationContent()
+            content.title = notice.title
+            content.body = notice.body
+            if let file = notice.singleFile {
+                content.categoryIdentifier = Self.category
+                content.userInfo = ["file": file.path]
+            }
+            post(content, as: notice.group)
+        }
         guard notice.runsThenAction, let file = notice.singleFile else { return }
         Self.perform(ThenAction(saved: UserDefaults.standard.string(forKey: SettingsKey.thenAction) ?? ""), on: file)
     }
 
-    private func post(_ notice: FinishNotice) {
+    private func deliver(_ notice: ProblemNotice) {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.notifiesOnProblems) else { return }
         let content = UNMutableNotificationContent()
         content.title = notice.title
         content.body = notice.body
-        if let file = notice.singleFile {
-            content.categoryIdentifier = Self.category
-            content.userInfo = ["file": file.path]
-        }
-        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
-            if let error {
-                log.error("Posting a notification failed: \(error.localizedDescription, privacy: .public)")
-            } else {
-                log.info("Posted a notification")
-            }
+        content.categoryIdentifier = Self.problemCategory
+        if let id = notice.retryable { content.userInfo = ["retry": id.rawValue.uuidString] }
+        post(content, as: notice.group)
+    }
+
+    private func post(_ content: UNMutableNotificationContent, as group: UUID) {
+        log.info("Posting \(content.title, privacy: .private)")
+        center.add(UNNotificationRequest(identifier: group.uuidString, content: content, trigger: nil)) { error in
+            if let error { log.error("Posting a notification failed: \(error.localizedDescription, privacy: .public)") }
         }
     }
+
+    private static let openAction = "open"
 
     private static func perform(_ action: ThenAction, on file: URL) {
         switch action {
         case .nothing: break
         case .showInFinder: NSWorkspace.shared.activateFileViewerSelecting([file])
-        case .open: NSWorkspace.shared.open(file)
         }
     }
 
@@ -105,10 +118,24 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             }
             return
         }
-        let action = ThenAction(rawValue: response.actionIdentifier)
+        if response.notification.request.content.categoryIdentifier == Self.problemCategory {
+            let retry = (response.notification.request.content.userInfo["retry"] as? String).flatMap(UUID.init(uuidString:))
+            let retries = response.actionIdentifier == Self.retryAction
+            await MainActor.run {
+                if retries, let retry, let row = AppDelegate.model?.row(DownloadID(rawValue: retry)) {
+                    AppDelegate.model?.retry(row)
+                } else {
+                    AppDelegate.model?.showLibraryWindow()
+                }
+            }
+            return
+        }
+        let identifier = response.actionIdentifier
         let path = response.notification.request.content.userInfo["file"] as? String
         await MainActor.run {
-            if let path, let action {
+            if let path, identifier == Self.openAction {
+                NSWorkspace.shared.open(URL(filePath: path))
+            } else if let path, let action = ThenAction(rawValue: identifier) {
                 Self.perform(action, on: URL(filePath: path))
             } else {
                 AppDelegate.model?.showLibraryWindow()

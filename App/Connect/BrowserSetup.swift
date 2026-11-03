@@ -27,6 +27,7 @@ final class AddedBrowser: @unchecked Sendable {
 final class BrowserSetup {
     private(set) var rows: [BrowserRow] = []
     private(set) var testing: Set<String> = []
+    private(set) var isScanning = false
     private(set) var testResults: [String: String] = [:]
     var guide: BrowserRow?
     private(set) var addFailure: String?
@@ -39,14 +40,19 @@ final class BrowserSetup {
 
     static var bundledVersion: String? { bundled.flatMap(ExtensionFolder.version(at:)) }
 
+    static func extensionFolder(in supportFolder: URL) -> URL {
+        supportFolder.appending(path: "Browser Extension", directoryHint: .isDirectory)
+    }
+
     init(server: ConnectServer, added: AddedBrowser, supportFolder: URL) {
         self.server = server
         self.added = added
-        folder = supportFolder.appending(path: "Browser Extension", directoryHint: .isDirectory)
+        folder = Self.extensionFolder(in: supportFolder)
         if let bundled = Self.bundled {
             let folder = folder
-            Task.detached { _ = try? ExtensionFolder.updateIfOlder(from: bundled, to: folder) }
+            Task.detached { _ = try? ExtensionFolder.updateIfChanged(from: bundled, to: folder) }
         }
+        Task { await refresh() }
     }
 
     func reload(_ row: BrowserRow) {
@@ -64,28 +70,62 @@ final class BrowserSetup {
 
     func refresh(rescanning: Bool = false) async {
         if rescanning || installed == nil {
+            isScanning = true
             installed = await Task.detached { ChromiumBrowsers.scan() }.value
+            isScanning = false
         }
         rows = BrowserList.rows(installed: installed ?? [], links: await server.browserLinks())
     }
 
+    static let otherBrowser = BrowserRow(name: "your browser", appURL: nil, link: nil)
+
+    private var connectedWhenGuideOpened: Set<String> = []
+
     func add(_ row: BrowserRow) {
+        guard prepareExtension() else { return }
+        added.remember(row.name)
+        guide = row
+    }
+
+    func addOther() {
+        guard prepareExtension() else { return }
+        connectedWhenGuideOpened = Set(rows.filter { $0.state == .connected }.map(\.name))
+        guide = Self.otherBrowser
+    }
+
+    private func prepareExtension() -> Bool {
         guard let bundled = Self.bundled else {
             addFailure = "Dowlio Connect is missing from this copy of Dowlio. Download Dowlio again."
-            return
+            return false
         }
         do {
             try ExtensionFolder.install(from: bundled, to: folder)
         } catch {
             addFailure = "Dowlio couldn't put Dowlio Connect in place. \(error.localizedDescription)"
-            return
+            return false
         }
         addFailure = nil
-        added.remember(row.name)
-        guide = row
-        if let appURL = row.appURL, let extensions = URL(string: "chrome://extensions") {
-            NSWorkspace.shared.open([extensions], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
-        }
+        return true
+    }
+
+    func openExtensionsPage(of row: BrowserRow) {
+        guard let appURL = row.appURL, let extensions = URL(string: "chrome://extensions") else { return }
+        NSWorkspace.shared.open([extensions], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private var newlyConnected: BrowserRow? {
+        rows.first { $0.state == .connected && !connectedWhenGuideOpened.contains($0.name) }
+    }
+
+    var guideIsConnected: Bool {
+        guard let guide else { return false }
+        if guide == Self.otherBrowser { return newlyConnected != nil }
+        return rows.first { $0.name == guide.name }?.state == .connected
+    }
+
+    var guideBrowserName: String {
+        guard let guide else { return "" }
+        return guide == Self.otherBrowser ? newlyConnected?.name ?? guide.name : guide.name
     }
 
     func test(_ row: BrowserRow) {

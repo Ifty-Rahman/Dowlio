@@ -47,7 +47,7 @@ struct OneConnectionDownloadTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "plain.iso")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "plain.iso"), from: data) == nil)
         #expect(server.requests.count == 1)
     }
 
@@ -94,7 +94,7 @@ struct OneConnectionDownloadTests {
         #expect(finished.state == .completed)
         #expect(finished.fileName == "report 2.pdf")
         #expect(try Data(contentsOf: existing) == original)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "report 2.pdf")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "report 2.pdf"), from: data) == nil)
     }
 
     /// Replies that end early are resumed from the missing bytes, so the file that
@@ -110,7 +110,7 @@ struct OneConnectionDownloadTests {
         let finished = try await engine.completedOrFailed(id)
 
         #expect(finished.state == .completed)
-        #expect(try TestFiles.sha256(of: folder.appending(path: "short.bin")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "short.bin"), from: data) == nil)
     }
 
     /// A download that ends with bytes missing never puts its file in place. Every reply
@@ -213,6 +213,6 @@ struct OneConnectionDownloadTests {
 
         #expect(finished.state == .completed)
         #expect(finished.fileName == "app-1.2.dmg")
-        #expect(try TestFiles.sha256(of: folder.appending(path: "app-1.2.dmg")) == TestFiles.sha256(data))
+        #expect(TestFiles.difference(of: folder.appending(path: "app-1.2.dmg"), from: data) == nil)
     }
 }

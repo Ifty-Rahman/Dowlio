@@ -3,7 +3,9 @@ import DowlioConnect
 import DowlioCore
 import DowlioEngine
 import DowlioLibrary
+import DowlioMedia
 import DowlioStore
+import KeyboardShortcuts
 import Observation
 
 @MainActor
@@ -33,8 +35,11 @@ final class AppModel {
     /// as after a quiet start at login.
     weak var libraryWindow: NSWindow?
     weak var menuBar: MenuBarController?
+    let updater = AppUpdater()
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
+    private let hostCooldown = HostCooldown()
+    private var windowChoices: [URL: Candidate] = [:]
     private var catchGrouper = CatchGrouper()
     var revealing: [DownloadID]?
     var catchPreferences = UserDefaults.standard.catchPreferences {
@@ -52,12 +57,14 @@ final class AppModel {
 
     init() {
         UserDefaults.standard.removeRetiredSettings()
+        URLCache.shared = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 0)
+        Task.detached(priority: .background) { Self.removeSavedWebData() }
         do {
             let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let library = Library(engine: DownloadEngine(), store: store)
+            let library = Library(engine: DownloadEngine(remux: AVRemuxer.remux, identity: { BrowserIdentity.standard }), store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
         } catch {
@@ -66,11 +73,18 @@ final class AppModel {
             return
         }
         Task { await follow() }
+        KeyboardShortcuts.onKeyDown(for: .sendPage) { [weak self] in self?.sendFrontPage() }
         DebugLaunch.addLinks { [weak self] links in
             guard let self else { return }
             var draft = NewDownloadDraft(text: links, folder: downloadsFolder)
             draft.startImmediately = true
             add(draft)
+        }
+        DebugLaunch.sendPage { [weak self] page in
+            self?.receive(page)
+        }
+        DebugLaunch.pageWindow { [weak self] page in
+            self?.openPageWindow(for: page)
         }
         DebugLaunch.useSheet { [weak self] links in
             self?.requestNewDownload(links)
@@ -95,17 +109,28 @@ final class AppModel {
         }
     }
 
+    nonisolated private static func removeSavedWebData() {
+        let files = FileManager.default
+        let library = files.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let caches = library.appending(path: "Caches/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)
+        let saved = ["Cache.db", "Cache.db-shm", "Cache.db-wal", "fsCachedData", "WebKit"].map { caches.appending(path: $0) }
+            + [library.appending(path: "WebKit/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)]
+        for url in saved where files.fileExists(atPath: url.path) { try? files.removeItem(at: url) }
+    }
+
     private(set) var browserSetup: BrowserSetup?
 
     private func startConnectServer(store: DownloadStore, library: Library, support: URL) {
+        let extensionID = ExtensionFolder.extensionID(at: BrowserSetup.extensionFolder(in: support))
         let added = AddedBrowser()
         let catcher = Catcher(library: library, settings: { AppModel.currentSettings() })
         let vault = KeychainTokenVault(service: AppIdentity.bundleIdentifier + ".connect")
         let server = ConnectServer(
             store: store, vault: vault, catcher: catcher, preferences: catchPreferences,
-            nameBrowser: { added.name(for: $0) }, extensionVersion: BrowserSetup.bundledVersion
+            nameBrowser: { added.name(for: $0) }, extensionVersion: BrowserSetup.bundledVersion,
+            extensionIDs: { [extensionID] }
         ) { request in
-            await MainActor.run { PairingAlert.ask(request) }
+            await PairingAlert.show(request)
         }
         connectServer = server
         browserSetup = BrowserSetup(server: server, added: added, supportFolder: support)
@@ -126,10 +151,33 @@ final class AppModel {
                 self?.receive(link)
             }
         }
+        Task { [weak self] in
+            for await page in server.sentPages {
+                self?.receive(page)
+            }
+        }
         let updates = preferenceUpdates.stream
         Task {
             for await preferences in updates {
                 await server.publish(preferences)
+            }
+        }
+    }
+
+    func sendFrontPage() {
+        let server = connectServer
+        let app = FrontBrowser.frontApp
+        let target = sendTarget(activating: false)
+        let ask = target?.askFrontPage(of: app?.name ?? "the browser")
+        Task { [weak self, weak target] in
+            let outcome = await FrontPage.read(app, scan: { await server?.scanPage(in: $0) ?? .notConnected }, appleEvents: { await FrontBrowser.read($0) })
+            switch outcome {
+            case .sentThroughConnect:
+                break
+            case .read(let page):
+                self?.receive(page)
+            case .couldntRead(let reason):
+                if let ask { target?.couldntRead(reason, asked: ask) }
             }
         }
     }
@@ -145,15 +193,78 @@ final class AppModel {
     }
 
     private func receive(_ link: SentLink) {
-        let menuBarShown = menuBar?.isVisible ?? false
-        switch NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBarShown) {
+        switch sentRoute {
         case .quickAdd:
             menuBar?.showSent(link)
         case .sheet, .openWindowThenSheet:
-            showLibraryWindow()
-            if newDownload == nil { newDownload = makeNewDownload() }
-            newDownload?.draft.addSent(link.url, referrer: link.referrer, cookies: link.cookies, browser: link.browser, userAgent: link.userAgent)
+            sentSheet()?.addSent(link)
         }
+    }
+
+    private func receive(_ page: SentPage) {
+        sendTarget()?.analyze(page)
+    }
+
+    func openPageWindow(for page: SentPage) {
+        guard let analyzer else { return }
+        PageWindows.open(page, read: { await analyzer.reading($0, of: $1) }) { [weak self] page, candidate in
+            guard let self, let target = sendTarget() else { return }
+            windowChoices[page.url] = candidate
+            target.analyze(page)
+        }
+    }
+
+    private func sendTarget(activating: Bool = true) -> NewDownloadModel? {
+        switch sentRoute {
+        case .quickAdd: menuBar?.sendTarget(activating: activating)
+        case .sheet, .openWindowThenSheet: sentSheet()
+        }
+    }
+
+    private func sentSheet() -> NewDownloadModel? {
+        if let newDownload { return newDownload }
+        showLibraryWindow()
+        newDownload = makeNewDownload()
+        return newDownload
+    }
+
+    private var sentRoute: NewLinkRoute {
+        NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: isLibraryWindowOpen, menuBarShown: menuBar?.isVisible ?? false)
+    }
+
+    func analyze(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+        if let chosen = windowChoices.removeValue(forKey: page.url) { return .found([chosen]) }
+        return recorded(page) { $0.analyze(page) }
+    }
+
+    func lookAgain(_ page: SentPage) -> AsyncStream<PageAnalysis> {
+        recorded(page) { $0.lookAgain(page) }
+    }
+
+    func probe(_ page: SentPage, _ candidate: Candidate) async -> Candidate {
+        guard let analyzer else { return candidate }
+        return await analyzer.probe(candidate, on: page)
+    }
+
+    private var analyzer: PageAnalyzer? {
+        guard let library else { return nil }
+        #if DEBUG
+        let readerFailed: @Sendable (ReaderFailure) -> Void = { ReaderFailure.log($0); SentPageRecord.note($0) }
+        #else
+        let readerFailed = ReaderFailure.log
+        #endif
+        return PageAnalyzer(identity: .standard, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
+            try await library.inspect(url, options: options)
+        }
+    }
+
+    private func recorded(_ page: SentPage, _ run: (PageAnalyzer) -> AsyncStream<PageAnalysis>) -> AsyncStream<PageAnalysis> {
+        guard let analyzer else { return .nothingFound }
+        #if DEBUG
+        return SentPageRecord.recording(page, run(analyzer))
+        #else
+        return run(analyzer)
+        #endif
     }
 
     func downloadInBrowser(_ notice: CatchNotice) {
@@ -183,11 +294,11 @@ final class AppModel {
     }
 
     /// Shows the New Download sheet with `text` in its link field, opening the window first. With
-    /// the sheet already up, the links join it.
+    /// the sheet already up, `text` takes the field's place.
     func requestNewDownload(_ text: String = "") {
         showLibraryWindow()
         if let newDownload {
-            newDownload.append(text)
+            newDownload.replace(with: text)
         } else {
             newDownload = makeNewDownload(text)
         }
@@ -195,9 +306,10 @@ final class AppModel {
 
     func continueInWindow(_ quickAdd: NewDownloadModel) {
         showLibraryWindow()
-        if let newDownload {
+        if let newDownload, !quickAdd.list.hasPages {
             newDownload.draft.merge(quickAdd.draft)
         } else {
+            newDownload?.discardSentPage()
             newDownload = quickAdd
         }
     }
@@ -205,16 +317,27 @@ final class AppModel {
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
         guard let library else { return nil }
-        let model = NewDownloadModel(text: text, folder: downloadsFolder) { url, options in
+        let list = LinkList(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
+        let model = NewDownloadModel(text: text, folder: downloadsFolder, list: list, inspect: { url, options in
             try await library.inspect(url, options: options)
-        }
+        }, signIn: { [weak self] url in
+            guard UserDefaults.standard.bool(forKey: SettingsKey.usesBrowserSignIn) else { return nil }
+            return await self?.connectServer?.signIn(for: url, frontBrowser: FrontBrowser.frontApp?.name)
+        })
         model.draft.connections = settings.connections
         return model
     }
 
     var isLibraryWindowOpen = false
 
+    private var lastFocusMove: Date?
+
+    func movedFocus(since date: Date) -> Bool {
+        lastFocusMove.map { $0 >= date } ?? false
+    }
+
     func showLibraryWindow() {
+        lastFocusMove = Date()
         NSApp.activate()
         if let libraryWindow, libraryWindow.isVisible || libraryWindow.isMiniaturized {
             libraryWindow.makeKeyAndOrderFront(nil)
@@ -230,8 +353,15 @@ final class AppModel {
     func applyPresence(activating: Bool = true) {
         let presence = UserDefaults.standard.presence
         menuBar?.isVisible = presence.menuBar
+        let front = NSApp.keyWindow.map { $0.sheetParent ?? $0 }
         NSApp.setActivationPolicy(presence.dock ? .regular : .accessory)
-        if activating { NSApp.activate() }
+        guard activating || front != nil else { return }
+        NSApp.activate()
+        DispatchQueue.main.async { front?.makeKeyAndOrderFront(nil) }
+    }
+
+    func askNotificationPermission() {
+        notifier.askPermissionIfNeeded()
     }
 
     func applyDownloadsAtOnce() {
@@ -248,6 +378,7 @@ final class AppModel {
     var openSettingsWindow: (() -> Void)?
 
     func showSettings() {
+        lastFocusMove = Date()
         NSApp.activate()
         openSettingsWindow?()
     }
@@ -257,6 +388,50 @@ final class AppModel {
         let app = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
         let os = ProcessInfo.processInfo.operatingSystemVersion
         NSWorkspace.shared.open(ProblemReport.url(appVersion: app, macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
+    }
+
+    func addList(_ sheet: NewDownloadModel) {
+        notifier.askPermissionIfNeeded()
+        let settings = settings
+        let draft = sheet.draft
+        let list = sheet.list
+        let destination = settings.destination(in: draft.folder)
+        if sheet.makesDefaultQuality, let shown = list.current, let height = list.chosenVersion(of: shown.id)?.height {
+            UserDefaults.standard.setVideoQualityCap(height)
+        }
+        let isTaken = Self.nameIsTaken(in: draft.folder)
+        let addsResolution = settings.nameConflictPolicy == .keepBoth
+        let added = list.downloads.map { download -> (DownloadSource, RequestOptions, DownloadOrigin?) in
+            switch download {
+            case let .media(page, candidate, version, name):
+                let chosen = draft.options(for: page.url)
+                var options = settings.options(connections: chosen.connections)
+                options.referrer = chosen.referrer ?? version.referrer ?? page.url
+                options.origin = version.origin
+                options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
+                options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: version.source.url, from: page.url)
+                options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)
+                return (version.source, options, draft.origin(for: page.url))
+            case let .file(url, name):
+                let chosen = draft.options(for: url)
+                var options = settings.options(connections: chosen.connections)
+                options.referrer = chosen.referrer
+                options.userAgent = chosen.userAgent
+                options.cookies = chosen.cookies
+                options.fileName = name
+                return (.file(url), options, draft.origin(for: url))
+            }
+        }
+        perform { library in
+            for (source, options, origin) in added {
+                await library.add(source, destination: destination, options: options, startImmediately: draft.startImmediately, origin: origin)
+            }
+        }
+    }
+
+    nonisolated static func nameIsTaken(in folder: URL) -> (String) -> Bool {
+        let folders = [folder] + [FileCategory.video, .audio].map { folder.appending(path: $0.folderName, directoryHint: .isDirectory) }
+        return { name in folders.contains { FileManager.default.fileExists(atPath: $0.appending(path: name).path) } }
     }
 
     func add(_ draft: NewDownloadDraft) {
@@ -304,11 +479,13 @@ final class AppModel {
     }
 
     func showInFinder(_ row: DownloadRow) {
+        lastFocusMove = Date()
         guard let file = row.finishedFile else { return }
         NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 
     func open(_ row: DownloadRow) {
+        lastFocusMove = Date()
         guard let file = row.finishedFile else { return }
         NSWorkspace.shared.open(file)
     }

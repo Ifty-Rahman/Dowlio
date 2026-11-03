@@ -19,15 +19,27 @@ struct NewDownloadDraftTests {
         #expect(draft.referrer == "https://a.com/downloads")
     }
 
-    @Test func aLinkSentWhileTheDraftIsOpenJoinsAsAnotherLineAndARepeatMerges() {
+    @Test func aLinkSentWhileTheDraftIsOpenReplacesTheLinkThere() {
         var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
 
         draft.addSent(iso, referrer: URL(string: "https://b.com/page"))
-        draft.addSent(zip, referrer: URL(string: "https://a.com/other"))
 
-        #expect(draft.links == [zip, iso])
-        #expect(draft.text == "https://a.com/one.zip\nhttps://b.com/two.iso")
+        #expect(draft.links == [iso])
+        #expect(draft.text == "https://b.com/two.iso")
         #expect(draft.referrer == "https://b.com/page")
+    }
+
+    @Test func moreThanOneLinkIsAnErrorAndNothingIsChecked() {
+        var draft = NewDownloadDraft(text: "https://a.com/one.zip\nhttps://b.com/two.iso", folder: folder)
+
+        #expect(draft.links.isEmpty)
+        #expect(draft.linksToCheck().isEmpty)
+        #expect(!draft.canDownload)
+        #expect(draft.explanation == "Dowlio adds one link at a time. Remove the other links.")
+
+        draft.text = "https://b.com/two.iso"
+        #expect(draft.links == [iso])
+        #expect(draft.explanation == nil)
     }
 
     @Test func aSentLinksCookiesGoOnlyWithThatLink() {
@@ -61,14 +73,14 @@ struct NewDownloadDraftTests {
         #expect(typed.options(for: zip).userAgent == "Mine/1.0")
     }
 
-    @Test func aQuickAddDraftMergedIntoAnOpenSheetKeepsWhatEachSentLinkCarried() {
+    @Test func aQuickAddDraftMovedIntoAnOpenSheetReplacesItsLinkAndKeepsWhatTheSentLinkCarried() {
         var sheet = NewDownloadDraft(text: "https://b.com/two.iso", folder: folder)
         var quickAdd = NewDownloadDraft(text: "", folder: folder)
         quickAdd.addSent(zip, referrer: URL(string: "https://a.com/page"), cookies: [Cookie(name: "s", value: "1")], browser: "Arc")
 
         sheet.merge(quickAdd)
 
-        #expect(sheet.links == [iso, zip])
+        #expect(sheet.links == [zip])
         #expect(sheet.origin(for: zip) == DownloadOrigin(kind: .sent, browser: "Arc"))
         #expect(sheet.options(for: zip).cookies == [Cookie(name: "s", value: "1")])
         #expect(sheet.referrer == "https://a.com/page")
@@ -82,15 +94,15 @@ struct NewDownloadDraftTests {
         #expect(draft.canDownload)
     }
 
-    @Test func eachLinkIsCheckedOnceUntilTheHeadersChange() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip\nhttps://b.com/two.iso", folder: folder)
+    @Test func theLinkIsCheckedOnceUntilTheHeadersChange() {
+        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
 
-        #expect(draft.linksToCheck() == [zip, iso])
+        #expect(draft.linksToCheck() == [zip])
         #expect(draft.check(for: zip) == .checking)
         #expect(draft.linksToCheck().isEmpty)
 
         draft.referrer = "https://a.com/page"
-        #expect(draft.linksToCheck() == [zip, iso])
+        #expect(draft.linksToCheck() == [zip])
     }
 
     @Test func aResultCheckedWithOldHeadersIsIgnored() {
@@ -108,39 +120,13 @@ struct NewDownloadDraftTests {
     }
 
     @Test func aRemovedLinkLosesItsCheck() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip\nhttps://b.com/two.iso", folder: folder)
+        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
         _ = draft.linksToCheck()
         draft.text = "https://b.com/two.iso"
         _ = draft.linksToCheck()
 
         draft.record(.inspected(Self.inspection("one.zip")), for: zip, checkedWith: draft.inspectionOptions)
         #expect(draft.check(for: zip) == nil)
-    }
-
-    @Test func aSingleLinkShowsItsInspectedNameAndKeepsAnEditOnlyForThatLink() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
-        _ = draft.linksToCheck()
-        draft.record(.inspected(Self.inspection("Server Name.zip")), for: zip, checkedWith: draft.inspectionOptions)
-
-        #expect(draft.fileName == "Server Name.zip")
-        #expect(draft.options.fileName == nil)
-
-        draft.rename("Mine.zip")
-        #expect(draft.fileName == "Mine.zip")
-        #expect(draft.options.fileName == "Mine.zip")
-
-        draft.text = "https://b.com/two.iso"
-        #expect(draft.fileName == "two.iso")
-        #expect(draft.options.fileName == nil)
-    }
-
-    @Test func severalLinksNeverGetOneName() {
-        var draft = NewDownloadDraft(text: "https://a.com/one.zip", folder: folder)
-        draft.rename("Mine.zip")
-        draft.text = "https://a.com/one.zip\nhttps://b.com/two.iso"
-
-        #expect(!draft.isSingleLink)
-        #expect(draft.options.fileName == nil)
     }
 
     @Test func theOptionsCarryTheConnectionsAndOnlyUsableHeaders() {
@@ -174,7 +160,7 @@ struct NewDownloadDraftTests {
 
         draft.text = "not a link"
         #expect(!draft.canDownload)
-        #expect(draft.explanation == "Paste an http or https link, one per line.")
+        #expect(draft.explanation == "Paste an http or https link.")
     }
 
     @Test func aLinkThatCantBeReachedOffersDownloadAnywayAsItsNextStep() {
@@ -182,6 +168,11 @@ struct NewDownloadDraftTests {
             == LinkStatus(line: "Connection lost", reason: "Download Anyway still adds it, and Dowlio tries again when it starts.", tone: .problem))
         #expect(LinkStatus(failure: .tooManyRetries).reason == "Download Anyway still adds it, and Dowlio tries again when it starts.")
     }
+
+    private static let webPage = LinkInspection(
+        fileName: "html5_video.asp.html", totalBytes: nil, contentType: "text/html", category: .documents,
+        splitsIntoSegments: false, cannotResumeBecause: .sizeUnknown, isNotSecure: false
+    )
 
     private static func inspection(_ name: String) -> LinkInspection {
         LinkInspection(

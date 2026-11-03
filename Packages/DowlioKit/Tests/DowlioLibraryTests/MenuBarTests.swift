@@ -46,6 +46,21 @@ struct MenuBarTests {
         #expect(summary.active.map(\.fileName) == ["b.iso", "a.iso"])
     }
 
+    @Test func downloadsThatNeedAttentionAreListedAfterRunningOnesAndCounted() {
+        var stuck = row("b.iso", .paused)
+        stuck.lostCookies = true
+        let summary = MenuBarSummary(rows: [
+            row("d.iso", .paused), row("c.iso", .queued), stuck, row("e.iso", .failed(.notFound)), row("a.iso", .downloading),
+            row("f.iso", .completed),
+        ])
+
+        #expect(summary.active.map(\.fileName) == ["a.iso", "b.iso", "e.iso", "c.iso", "d.iso"])
+        #expect(summary.status == "1 downloading · 1 queued · 2 need attention")
+        #expect(summary.needsAttention)
+        #expect(MenuBarSummary(rows: [row("a.iso", .failed(.notFound))]).status == "1 needs attention")
+        #expect(!MenuBarSummary(rows: [row("a.iso", .paused)]).needsAttention)
+    }
+
     @Test func thePopoverListsAtMostFiveActiveDownloads() {
         let rows = (0..<8).map { row("f\($0).iso", .downloading) }
         #expect(MenuBarSummary(rows: rows).active.count == 5)
@@ -70,7 +85,7 @@ struct MenuBarTests {
         (false, true, .sheet),
         (false, false, .openWindowThenSheet),
     ])
-    func aLinkSentFromABrowserOpensWhereShowInMenuBarSays(menuBarShown: Bool, windowIsOpen: Bool, route: NewLinkRoute) {
+    func aLinkOrPageSentFromABrowserOpensWhereShowInMenuBarSays(menuBarShown: Bool, windowIsOpen: Bool, route: NewLinkRoute) {
         #expect(NewLinkRoute(entry: .sentFromBrowser, windowIsOpen: windowIsOpen, menuBarShown: menuBarShown) == route)
     }
 

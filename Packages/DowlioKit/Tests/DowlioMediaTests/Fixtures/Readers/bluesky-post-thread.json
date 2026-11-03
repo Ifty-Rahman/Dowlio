@@ -1,0 +1,39 @@
+{
+ "thread": {
+  "$type": "app.bsky.feed.defs#threadViewPost",
+  "post": {
+   "uri": "at://did:plc:sampleauthor000000000000/app.bsky.feed.post/3sampleposta2",
+   "cid": "bafyreisamplepostcid",
+   "author": {
+    "did": "did:plc:sampleauthor000000000000",
+    "handle": "sampleauthor.bsky.social",
+    "displayName": "Sample Author"
+   },
+   "record": {
+    "$type": "app.bsky.feed.post",
+    "createdAt": "2026-10-22T16:11:13.754Z",
+    "langs": [
+     "en"
+    ],
+    "text": "Version two is out today with a new way to share links from your profile page"
+   },
+   "embed": {
+    "$type": "app.bsky.embed.video#view",
+    "cid": "bafkreisamplevideocid",
+    "playlist": "{{server}}/watch/did%3Aplc%3Asampleauthor000000000000/bafkreisamplevideocid/playlist.m3u8",
+    "thumbnail": "https://video.bsky.example/watch/did%3Aplc%3Asampleauthor000000000000/bafkreisamplevideocid/thumbnail.jpg",
+    "alt": "A phone showing a profile page",
+    "aspectRatio": {
+     "height": 1920,
+     "width": 1080
+    },
+    "presentation": "default"
+   },
+   "replyCount": 0,
+   "repostCount": 0,
+   "likeCount": 0,
+   "indexedAt": "2026-10-22T16:11:16.448Z",
+   "labels": []
+  }
+ }
+}

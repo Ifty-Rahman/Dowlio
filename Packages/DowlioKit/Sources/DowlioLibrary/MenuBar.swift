@@ -8,32 +8,38 @@ public struct MenuBarSummary: Equatable, Sendable {
     private let running: [DownloadRow]
     private let waiting: [DownloadRow]
     private let paused: [DownloadRow]
+    private let stuck: [DownloadRow]
 
     public init(rows: [DownloadRow]) {
         running = rows.filter { LibraryFilter.downloading.includes($0) }
         waiting = rows.filter { $0.state == .queued }
-        paused = rows.filter { $0.state == .paused }
+        stuck = rows.filter(\.needsAttention)
+        paused = rows.filter { $0.state == .paused && !$0.needsAttention }
     }
 
     public var status: String {
         var parts: [String] = []
         if !running.isEmpty { parts.append("\(running.count) downloading") }
         if !waiting.isEmpty { parts.append("\(waiting.count) queued") }
+        if !stuck.isEmpty { parts.append("\(stuck.count) \(stuck.count == 1 ? "needs" : "need") attention") }
         return parts.isEmpty ? "Nothing downloading" : parts.joined(separator: " · ")
     }
+
+    public var needsAttention: Bool { !stuck.isEmpty }
 
     public var speedText: String? {
         let speed = running.reduce(Int64(0)) { $0 + ($1.speedText == nil ? 0 : $1.bytesPerSecond) }
         return speed > 0 ? "\(ByteText.string(speed))/s" : nil
     }
 
-    /// Running, then Queued, then Paused, so a paused download can be resumed from here.
+    /// Running, then the ones that need attention, then Queued, then Paused, so a paused download
+    /// can be resumed from here.
     public var active: [DownloadRow] {
-        Array((running + waiting + paused).prefix(Self.listLimit))
+        Array((running + stuck + waiting + paused).prefix(Self.listLimit))
     }
 
     public var moreActive: Int {
-        max(running.count + waiting.count + paused.count - Self.listLimit, 0)
+        max(running.count + stuck.count + waiting.count + paused.count - Self.listLimit, 0)
     }
 
     public var canPauseAll: Bool { !running.isEmpty || !waiting.isEmpty }

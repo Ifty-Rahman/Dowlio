@@ -4,8 +4,8 @@ import Foundation
 /// The `manifest.json` inside a partial file: everything needed to resume the download, so the
 /// partial file is self-contained (architecture.md, files on disk). It never holds cookies.
 struct PartialFileManifest: Codable, Equatable, Sendable {
-    /// Format 2 added `layout`, format 3 `nameConflictPolicy`.
-    static let currentFormatVersion = 3
+    /// Format 2 added `layout`, format 3 `nameConflictPolicy`, format 4 `mediaSource` and `finishedFragments`.
+    static let currentFormatVersion = 4
     /// The oldest format this version still reads.
     static let oldestReadableFormatVersion = 1
 
@@ -29,12 +29,15 @@ struct PartialFileManifest: Codable, Equatable, Sendable {
     var connections: Int
     var referrer: URL?
     var userAgent: String?
+    var origin: String?
     var segments: [Segment]
     /// Whether the server supports ranges. `nil` in a format 1 manifest, which didn't record it,
     /// so the download is read as whole and starts over on resume.
     var layout: Layout?
     /// `nil` before format 3, which added it, and read as keep both.
     var nameConflictPolicy: NameConflictPolicy?
+    var mediaSource: MediaSource?
+    var finishedFragments: [FragmentPosition]?
 
     /// Whether every segment lies inside the file, after the one before it, and holds no more
     /// bytes than its own length. A manifest without a size has no segments.
