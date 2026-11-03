@@ -46,6 +46,11 @@ struct QuickAddView: View {
         } else if let item = items.first {
             singleItem(item, of: sheet)
                 .showsInList(item, of: sheet.list)
+            if item.savesAFile {
+                TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("File name")
+            }
         } else if let explanation = sheet.draft.explanation {
             Text(explanation).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
         }

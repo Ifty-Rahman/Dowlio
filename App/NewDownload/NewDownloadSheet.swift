@@ -124,6 +124,13 @@ struct NewDownloadSheet: View {
         case .nothingFound:
             MediaHeader(media: media)
             NothingFoundBody(media: media)
+            if item.savesAFile {
+                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
+                    Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                    TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
         case .needsSignIn:
             MediaHeader(media: media)
             NeedsSignInBody(media: media)
