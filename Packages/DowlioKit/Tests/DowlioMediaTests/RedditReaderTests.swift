@@ -8,7 +8,7 @@ struct RedditReaderTests {
     private let post = "/r/sample/comments/1abcdef/sample_post_title_about_a_video/"
 
     private func reddit() async throws -> ReaderSite {
-        try await ReaderSite { RedditReader(hosts: ["127.0.0.1"], videos: $0.url(for: "/v"), redgifs: $0.url(for: "/redgifs")) }
+        try await ReaderSite { RedditReader(hosts: ["127.0.0.1"], videos: $0.url(for: "/v"), clips: $0.url(for: "/clips")) }
     }
 
     private func serveRedditVideo(at folder: String, on site: ReaderSite) throws {
@@ -33,12 +33,12 @@ struct RedditReaderTests {
         #expect(video.versions.compactMap(\.height) == [220, 270, 360, 480, 720, 1080])
     }
 
-    @Test func aFeedsRedGifsAreReadThroughTheirApiAsMP4FilesAndRedditVideosThroughTheirPlaylists() async throws {
+    @Test func aFeedsShortClipsAreReadThroughTheirApiAsMP4FilesAndRedditVideosThroughTheirPlaylists() async throws {
         let site = try await reddit()
-        try site.serve(fixture: "reddit-feed-redgifs.html", at: "/r/sample/", replacing: ["{{video}}": "sample8video"])
+        try site.serve(fixture: "reddit-feed-clips.html", at: "/r/sample/", replacing: ["{{video}}": "sample8video"])
         try serveRedditVideo(at: "/v/sample8video", on: site)
-        try site.serve(fixture: "redgifs-token.json", at: "/redgifs/auth/temporary")
-        try site.serve(fixture: "redgifs-gif.json", at: "/redgifs/gifs/samplefirstclip", replacing: ["{{media}}": site.url("/media").absoluteString])
+        try site.serve(fixture: "clip-token.json", at: "/clips/auth/temporary")
+        try site.serve(fixture: "clip-gif.json", at: "/clips/gifs/samplefirstclip", replacing: ["{{media}}": site.url("/media").absoluteString])
         site.site.serve(video: 1_500_000, at: "/media/SampleFirstClip.mp4")
         site.site.serve(video: 600_000, at: "/media/SampleFirstClip-mobile.mp4")
 
@@ -92,11 +92,11 @@ struct RedditReaderTests {
         #expect(reader.post(in: URL(string: "https://www.reddit.com/r/videos/")!) == nil)
     }
 
-    @Test func aRedGifsPageListsItsHDAndSDFiles() async throws {
-        let site = try await ReaderSite { RedGifsReader(hosts: ["127.0.0.1"], api: $0.url(for: "/redgifs/")) }
-        try site.serve(fixture: "redgifs-token.json", at: "/redgifs/auth/temporary")
-        try site.serve(fixture: "redgifs-gif.json", at: "/redgifs/gifs/samplefirstclip", replacing: ["{{media}}": site.url("/media").absoluteString])
-        site.site.serve(html: "<title>RedGifs</title>", at: "/watch/SampleFirstClip")
+    @Test func aShortClipPageListsItsHDAndSDFiles() async throws {
+        let site = try await ReaderSite { TokenClipReader(api: $0.url(for: "/clips/")) }
+        try site.serve(fixture: "clip-token.json", at: "/clips/auth/temporary")
+        try site.serve(fixture: "clip-gif.json", at: "/clips/gifs/samplefirstclip", replacing: ["{{media}}": site.url("/media").absoluteString])
+        site.site.serve(html: "<title>Clip</title>", at: "/watch/SampleFirstClip")
         site.site.serve(video: 1_500_000, at: "/media/SampleFirstClip.mp4")
         site.site.serve(video: 600_000, at: "/media/SampleFirstClip-mobile.mp4")
 
@@ -107,18 +107,18 @@ struct RedditReaderTests {
         #expect(candidates.first?.versions.compactMap(\.height) == [1080])
     }
 
-    @Test func aRedGifsFramePageIsRecognisedAndAnEmbedIsFound() async throws {
-        let reader = RedGifsReader()
+    @Test func aShortClipFramePageIsRecognisedAndAnEmbedIsFound() async throws {
+        let reader = TokenClipReader()
 
-        #expect(reader.recognises(URL(string: "https://www.redgifs.com/ifr/SampleFirstClip")!))
-        #expect(reader.post(in: URL(string: "https://www.redgifs.com/ifr/SampleFirstClip")!) == "samplefirstclip")
-        #expect(!reader.recognises(URL(string: "https://www.redgifs.com/browse")!))
-        #expect(reader.embeds(in: #"<iframe src="https://www.redgifs.com/ifr/SampleFirstClip"></iframe>"#) == [URL(string: "https://www.redgifs.com/ifr/samplefirstclip")!])
+        #expect(reader.recognises(URL(string: "https://clips.example/ifr/SampleFirstClip")!))
+        #expect(reader.post(in: URL(string: "https://clips.example/ifr/SampleFirstClip")!) == "samplefirstclip")
+        #expect(!reader.recognises(URL(string: "https://clips.example/browse")!))
+        #expect(reader.embeds(in: #"<iframe src="https://clips.example/ifr/SampleFirstClip"></iframe>"#) == [URL(string: "https://clips.example/ifr/samplefirstclip")!])
     }
 
-    @Test func aRedGifsClipTheApiRefusesListsNothingOnReddit() async throws {
+    @Test func aShortClipTheApiRefusesListsNothingOnReddit() async throws {
         let site = try await reddit()
-        try site.serve(fixture: "reddit-feed-redgifs.html", at: "/r/sample/", replacing: ["{{video}}": "sample8video"])
+        try site.serve(fixture: "reddit-feed-clips.html", at: "/r/sample/", replacing: ["{{video}}": "sample8video"])
         try serveRedditVideo(at: "/v/sample8video", on: site)
 
         let candidates = try await site.candidates("/r/sample/")

@@ -24,11 +24,13 @@ final class StreamFragments: @unchecked Sendable {
         }
     }
 
-    private static let fragmentExtensions: Set<String> = ["m4s", "ts", "m4f", "cmfv", "cmfa"]
+    private static let alwaysFragmentExtensions: Set<String> = ["m4s", "m4f", "cmfv", "cmfa"]
+    private static let fragmentExtensions: Set<String> = alwaysFragmentExtensions.union(["ts"])
     private static let fragmentPrefixes = ["init", "seg-", "segment", "frag", "chunk"]
     private static let initExtensions: Set<String> = ["mp4", "m4v", "m4a", "m4s", "cmfv", "cmfa"]
 
     static func isNamedLikeAFragment(_ url: URL, nextTo streams: [URL]) -> Bool {
+        if alwaysFragmentExtensions.contains(url.pathExtension.lowercased()) { return true }
         let folder = url.deletingLastPathComponent().path
         guard streams.contains(where: { $0.host() == url.host() && $0.deletingLastPathComponent().path == folder }) else { return false }
         let name = url.lastPathComponent.lowercased()

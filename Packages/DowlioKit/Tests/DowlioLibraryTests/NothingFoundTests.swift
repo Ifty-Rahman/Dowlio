@@ -5,7 +5,7 @@ import Foundation
 import Testing
 
 struct NothingFoundTests {
-    private let page = SentPage(url: URL(string: "https://missav.example/v/abc")!, browser: "Arc")
+    private let page = SentPage(url: URL(string: "https://video.example/v/abc")!, browser: "Arc")
     private let clip = Candidate(label: "Clip", versions: [Version(source: .file(URL(string: "https://cdn.example/clip.mp4")!))])
 
     @Test func lookingSaysItIsPlayingThePageWhenTheQuickStepsFindNothing() {

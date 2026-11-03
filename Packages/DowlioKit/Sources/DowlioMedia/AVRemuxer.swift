@@ -11,14 +11,21 @@ public enum AVRemuxer {
         let audioOnly = output.pathExtension.lowercased() == "m4a"
         let kept: Set<AVMediaType> = audioOnly ? [.audio] : [.video, .audio]
         let composition = AVMutableComposition()
+        var assets: [AVURLAsset] = []
+        var found: [(track: AVAssetTrack, range: CMTimeRange)] = []
         for input in inputs {
             let asset = AVURLAsset(url: input)
+            assets.append(asset)
             guard let tracks = try? await asset.load(.tracks), !tracks.isEmpty else { throw Error.unreadable }
             for track in tracks where kept.contains(track.mediaType) {
-                let range = try await timeRange(of: track, in: asset)
-                let added = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)
-                try added?.insertTimeRange(range, of: track, at: range.start)
+                found.append((track, try await timeRange(of: track, in: asset)))
             }
+        }
+        let reference = found.first { $0.track.mediaType == .video }?.range ?? found.first?.range
+        for (track, range) in found {
+            let placed = TrackPlacement.place(range, against: reference)
+            let added = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)
+            try added?.insertTimeRange(placed.keeping, of: track, at: placed.at)
         }
         guard !composition.tracks.isEmpty else { throw Error.unreadable }
         guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
@@ -30,6 +37,7 @@ public enum AVRemuxer {
         } catch {
             throw Error.exportFailed(error.localizedDescription)
         }
+        withExtendedLifetime(assets) {}
     }
 
     private static func timeRange(of track: AVAssetTrack, in asset: AVURLAsset) async throws -> CMTimeRange {

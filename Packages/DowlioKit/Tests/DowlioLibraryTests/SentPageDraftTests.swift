@@ -151,6 +151,19 @@ struct SentPageDraftTests {
         #expect(MediaNaming.fileName(label: "Holiday clip", version: audio) { _ in false } == "Holiday clip.m4a")
     }
 
+    @Test func aFileWhoseAddressNamesNoMediaTypeTakesItsExtensionFromItsContentType() {
+        let bare = Version(source: .file(URL(string: "https://cdn.example.com/stream/abc123?token=1")!), contentType: "video/mp4; charset=binary")
+        let odd = Version(source: .file(URL(string: "https://cdn.example.com/get.php")!), contentType: "audio/mpeg")
+        let plain = Version(source: .file(URL(string: "https://cdn.example.com/clip.webm")!), contentType: "video/mp4")
+        let unknown = Version(source: .file(URL(string: "https://cdn.example.com/stream/abc123")!))
+
+        #expect(MediaText.fileExtension(of: bare) == "mp4")
+        #expect(MediaText.fileExtension(of: odd) == "mp3")
+        #expect(MediaText.fileExtension(of: plain) == "webm")
+        #expect(MediaText.fileExtension(of: unknown) == "")
+        #expect(MediaNaming.fileName(label: "Clip | Example.tv", version: bare) { _ in false } == "Clip | Example.tv.mp4")
+    }
+
     @Test func theSourceLineSaysWhichBrowserSentItAndWhetherItWasSignedIn() {
         #expect(SentPageDraft(page: page).sourceLine == "example.com · from Arc, signed in")
         #expect(SentPageDraft(page: SentPage(url: page.url, browser: "Dia")).sourceLine == "example.com · from Dia")

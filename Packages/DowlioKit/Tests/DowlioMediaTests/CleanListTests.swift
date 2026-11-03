@@ -36,6 +36,22 @@ struct CleanListTests {
         #expect(candidates.flatMap(\.versions).map(\.height).sorted { ($0 ?? 0) < ($1 ?? 0) } == [nil, 720])
     }
 
+    @Test func aStreamSegmentTheBrowserFetchedIsNeverListedAsAFile() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Clip</title>", at: "/watch")
+        site.serve(video: 2_000_000, at: "/media/clip.mp4")
+        site.serve(video: 500_000, at: "/media/0001.m4s")
+
+        let found = try await site.analyze("/watch") {
+            $0.watched = ["/media/0001.m4s", "/media/clip.mp4"].map {
+                WatchedRequest(url: site.url($0), kind: .file, contentType: "video/mp4")
+            }
+        }
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.flatMap(\.versions).map(\.source.url.lastPathComponent) == ["clip.mp4"])
+    }
+
     @Test func aDownloadLinkShowsTheCodecItsTextNamesAndNoneOtherwise() async throws {
         let site = try await Site()
         site.serve(html: """

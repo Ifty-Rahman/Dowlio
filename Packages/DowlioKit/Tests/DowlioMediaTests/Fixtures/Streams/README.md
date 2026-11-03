@@ -32,7 +32,7 @@ The spike cut each playlist to its first four segments and added `#EXT-X-ENDLIST
 | hls-media-fmp4-root-relative.m3u8 | X: an fMP4 video playlist with a root-relative `EXT-X-MAP` and segments |
 | hls-media-fmp4-audio.m3u8 | X: the matching audio playlist, which a merge test pairs with the video one |
 | hls-master-cmaf-subtitles.m3u8 | Reddit: CMAF variants in two audio groups, plus a subtitles group |
-| hls-media-single-file-absolute.m3u8 | RedGifs: every segment is a byte range of one absolute file |
+| hls-media-single-file-absolute.m3u8 | A short-clip site: every segment is a byte range of one absolute file |
 
 ## Captured for the site readers
 

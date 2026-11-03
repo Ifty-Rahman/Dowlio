@@ -284,9 +284,21 @@ public enum MediaText {
         return parts.compactMap { $0 }.joined(separator: " · ")
     }
 
+    private static let extensionsByType: [String: String] = [
+        "video/mp4": "mp4", "video/x-m4v": "m4v", "video/webm": "webm", "video/quicktime": "mov", "video/x-matroska": "mkv",
+        "video/mpeg": "mpg", "video/ogg": "ogv", "video/3gpp": "3gp", "video/x-flv": "flv", "video/mp2t": "ts",
+        "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/ogg": "ogg",
+        "audio/opus": "opus", "audio/wav": "wav", "audio/x-wav": "wav", "audio/flac": "flac", "audio/webm": "weba",
+    ]
+
+    private static let mediaExtensions = Set(extensionsByType.values).union(["oga", "mpeg"])
+
     public static func fileExtension(of version: Version) -> String {
         if case .media(let media) = version.source { return media.fileExtension }
-        return version.source.url.pathExtension
+        let named = version.source.url.pathExtension
+        guard !mediaExtensions.contains(named.lowercased()) else { return named }
+        let type = version.contentType?.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        return type.flatMap { extensionsByType[$0] } ?? named
     }
 
     public static func size(of version: Version) -> String? {

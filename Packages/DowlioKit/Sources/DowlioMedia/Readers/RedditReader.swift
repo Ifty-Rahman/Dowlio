@@ -4,16 +4,16 @@ public struct RedditReader: SiteReader {
     public let name = "Reddit"
     private let hosts: Set<String>
     private let videos: URL
-    private let redgifs: URL
+    private let clips: URL?
 
     public init(
         hosts: Set<String> = ["reddit.com", "redd.it"],
         videos: URL = URL(string: "https://v.redd.it")!,
-        redgifs: URL = URL(string: "https://api.redgifs.com/v2/")!
+        clips: URL? = nil
     ) {
         self.hosts = hosts
         self.videos = videos
-        self.redgifs = redgifs
+        self.clips = clips
     }
 
     public func recognises(_ page: URL) -> Bool {
@@ -82,8 +82,8 @@ public struct RedditReader: SiteReader {
             streams = [player]
         } else if let link = post.link, link.isOn(["v.redd.it"]), let id = link.pathComponents.dropFirst().first {
             streams = [videos.appending(path: id).appending(path: "HLSPlaylist.m3u8")]
-        } else if let id = [post.link, post.embedded].compactMap(Self.redgifsID).first {
-            guard var gif = try? await RedGifsReader.video(id: id, api: redgifs, page: page) else { return nil }
+        } else if let (id, source) = [post.link, post.embedded].compactMap(Self.clipLink).first {
+            guard var gif = try? await TokenClipReader.video(id: id, on: source, api: clips, page: page) else { return nil }
             gif.label = PostLabel.of(text: post.title, author: post.author) ?? gif.label
             gif.thumbnail = post.poster ?? gif.thumbnail
             return gif
@@ -93,8 +93,8 @@ public struct RedditReader: SiteReader {
         return SiteVideo(label: PostLabel.of(text: post.title, author: post.author), thumbnail: post.poster, streams: streams)
     }
 
-    private static func redgifsID(_ url: URL?) -> String? {
-        guard let url, url.isOn(["redgifs.com"]) else { return nil }
-        return RedGifsReader.id(in: url)
+    private static func clipLink(_ url: URL?) -> (String, URL)? {
+        guard let url, !url.isOn(["reddit.com", "redd.it"]), let id = TokenClipReader.id(in: url) else { return nil }
+        return (id, url)
     }
 }
