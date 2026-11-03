@@ -12,10 +12,12 @@ jobs:
   test:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install XcodeGen
-        run: brew install xcodegen
-      - uses: actions/setup-node@v4
+        run: |
+          ./scripts/install-xcodegen.sh "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/xcodegen/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
       - name: Test and build

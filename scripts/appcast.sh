@@ -46,3 +46,5 @@ $DESCRIPTION
   </channel>
 </rss>
 XML
+printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - --disable-signing-warning "$DIST_DIR/appcast.xml" >/dev/null
+"$SIGN_UPDATE" --verify --ed-key-file - "$DIST_DIR/appcast.xml" <<<"$SPARKLE_ED_PRIVATE_KEY" >/dev/null || die "The signed appcast doesn't verify"

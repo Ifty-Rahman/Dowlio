@@ -39,5 +39,9 @@
 	<string>https://github.com/Ifty-Rahman/Dowlio/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>PGE9QpcxoUUbgMW7kQmdMDT9XYwbz8SeyritVI/wANM=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

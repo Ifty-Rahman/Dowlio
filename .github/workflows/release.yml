@@ -13,10 +13,12 @@ jobs:
   release:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          ./scripts/install-xcodegen.sh "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/xcodegen/bin" >> "$GITHUB_PATH"
 
       - name: Require a passing CI run for this commit
         env:
