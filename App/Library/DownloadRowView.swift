@@ -109,8 +109,11 @@ struct FileTypeBadge: View {
     @ScaledMetric(relativeTo: .caption) private var side: CGFloat = 44
 
     var body: some View {
-        Text(text.isEmpty ? "FILE" : String(text.prefix(4)))
+        Text(text.isEmpty ? "FILE" : String(text.prefix(7)))
             .font(DowlioDesign.TypeRole.caption)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, 2)
             .foregroundStyle(.secondary)
             .frame(width: side, height: side)
             .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
