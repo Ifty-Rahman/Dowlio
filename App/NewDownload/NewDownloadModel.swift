@@ -5,8 +5,8 @@ import DowlioMedia
 import Foundation
 import Observation
 
-/// The New Download sheet's draft, with the checks it runs. The links count as soon as they're
-/// typed. Checking them waits for typing to pause.
+/// The New Download sheet's draft, with the checks it runs. The link counts as soon as it's
+/// typed. Checking it waits for typing to pause.
 @MainActor
 @Observable
 final class NewDownloadModel: Identifiable {
@@ -14,7 +14,7 @@ final class NewDownloadModel: Identifiable {
         didSet {
             if draft.text != oldValue.text, !draft.text.isEmpty { frontPage = nil }
             if draft.links != oldValue.links || draft.links.map(draft.inspectionOptions(for:)) != oldValue.links.map(oldValue.inspectionOptions(for:)) {
-                list.update(links: draft.links, options: draft.inspectionOptions(for:))
+                updateList()
                 scheduleChecks()
             }
         }
@@ -35,7 +35,12 @@ final class NewDownloadModel: Identifiable {
         draft = NewDownloadDraft(text: text, folder: folder)
         self.list = list
         self.inspect = inspect
-        list.update(links: draft.links, options: draft.inspectionOptions(for:))
+        self.signIn = signIn
+        updateList()
+    }
+
+    private func updateList() {
+        list.update(link: draft.links.first, options: draft.links.first.map(draft.inspectionOptions(for:)) ?? RequestOptions())
     }
 
     private(set) var frontPage: FrontPageState?
@@ -59,7 +64,7 @@ final class NewDownloadModel: Identifiable {
 
     func useClipboard(_ text: String?) -> Bool {
         guard let link = ClipboardLink.first(in: text) else { return false }
-        draft.append(link.absoluteString)
+        draft.replace(with: link.absoluteString)
         frontPage = nil
         return true
     }
@@ -116,8 +121,8 @@ final class NewDownloadModel: Identifiable {
         return false
     }
 
-    func append(_ more: String) {
-        draft.append(more)
+    func replace(with link: String) {
+        draft.replace(with: link)
     }
 
     func analyze(_ page: SentPage) {
@@ -126,7 +131,7 @@ final class NewDownloadModel: Identifiable {
         list.send(page)
     }
 
-    /// Checks every link that needs it, now.
+    /// Checks the link if it needs it, now.
     func checkLinks() {
         pending?.cancel()
         for url in draft.linksToCheck() {

@@ -58,21 +58,72 @@ struct LinkListTests {
         }
     }
 
-    @Test func eachLinkIsAnalysedOnItsOwnAndItsVideosOrFileJoinOneListInTheOrderTheLinksWereAdded() async throws {
+    @Test func aPagesVideosAreListedOneAfterAnother() async throws {
         let analyses = Analyses()
         let list = list(analyses)
 
-        list.update(links: [pageA, file, pageB])
-        #expect(describe(list) == ["checking a.example", "checking files.example", "checking b.example"])
+        list.update(link: pageA)
+        #expect(describe(list) == ["checking a.example"])
 
-        list.checked(pageB, .inspected(Self.webPage))
-        list.checked(file, .inspected(Self.pdf))
         list.checked(pageA, .inspected(Self.webPage))
-        analyses.finish(pageB, with: .found([three]))
+        #expect(describe(list) == ["page a.example looking"])
         analyses.finish(pageA, with: .found([one, two]))
 
-        try await waitUntil { describe(list) == ["video One", "video Two", "file report.pdf", "video Three"] }
-        #expect(analyses.asked.map(\.url) == [pageB, pageA])
+        try await waitUntil { describe(list) == ["video One", "video Two"] }
+        #expect(analyses.asked.map(\.url) == [pageA])
+    }
+
+    @Test func aSentPageReplacesWhatTheListHeldAndStopsItsAnalysis() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+        list.checked(pageA, .inspected(Self.webPage))
+        let sent = SentPage(url: pageB, title: "Holiday", browser: "Dia")
+
+        list.send(sent)
+        analyses.finish(pageA, with: .found([one, two]))
+        analyses.finish(pageB, with: .found([three]))
+
+        try await waitUntil { describe(list) == ["video Three"] }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(describe(list) == ["video Three"])
+        #expect(list.positionLine == "1 of 1")
+    }
+
+    @Test func aNewLinkReplacesTheOldOneAndItsName() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: file)
+        list.checked(file, .inspected(Self.pdf))
+        let report = list.items[0].id
+        list.rename(report, "Q3.pdf")
+
+        list.update(link: pageA)
+        #expect(describe(list) == ["checking a.example"])
+        list.update(link: file)
+        list.checked(file, .inspected(Self.pdf))
+
+        #expect(list.name(of: list.items[0].id) == nil)
+    }
+
+    @Test func noLinkEmptiesTheList() async throws {
+        let analyses = Analyses()
+        let list = try await threeVideos(analyses)
+
+        list.update(link: nil)
+
+        #expect(list.items.isEmpty)
+    }
+
+    @Test func aPageWithNoVideoIsAnItemThatSaysSo() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+        list.checked(pageA, .inspected(Self.webPage))
+
+        analyses.finish(pageA, with: .found([]))
+
+        try await waitUntil { describe(list) == ["page a.example nothingFound"] }
     }
 
     @Test func aPageIsAnalysedWithTheCookiesAndUserAgentOfItsLink() async throws {
@@ -82,81 +133,15 @@ struct LinkListTests {
         options.cookies = [Cookie(name: "session", value: "abc")]
         options.userAgent = "Mozilla/5.0 Arc"
 
-        list.update(links: [pageA]) { _ in options }
+        list.update(link: pageA, options: options)
         list.checked(pageA, .inspected(Self.webPage))
 
         #expect(analyses.asked == [SentPage(url: pageA, cookies: options.cookies, userAgent: "Mozilla/5.0 Arc")])
     }
 
-    @Test func atMostFourPagesAreAnalysedAtATime() async throws {
-        let analyses = Analyses()
-        let list = list(analyses)
-        let pages = (1...6).map { URL(string: "https://p\($0).example/watch")! }
-
-        list.update(links: pages)
-        for page in pages { list.checked(page, .inspected(Self.webPage)) }
-        #expect(analyses.asked.map(\.url) == Array(pages.prefix(4)))
-        #expect(describe(list)[5] == "page p6.example looking")
-
-        analyses.finish(pages[1], with: .found([two]))
-        try await waitUntil { analyses.asked.count == 5 }
-        #expect(analyses.asked.last?.url == pages[4])
-    }
-
-    @Test func aPageSentFromTheBrowserJoinsTheOpenListAfterWhatIsThere() async throws {
-        let analyses = Analyses()
-        let list = list(analyses)
-        list.update(links: [file])
-        list.checked(file, .inspected(Self.pdf))
-        let sent = SentPage(url: pageA, title: "Holiday", browser: "Dia")
-
-        list.send(sent)
-        list.update(links: [file, pageA])
-
-        #expect(analyses.asked == [sent])
-        #expect(describe(list) == ["file report.pdf", "page a.example looking"])
-    }
-
-    @Test func aSentPageIsShownFirstAndTheEarlierItemsAreBehindIt() async throws {
-        let analyses = Analyses()
-        let list = try await threeItems(analyses)
-        list.show(0)
-
-        list.send(SentPage(url: pageB, browser: "Dia"))
-        #expect(list.positionLine == "4 of 4")
-        analyses.finish(pageB, with: .found([three]))
-        try await waitUntil { describe(list).last == "video Three" }
-
-        #expect(list.positionLine == "4 of 4")
-        list.previous()
-        #expect(list.positionLine == "3 of 4")
-    }
-
-    @Test func aLinkSentFromTheBrowserIsShownFirst() async throws {
-        let analyses = Analyses()
-        let list = try await threeItems(analyses)
-        list.show(0)
-
-        list.update(links: [pageA, file, pageB])
-        list.showLink(pageB)
-
-        #expect(list.positionLine == "4 of 4")
-    }
-
-    @Test func aLinkTakenOutOfTheFieldLeavesTheList() async throws {
-        let analyses = Analyses()
-        let list = list(analyses)
-        list.update(links: [pageA, file])
-        list.checked(file, .inspected(Self.pdf))
-
-        list.update(links: [file])
-
-        #expect(describe(list) == ["file report.pdf"])
-    }
-
     @Test func nextAndPreviousMoveThroughTheItemsAndThePositionReadsLikeTwoOfThree() async throws {
         let analyses = Analyses()
-        let list = try await threeItems(analyses)
+        let list = try await threeVideos(analyses)
 
         #expect(list.positionLine == "1 of 3")
         list.previous()
@@ -171,7 +156,7 @@ struct LinkListTests {
 
     @Test func eachVideoKeepsItsOwnVersionIncludeAndFileNameWhileMoving() async throws {
         let analyses = Analyses()
-        let list = try await threeItems(analyses)
+        let list = try await threeVideos(analyses)
         let first = try #require(list.current)
 
         list.pick(small)
@@ -191,7 +176,7 @@ struct LinkListTests {
 
     @Test func aVideosFileNameGoesWithTheVersionItWasGivenFor() async throws {
         let analyses = Analyses()
-        let list = try await threeItems(analyses)
+        let list = try await threeVideos(analyses)
         let first = list.items[0].id
 
         list.rename(first, "  Beach  ")
@@ -201,71 +186,28 @@ struct LinkListTests {
         #expect(list.name(of: first) == nil)
     }
 
-    @Test func aNameLeavesWithItsLink() async throws {
-        let analyses = Analyses()
-        let list = try await threeItems(analyses)
-        let report = list.items[2].id
-        list.rename(report, "Q3.pdf")
-
-        list.update(links: [pageA])
-        list.update(links: [pageA, file])
-        list.checked(file, .inspected(Self.pdf))
-
-        #expect(list.name(of: list.items[2].id) == nil)
-        #expect(list.name(of: report) == nil)
-    }
-
     @Test func downloadAddsEveryIncludedItemWithItsOwnChoices() async throws {
         let analyses = Analyses()
-        let list = try await threeItems(analyses)
-        let (first, second, report) = (list.items[0].id, list.items[1].id, list.items[2].id)
-        #expect(list.downloads == [.file(file, name: nil)])
+        let list = try await threeVideos(analyses)
+        let (first, second, third) = (list.items[0].id, list.items[1].id, list.items[2].id)
+        #expect(list.downloads.isEmpty)
 
         list.include(first, true)
         list.pick(m4a)
         list.include(second, true)
-        list.rename(report, "Q3 report.pdf")
+        list.include(third, true)
+        list.rename(third, "Harbour")
 
         let page = SentPage(url: pageA, cookies: [], userAgent: nil)
         #expect(list.downloads == [
             .media(page: page, candidate: one, version: m4a, name: nil),
             .media(page: page, candidate: two, version: two.versions[0], name: nil),
-            .file(file, name: "Q3 report.pdf"),
+            .media(page: page, candidate: three, version: three.versions[0], name: "Harbour"),
         ])
         #expect(list.includedLine == "3 of 3 included")
 
-        list.include(report, false)
+        list.include(third, false)
         #expect(list.downloads.count == 2)
-    }
-
-    @Test func downloadWaitsOnlyForIncludedItemsStillLooking() async throws {
-        let analyses = Analyses()
-        let list = list(analyses)
-        list.update(links: [file, pageA])
-        list.checked(file, .inspected(Self.pdf))
-        #expect(list.isWaiting)
-
-        let looking = list.items[1].id
-        list.include(looking, false)
-
-        #expect(!list.isWaiting)
-        #expect(list.downloads == [.file(file, name: nil)])
-    }
-
-    @Test func aPageWithNoVideoIsAnItemThatSaysSoStartsUntickedAndDownloadsAsAFileWhenTicked() async throws {
-        let analyses = Analyses()
-        let list = list(analyses)
-        list.update(links: [pageA, file])
-        list.checked(file, .inspected(Self.pdf))
-        list.checked(pageA, .inspected(Self.webPage))
-
-        analyses.finish(pageA, with: .found([]))
-        try await waitUntil { describe(list).first == "page a.example nothingFound" }
-
-        let page = list.items[0].id
-        #expect(!list.isIncluded(page))
-        list.include(page, true)
-        #expect(list.downloads == [.file(pageA, name: nil), .file(file, name: nil)])
     }
 
     @Test func aPageThatTurnsOutToBeAFileBecomesAFileItem() async throws {
@@ -280,9 +222,42 @@ struct LinkListTests {
         #expect(list.downloads == [.file(file, name: nil)])
     }
 
+    @Test func aLoneFileDownloadsWithoutTicking() {
+        let list = list(Analyses())
+        list.update(link: file)
+        list.checked(file, .inspected(Self.pdf))
+
+        #expect(list.downloads == [.file(file, name: nil)])
+    }
+
+    @Test func aLonePagesOnlyVideoDownloadsWithoutTicking() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageB)
+        list.checked(pageB, .inspected(Self.webPage))
+        #expect(list.isWaiting)
+
+        analyses.finish(pageB, with: .found([three]))
+        try await waitUntil { describe(list) == ["video Three"] }
+
+        #expect(list.downloads.map(\.isMedia) == [true])
+    }
+
+    @Test func aLonePageWithNoVideoStaysOff() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+        list.checked(pageA, .inspected(Self.webPage))
+
+        analyses.finish(pageA, with: .found([]))
+        try await waitUntil { describe(list) == ["page a.example nothingFound"] }
+
+        #expect(list.downloads.isEmpty)
+    }
+
     @Test func clearingEmptiesTheList() async throws {
         let analyses = Analyses()
-        let list = try await threeItems(analyses)
+        let list = try await threeVideos(analyses)
 
         list.clear()
 
@@ -290,17 +265,20 @@ struct LinkListTests {
         #expect(list.downloads.isEmpty)
     }
 
-    private func threeItems(_ analyses: Analyses) async throws -> LinkList {
+    private func threeVideos(_ analyses: Analyses) async throws -> LinkList {
         let list = list(analyses)
-        list.update(links: [pageA, file])
+        list.update(link: pageA)
         list.checked(pageA, .inspected(Self.webPage))
-        list.checked(file, .inspected(Self.pdf))
-        analyses.finish(pageA, with: .found([one, two]))
-        try await waitUntil { list.items.count == 3 && describe(list)[0] == "video One" }
+        analyses.finish(pageA, with: .found([one, two, three]))
+        try await waitUntil { describe(list) == ["video One", "video Two", "video Three"] }
         return list
     }
 
     private func waitUntil(_ condition: () -> Bool) async throws {
         while !condition() { try await Task.sleep(for: .milliseconds(10)) }
     }
+}
+
+private extension LinkDownload {
+    var isMedia: Bool { if case .media = self { true } else { false } }
 }

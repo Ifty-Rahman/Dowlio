@@ -31,7 +31,6 @@ public final class LinkList {
     private enum State {
         case checking
         case file(URL, NewDownloadDraft.Check?)
-        case waiting(SentPageModel)
         case page(SentPageModel)
     }
 
@@ -40,14 +39,12 @@ public final class LinkList {
         let url: URL
         var options: RequestOptions
         var state: State
-        var included = true
+        var included = false
         var pageIncluded = false
         var analysis: Task<Void, Never>?
     }
 
-    public static let analysedAtOnce = 4
-
-    private var entries: [Entry] = []
+    private var entry: Entry?
     private var nextID = 0
     private var currentID: LinkItem.ID?
     private var lastPosition = 0
@@ -69,55 +66,47 @@ public final class LinkList {
         self.preference = preference
     }
 
-    public func update(links: [URL], options: (URL) -> RequestOptions = { _ in RequestOptions() }) {
-        for entry in entries where !links.contains(entry.url) { stop(entry) }
-        let kept = entries.filter { links.contains($0.url) }
-        names = names.filter { name in kept.contains { $0.id == name.key.entry } }
-        entries = links.map { url in
-            if var entry = kept.first(where: { $0.url == url }) {
-                entry.options = options(url)
-                return entry
-            }
-            return makeEntry(url, options: options(url), state: .checking)
+    public func update(link: URL?, options: RequestOptions = RequestOptions()) {
+        guard let link else { return clear() }
+        if entry?.url == link {
+            entry?.options = options
+            return
         }
-        startWaiting()
+        replace(with: makeEntry(link, options: options, state: .checking))
     }
 
     public func checked(_ url: URL, _ check: NewDownloadDraft.Check) {
-        guard let index = entries.firstIndex(where: { $0.url == url }) else { return }
-        switch entries[index].state {
+        guard let current = entry, current.url == url else { return }
+        switch current.state {
         case .checking, .file:
             if case .inspected(let inspection) = check, inspection.isWebPage {
-                let options = entries[index].options
-                entries[index].state = .waiting(makeModel(SentPage(url: url, cookies: options.cookies, userAgent: options.userAgent)))
-                startWaiting()
+                let page = SentPage(url: url, cookies: current.options.cookies, userAgent: current.options.userAgent)
+                startAnalysing(makeModel(page))
             } else {
-                entries[index].state = .file(url, check)
+                entry?.state = .file(url, check)
             }
-        case .waiting, .page:
+        case .page:
             break
         }
     }
 
+    /// Analyses a page sent from the browser in place of whatever the list held.
     public func send(_ page: SentPage) {
-        if let index = entries.firstIndex(where: { $0.url == page.url }) {
-            stop(entries[index])
-            entries[index].analysis = nil
-            entries[index].state = .waiting(makeModel(page))
-            entries[index].included = true
-        } else {
-            entries.append(makeEntry(page.url, options: RequestOptions(), state: .waiting(makeModel(page))))
-        }
-        showLink(page.url)
-        startWaiting()
+        replace(with: makeEntry(page.url, options: RequestOptions(), state: .checking))
+        startAnalysing(makeModel(page))
     }
 
     public func clear() {
-        entries.forEach(stop)
-        entries = []
+        if let entry { stop(entry) }
+        entry = nil
         names = [:]
         currentID = nil
         lastPosition = 0
+    }
+
+    private func replace(with new: Entry) {
+        clear()
+        entry = new
     }
 
     private func makeEntry(_ url: URL, options: RequestOptions, state: State) -> Entry {
@@ -134,47 +123,36 @@ public final class LinkList {
         if case .page(let model) = entry.state { model.stop() }
     }
 
-    private var analysing: Int {
-        entries.filter { $0.analysis != nil }.count
-    }
-
-    private func startWaiting() {
-        for index in entries.indices where analysing < Self.analysedAtOnce {
-            guard case .waiting(let model) = entries[index].state else { continue }
-            let id = entries[index].id
-            let updates = analyze(model.draft.page)
-            entries[index].state = .page(model)
-            entries[index].analysis = Task { [weak self] in
-                let file = await model.follow(updates)
-                guard !Task.isCancelled else { return }
-                self?.finished(id, handingBack: file)
-            }
+    private func startAnalysing(_ model: SentPageModel) {
+        guard let id = entry?.id else { return }
+        let updates = analyze(model.draft.page)
+        entry?.state = .page(model)
+        entry?.analysis = Task { [weak self] in
+            let file = await model.follow(updates)
+            guard !Task.isCancelled else { return }
+            self?.finished(id, handingBack: file)
         }
     }
 
     private func finished(_ id: Int, handingBack file: URL?) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        entries[index].analysis = nil
-        if let file { entries[index].state = .file(file, nil) }
-        startWaiting()
+        guard entry?.id == id else { return }
+        entry?.analysis = nil
+        if let file { entry?.state = .file(file, nil) }
     }
 
     public var items: [LinkItem] {
-        entries.flatMap { entry -> [LinkItem] in
-            switch entry.state {
-            case .checking:
-                return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .checking(entry.url))]
-            case .waiting(let model):
+        guard let entry else { return [] }
+        switch entry.state {
+        case .checking:
+            return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .checking(entry.url))]
+        case .file(let url, let check):
+            return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .file(url, check))]
+        case .page(let model):
+            switch model.draft.phase {
+            case .found, .restricted:
+                return model.draft.candidates.indices.map { LinkItem(id: .init(entry: entry.id, candidate: $0), kind: .video(model, $0)) }
+            case .looking, .playing, .nothingFound, .needsSignIn, .blocked:
                 return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .page(model))]
-            case .file(let url, let check):
-                return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .file(url, check))]
-            case .page(let model):
-                switch model.draft.phase {
-                case .found, .restricted:
-                    return model.draft.candidates.indices.map { LinkItem(id: .init(entry: entry.id, candidate: $0), kind: .video(model, $0)) }
-                case .looking, .playing, .nothingFound, .needsSignIn, .blocked:
-                    return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .page(model))]
-                }
             }
         }
     }
@@ -207,7 +185,7 @@ public final class LinkList {
     }
 
     public func showLink(_ url: URL) {
-        guard let entry = entries.first(where: { $0.url == url }) else { return }
+        guard let entry, entry.url == url else { return }
         currentID = LinkItem.ID(entry: entry.id, candidate: nil)
     }
 
@@ -226,11 +204,12 @@ public final class LinkList {
     }
 
     public func isIncluded(_ id: LinkItem.ID) -> Bool {
-        guard let entry = entries.first(where: { $0.id == id.entry }) else { return false }
+        guard let entry, entry.id == id.entry else { return false }
+        if items.count == 1 { return isDownloadedAlone(entry, candidate: id.candidate) }
         switch entry.state {
         case .checking, .file:
             return entry.included
-        case .waiting(let model), .page(let model):
+        case .page(let model):
             if let candidate = id.candidate {
                 let restricted = model.draft.candidates.indices.contains(candidate) && model.draft.candidates[candidate].restriction != nil
                 return entry.included && !restricted && model.draft.isIncluded(candidate)
@@ -239,19 +218,29 @@ public final class LinkList {
         }
     }
 
-    public func include(_ id: LinkItem.ID, _ included: Bool) {
-        guard let index = entries.firstIndex(where: { $0.id == id.entry }) else { return }
-        switch entries[index].state {
+    private func isDownloadedAlone(_ entry: Entry, candidate: Int?) -> Bool {
+        switch entry.state {
         case .checking, .file:
-            entries[index].included = included
-        case .waiting(let model), .page(let model):
+            return true
+        case .page(let model):
+            guard let candidate else { return model.draft.phase.isLooking }
+            return model.draft.candidates.indices.contains(candidate) && model.draft.candidates[candidate].restriction == nil
+        }
+    }
+
+    public func include(_ id: LinkItem.ID, _ included: Bool) {
+        guard let state = entry?.state, entry?.id == id.entry else { return }
+        switch state {
+        case .checking, .file:
+            entry?.included = included
+        case .page(let model):
             if let candidate = id.candidate {
-                if included { entries[index].included = true }
+                if included { entry?.included = true }
                 model.include(candidate, included)
             } else if model.draft.phase.isLooking {
-                entries[index].included = included
+                entry?.included = included
             } else {
-                entries[index].pageIncluded = included
+                entry?.pageIncluded = included
             }
         }
     }
@@ -297,12 +286,7 @@ public final class LinkList {
     }
 
     public var hasPages: Bool {
-        entries.contains {
-            switch $0.state {
-            case .page, .waiting: true
-            case .checking, .file: false
-            }
-        }
+        if case .page = entry?.state { true } else { false }
     }
 
     public var includedLine: String {

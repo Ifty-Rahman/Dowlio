@@ -152,12 +152,21 @@ public struct NewDownloadDraft: Equatable, Sendable {
         lines = PastedLinks.parse(text)
     }
 
-    public var links: [URL] { lines.compactMap(\.url) }
+    /// The one link the draft downloads. Empty when the field has no link, or more than one.
+    public var links: [URL] {
+        let found = lines.compactMap(\.url)
+        return found.count == 1 ? found : []
+    }
 
-    public mutating func append(_ more: String) {
-        guard !more.isEmpty else { return }
-        let current = text.trimmingCharacters(in: .newlines)
-        text = current.isEmpty ? more : "\(current)\n\(more)"
+    public var hasSeveralLinks: Bool {
+        lines.compactMap(\.url).count > 1
+    }
+
+    /// Puts `link` in the field in place of what was there.
+    public mutating func replace(with link: String) {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        text = trimmed
     }
 
     public mutating func addSent(_ link: URL, referrer page: URL?, cookies: [Cookie] = [], browser: String? = nil, userAgent agent: String? = nil) {
@@ -165,8 +174,8 @@ public struct NewDownloadDraft: Equatable, Sendable {
         if userAgent.trimmingCharacters(in: .whitespaces).isEmpty, let agent { userAgent = agent }
         if !cookies.isEmpty { cookiesByLink[link] = cookies }
         originByLink[link] = DownloadOrigin(kind: .sent, browser: browser)
-        guard !links.contains(link) else { return }
-        append(link.absoluteString)
+        guard links != [link] else { return }
+        replace(with: link.absoluteString)
     }
 
     public mutating func addSignIn(for link: URL, cookies: [Cookie], userAgent agent: String?) {
@@ -178,7 +187,7 @@ public struct NewDownloadDraft: Equatable, Sendable {
         if referrer.trimmingCharacters(in: .whitespaces).isEmpty { referrer = other.referrer }
         cookiesByLink.merge(other.cookiesByLink) { _, new in new }
         originByLink.merge(other.originByLink) { _, new in new }
-        append(other.text)
+        replace(with: other.text)
     }
 
     public func origin(for url: URL) -> DownloadOrigin? {
@@ -206,8 +215,9 @@ public struct NewDownloadDraft: Equatable, Sendable {
 
     /// Why Download is off, once the field has text.
     public var explanation: String? {
+        if hasSeveralLinks { return "Dowlio adds one link at a time. Remove the other links." }
         guard links.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return "Paste an http or https link, one per line."
+        return "Paste an http or https link."
     }
 
     public func check(for url: URL) -> Check? {
@@ -224,7 +234,7 @@ public struct NewDownloadDraft: Equatable, Sendable {
         return options
     }
 
-    /// What Download adds each link with.
+    /// What Download adds the link with.
     public var options: RequestOptions {
         var options = inspectionOptions
         options.connections = connections

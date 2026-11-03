@@ -280,11 +280,11 @@ final class AppModel {
     }
 
     /// Shows the New Download sheet with `text` in its link field, opening the window first. With
-    /// the sheet already up, the links join it.
+    /// the sheet already up, `text` takes the field's place.
     func requestNewDownload(_ text: String = "") {
         showLibraryWindow()
         if let newDownload {
-            newDownload.append(text)
+            newDownload.replace(with: text)
         } else {
             newDownload = makeNewDownload(text)
         }
