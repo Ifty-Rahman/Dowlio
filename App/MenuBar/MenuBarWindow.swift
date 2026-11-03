@@ -49,10 +49,7 @@ final class MenuBarWindow {
 
     private func place() {
         guard let content = panel.contentView else { return }
-        let size = content.fittingSize
-        let screen = NSScreen.screens.first { $0.frame.contains(anchor.origin) }?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let x = min(max(anchor.midX - size.width / 2, screen.minX + 8), screen.maxX - size.width - 8)
-        panel.setFrame(NSRect(x: x, y: anchor.minY - Self.gap - size.height, width: size.width, height: size.height), display: true)
+        panel.setFrame(MenuBarPlacement.frame(size: content.fittingSize, under: anchor, gap: Self.gap), display: true)
         panel.invalidateShadow()
     }
 }
