@@ -201,8 +201,9 @@ export function fakeChrome({ stored = {}, id = "abcdefghijklmnopabcdefghijklmnop
     },
     cookies: {
       jar: {},
-      async getAll({ url }) {
-        return chrome.cookies.jar[new URL(url).origin] ?? [];
+      async getAll({ url, partitionKey }) {
+        const found = chrome.cookies.jar[new URL(url).origin] ?? [];
+        return partitionKey && !partitionKey.topLevelSite ? found : found.filter((cookie) => !cookie.partitionKey);
       },
     },
     notifications: {

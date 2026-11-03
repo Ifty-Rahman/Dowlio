@@ -65,6 +65,32 @@ test("a site with no cookies sends none", async () => {
   assert.equal(sent(socket, "catch.offer")[0].cookies, undefined);
 });
 
+test("a catch carries the site's partitioned cookies, such as a Cloudflare pass, but not ones kept for other sites", async () => {
+  const { chrome, socket } = await connected();
+  chrome.cookies.jar["https://www.guarded.net"] = [
+    { name: "cf_clearance", value: "old", domain: ".guarded.net" },
+    { name: "cf_clearance", value: "new", domain: ".guarded.net", partitionKey: { topLevelSite: "https://guarded.net", hasCrossSiteAncestor: false } },
+    { name: "embed", value: "elsewhere", domain: ".guarded.net", partitionKey: { topLevelSite: "https://other.org", hasCrossSiteAncestor: true } },
+  ];
+
+  await chrome.downloads.create(download("https://www.guarded.net/download.php?id=1"));
+
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "cf_clearance", value: "old" }, { name: "cf_clearance", value: "new" }]);
+});
+
+test("a browser that can't read partitioned cookies still sends the others", async () => {
+  const { chrome, socket } = await connected();
+  const getAll = chrome.cookies.getAll;
+  chrome.cookies.getAll = async (details) => {
+    if (details.partitionKey) throw new Error("Unexpected property: 'partitionKey'.");
+    return getAll(details);
+  };
+
+  await chrome.downloads.create(download("https://example.com/a.pdf"));
+
+  assert.deepEqual(sent(socket, "catch.offer")[0].cookies, [{ name: "session", value: "abc" }]);
+});
+
 test("a huge cookie jar is trimmed so the message stays small", async () => {
   const { chrome, socket } = await connected();
   chrome.cookies.jar["https://big.example"] = Array.from({ length: 60 }, (_, index) => ({ name: `c${index}`, value: "x".repeat(3000) }));
