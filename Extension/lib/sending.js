@@ -1,5 +1,6 @@
 import { browserName } from "./browser.js";
 import { scanPage } from "./scan.js";
+import { showToast, TOAST_ID, TOAST_SHOWN_FOR } from "./toast.js";
 
 export const MENU_ITEM = "send-to-dowlio";
 export const PAGE_MENU_ITEM = "send-page-to-dowlio";
@@ -15,12 +16,18 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     chrome.contextMenus.create({ id: PAGE_MENU_ITEM, title: "Send to Dowlio", contexts: ["page"] });
   });
 
-  function notify(title, message) {
+  async function notify(tab, title, message) {
+    if (typeof tab?.id === "number") {
+      const shown = await Promise.resolve()
+        .then(() => chrome.scripting.executeScript({ target: { tabId: tab.id }, func: showToast, args: [title, message, TOAST_ID, TOAST_SHOWN_FOR] }))
+        .then(() => true, () => false);
+      if (shown) return;
+    }
     chrome.notifications.create("", { type: "basic", iconUrl: "icons/128.png", title, message });
   }
 
-  function noAnswer(what) {
-    notify("Dowlio didn't answer", `Check that Dowlio is open, then send the ${what} again.`);
+  function noAnswer(tab, what) {
+    return notify(tab, "Dowlio didn't answer", `Check that Dowlio is open, then send the ${what} again.`);
   }
 
   async function reachable() {
@@ -52,13 +59,13 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
   }
 
   async function sendLink(info, tab) {
-    if (!(await reachable())) return notify("Dowlio isn't running", "Open Dowlio to download with it.");
+    if (!(await reachable())) return notify(tab, "Dowlio isn't running", "Open Dowlio to download with it.");
     const receipt = await link.request(
       "link.send",
       { url: info.linkUrl, referrer: info.pageUrl ?? tab?.url, browser: browserName(navigator), userAgent: navigator?.userAgent, cookies: await link.cookiesFor?.(info.linkUrl) },
       RECEIPT_TIMEOUT,
     );
-    if (receipt?.type !== "link.received") noAnswer("link");
+    if (receipt?.type !== "link.received") await noAnswer(tab, "link");
   }
 
   const TIMED_OUT = Symbol("timed out");
@@ -100,7 +107,7 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
       await deliverPage(tab);
     } catch {
       await noteStep(tab.url, "error");
-      notify("Dowlio couldn't send this page", "Reload the page, then send it again.");
+      await notify(tab, "Dowlio couldn't send this page", "Reload the page, then send it again.");
     }
   }
 
@@ -122,7 +129,7 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     await noteStep(tab.url, "started");
     if (!(await reachable())) {
       await noteStep(tab.url, "notConnected");
-      return notify("Dowlio isn't running", "Open Dowlio to send this page.");
+      return notify(tab, "Dowlio isn't running", "Open Dowlio to send this page.");
     }
     const found = await scan(tab.id);
     await noteStep(tab.url, found.timedOut ? "scanTimedOut" : "scanned");
@@ -131,7 +138,7 @@ export function startSending({ chrome, navigator, link, watching, timers = globa
     const receipt = await sending;
     if (receipt?.type !== "page.received") {
       await noteStep(tab.url, "noAnswer");
-      return noAnswer("page");
+      return noAnswer(tab, "page");
     }
     await noteStep(tab.url, "received");
   }

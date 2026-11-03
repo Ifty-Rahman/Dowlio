@@ -17,6 +17,8 @@ async function worker({ connect = true } = {}) {
 }
 
 const menuClick = { menuItemId: "send-to-dowlio", linkUrl: "https://cdn.example.com/files/Report.pdf", pageUrl: "https://example.com/reports" };
+const toasts = (chrome) =>
+  chrome.scripting.calls.filter((call) => call.func?.name === "showToast").map((call) => ({ tabId: call.target.tabId, title: call.args[0], message: call.args[1] }));
 const sends = (socket) => socket.sent.filter((message) => message.type === "link.send");
 
 test("choosing Send to Dowlio hands the link and its page to Dowlio", async () => {
@@ -31,6 +33,7 @@ test("choosing Send to Dowlio hands the link and its page to Dowlio", async () =
   assert.equal(sent.userAgent, "Mozilla/5.0 Arc");
   assert.deepEqual(chrome.downloads.calls, []);
   assert.deepEqual(chrome.notifications.shown, []);
+  assert.deepEqual(toasts(chrome), []);
 });
 
 test("with Dowlio not running, the menu says to open Dowlio and the browser downloads nothing", async () => {
@@ -40,11 +43,39 @@ test("with Dowlio not running, the menu says to open Dowlio and the browser down
   await flush();
   await timers.advance(3000);
   await clicked;
+  await flush();
 
   assert.equal(net.last().sent.filter((message) => message.type === "link.send").length, 0);
   assert.deepEqual(chrome.downloads.calls, []);
+  assert.deepEqual(toasts(chrome), [{ tabId: 3, title: "Dowlio isn't running", message: "Open Dowlio to download with it." }]);
+  assert.deepEqual(chrome.notifications.shown, []);
+});
+
+test("with Dowlio not running on a page that can't show a toast, a notification says to open Dowlio", async () => {
+  const { chrome, timers } = await worker({ connect: false });
+  chrome.scripting.fails = true;
+
+  const clicked = chrome.contextMenus.click(menuClick, { id: 3 });
+  await flush();
+  await timers.advance(3000);
+  await clicked;
+  await flush();
+
   assert.equal(chrome.notifications.shown.length, 1);
   assert.equal(chrome.notifications.shown[0].message, "Open Dowlio to download with it.");
+});
+
+test("with Dowlio not running and no tab, a notification says to open Dowlio", async () => {
+  const { chrome, timers } = await worker({ connect: false });
+
+  const clicked = chrome.contextMenus.click(menuClick, undefined);
+  await flush();
+  await timers.advance(3000);
+  await clicked;
+  await flush();
+
+  assert.deepEqual(toasts(chrome), []);
+  assert.equal(chrome.notifications.shown[0]?.message, "Open Dowlio to download with it.");
 });
 
 test("a link Dowlio never confirms says Dowlio didn't answer", async () => {
@@ -55,8 +86,7 @@ test("a link Dowlio never confirms says Dowlio didn't answer", async () => {
   await flush();
 
   assert.equal(sends(socket).length, 1);
-  assert.equal(chrome.notifications.shown.length, 1);
-  assert.equal(chrome.notifications.shown[0].title, "Dowlio didn't answer");
+  assert.deepEqual(toasts(chrome).map(({ title }) => title), ["Dowlio didn't answer"]);
 });
 
 test("a link Dowlio confirms shows nothing more", async () => {
@@ -68,4 +98,5 @@ test("a link Dowlio confirms shows nothing more", async () => {
   await flush();
 
   assert.deepEqual(chrome.notifications.shown, []);
+  assert.deepEqual(toasts(chrome), []);
 });

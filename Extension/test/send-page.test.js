@@ -19,6 +19,8 @@ async function worker({ connect = true } = {}) {
 
 const tab = { id: 7, url: "https://www.example.com/watch?v=1", title: "Holiday clip - Example" };
 const pageClick = { menuItemId: "send-page-to-dowlio", pageUrl: tab.url };
+const toasts = (chrome) =>
+  chrome.scripting.calls.filter((call) => call.func?.name === "showToast").map((call) => ({ tabId: call.target.tabId, title: call.args[0], message: call.args[1] }));
 const sends = (socket) => socket.sent.filter((message) => message.type === "page.send");
 const settle = async () => {
   for (let turn = 0; turn < 5; turn += 1) await flush();
@@ -107,9 +109,12 @@ test("with Dowlio not running, sending a page says to open Dowlio and scans noth
   await settle();
 
   assert.equal(net.last().sent.filter((message) => message.type === "page.send").length, 0);
-  assert.deepEqual(chrome.scripting.calls, []);
-  assert.equal(chrome.notifications.shown.length, 2);
-  assert.equal(chrome.notifications.shown[0].message, "Open Dowlio to send this page.");
+  assert.deepEqual(chrome.scripting.calls.filter((call) => call.func?.name !== "showToast"), []);
+  assert.deepEqual(toasts(chrome), [
+    { tabId: 7, title: "Dowlio isn't running", message: "Open Dowlio to send this page." },
+    { tabId: 7, title: "Dowlio isn't running", message: "Open Dowlio to send this page." },
+  ]);
+  assert.deepEqual(chrome.notifications.shown, []);
 });
 
 test("a page Dowlio never confirms says Dowlio didn't answer", async () => {
@@ -121,7 +126,7 @@ test("a page Dowlio never confirms says Dowlio didn't answer", async () => {
   await flush();
 
   assert.equal(sends(socket).length, 1);
-  assert.equal(chrome.notifications.shown[0]?.title, "Dowlio didn't answer");
+  assert.deepEqual(toasts(chrome).map(({ title }) => title), ["Dowlio didn't answer"]);
 });
 
 test("a page Dowlio confirms shows nothing more", async () => {
