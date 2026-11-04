@@ -265,7 +265,7 @@ public enum MediaText {
     }
 
     public static func container(of version: Version) -> String {
-        if case .media(let media) = version.source { return media.fileExtension.uppercased() }
+        if case .media(let media) = version.source { return media.outputContainer == .webm ? "WebM" : media.fileExtension.uppercased() }
         let ext = version.source.url.pathExtension.uppercased()
         if !ext.isEmpty { return ext }
         return version.contentType?.split(separator: "/").last.map { $0.uppercased() } ?? "File"

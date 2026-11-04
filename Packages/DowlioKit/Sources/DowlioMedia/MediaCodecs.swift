@@ -5,6 +5,14 @@ enum MediaCodecs {
         codec.lowercased().hasPrefix("mp4a")
     }
 
+    static func joinsInAVFoundation(_ codec: String) -> Bool {
+        ["avc1", "avc3", "hvc1", "hev1", "mp4a", "ac-3", "ec-3"].contains { codec.lowercased().hasPrefix($0) }
+    }
+
+    static func isVP(_ codec: String) -> Bool {
+        ["vp8", "vp09", "vp9"].contains { codec.lowercased().hasPrefix($0) }
+    }
+
     static func needsWebM(_ codec: String) -> Bool {
         ["opus", "vorbis"].contains { codec.lowercased().hasPrefix($0) }
     }

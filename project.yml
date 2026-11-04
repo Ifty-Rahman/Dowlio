@@ -49,6 +49,21 @@ targets:
           rm -rf "$destination"
           mkdir -p "$destination"
           rsync -a --exclude /test --exclude /package.json --exclude /package-lock.json --exclude /node_modules --exclude .DS_Store "${SRCROOT}/Extension/" "$destination/"
+      - name: Bundle the ffmpeg helper
+        basedOnDependencyAnalysis: false
+        script: |
+          helper="${SRCROOT}/build/ffmpeg/ffmpeg"
+          destination="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          if [ "$CONFIGURATION" = "Release" ] && [ ! -x "$helper" ]; then
+            echo "error: build/ffmpeg/ffmpeg is missing. Run scripts/build-ffmpeg.sh first."
+            exit 1
+          fi
+          mkdir -p "$destination"
+          if [ -x "$helper" ]; then
+            cp -f "$helper" "$destination/ffmpeg"
+          else
+            echo "warning: build/ffmpeg/ffmpeg is missing, so this build can't join WebM. Run scripts/build-ffmpeg.sh."
+          fi
     info:
       path: App/Info.plist
       properties:

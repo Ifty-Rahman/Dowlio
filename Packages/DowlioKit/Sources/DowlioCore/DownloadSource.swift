@@ -56,7 +56,7 @@ public struct MediaSource: Codable, Equatable, Sendable {
 
     public var fileExtension: String { outputContainer.rawValue }
 
-    public var contentType: String { outputContainer.contentType }
+    public var contentType: String { isAudio && outputContainer == .webm ? "audio/webm" : outputContainer.contentType }
 
     public var extractsAudio: Bool {
         keepsAudioOnly && tracks.contains { $0.kind != .audio }
@@ -101,11 +101,13 @@ public struct MediaTrack: Codable, Equatable, Sendable {
     public var kind: Kind
     public var initialization: MediaFragment?
     public var fragments: [MediaFragment]
+    public var codecs: [String]?
 
-    public init(kind: Kind, initialization: MediaFragment? = nil, fragments: [MediaFragment]) {
+    public init(kind: Kind, initialization: MediaFragment? = nil, fragments: [MediaFragment], codecs: [String]? = nil) {
         self.kind = kind
         self.initialization = initialization
         self.fragments = fragments
+        self.codecs = codecs
     }
 }
 

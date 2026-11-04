@@ -14,20 +14,27 @@ struct LibraryFixture {
     let databaseURL: URL
     let folder: URL
 
-    init(trash: @escaping @Sendable (URL) throws -> Void = { _ in }) async throws {
+    let remux: @Sendable (RemuxRequest) async throws -> Void
+
+    init(
+        trash: @escaping @Sendable (URL) throws -> Void = { _ in },
+        remux: @escaping @Sendable (RemuxRequest) async throws -> Void = MediaRemuxer.remux
+    ) async throws {
         let base = try TestFiles.makeFolder()
         let folder = base.appending(path: "Downloads", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try await self.init(databaseURL: base.appending(path: "Dowlio.sqlite"), folder: folder, trash: trash)
+        try await self.init(databaseURL: base.appending(path: "Dowlio.sqlite"), folder: folder, trash: trash, remux: remux)
     }
 
     private init(
-        databaseURL: URL, folder: URL, trash: @escaping @Sendable (URL) throws -> Void, maximumFailures: Int? = nil
+        databaseURL: URL, folder: URL, trash: @escaping @Sendable (URL) throws -> Void,
+        remux: @escaping @Sendable (RemuxRequest) async throws -> Void, maximumFailures: Int? = nil
     ) async throws {
         self.databaseURL = databaseURL
         self.folder = folder
+        self.remux = remux
         var configuration = EngineConfiguration.fast
-        configuration.remux = MediaRemuxer.remux
+        configuration.remux = remux
         engine = DownloadEngine(configuration: configuration)
         library = Library(engine: engine, store: try DownloadStore(databaseAt: databaseURL), trash: trash)
         await library.start(maximumFailures: maximumFailures)
@@ -35,7 +42,7 @@ struct LibraryFixture {
 
     /// The same Mac after quitting. `maximumFailures` is the retry setting in force at launch.
     func relaunched(maximumFailures: Int? = nil) async throws -> LibraryFixture {
-        try await LibraryFixture(databaseURL: databaseURL, folder: folder, trash: { _ in }, maximumFailures: maximumFailures)
+        try await LibraryFixture(databaseURL: databaseURL, folder: folder, trash: { _ in }, remux: remux, maximumFailures: maximumFailures)
     }
 
     func add(_ url: URL, options: RequestOptions = RequestOptions(), startImmediately: Bool = true) async -> DownloadID {

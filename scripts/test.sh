@@ -3,6 +3,9 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
+"$ROOT/scripts/build-ffmpeg.sh"
+export DOWLIO_FFMPEG="$BUILD_DIR/ffmpeg/ffmpeg"
+
 log "Running DowlioKit tests"
 (cd "$ROOT/Packages/DowlioKit" && swift test --skip DowlioConnectTests)
 

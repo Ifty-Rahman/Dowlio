@@ -12,6 +12,7 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 "$ROOT/scripts/bootstrap.sh"
+"$ROOT/scripts/build-ffmpeg.sh"
 
 log "Building $APP_NAME (Release, arm64 and x86_64)"
 rm -rf "$BUILD_DIR/Release"
@@ -27,6 +28,8 @@ xcodebuild build \
   -quiet
 
 [ -d "$APP_PATH" ] || die "Build did not produce $APP_PATH"
+HELPER="$APP_PATH/Contents/Helpers/ffmpeg"
+[ -x "$HELPER" ] || die "Build did not embed the ffmpeg helper"
 
 IDENTITY="${SIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ]; then
@@ -53,11 +56,13 @@ sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloade
 sign "$SPARKLE/Versions/B/Autoupdate"
 sign "$SPARKLE/Versions/B/Updater.app"
 sign "$SPARKLE"
+sign --identifier "io.github.ifty-rahman.Dowlio.ffmpeg" "$HELPER"
 sign --entitlements "$ROOT/App/Dowlio.entitlements" "$APP_PATH"
 
 log "Verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 lipo -archs "$APP_PATH/Contents/MacOS/$APP_NAME" | sed 's/^/architectures: /'
+lipo -archs "$HELPER" | sed 's/^/ffmpeg architectures: /'
 
 BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 if [ -n "${RELEASE_TAG:-}" ] && [ "v$BUILT_VERSION" != "$RELEASE_TAG" ]; then
