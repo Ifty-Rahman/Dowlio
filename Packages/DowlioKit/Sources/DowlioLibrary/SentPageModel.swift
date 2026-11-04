@@ -7,14 +7,16 @@ public struct ToolConsent: Sendable {
     public var size: @Sendable () async -> Int64?
     public var install: @Sendable (_ keepsUpToDate: Bool?) async throws -> Void
     public var update: @Sendable () async throws -> Bool
+    public var isInstalled: @Sendable () async -> Bool
 
     public init(
         size: @escaping @Sendable () async -> Int64?, install: @escaping @Sendable (_ keepsUpToDate: Bool?) async throws -> Void,
-        update: @escaping @Sendable () async throws -> Bool = { false }
+        update: @escaping @Sendable () async throws -> Bool = { false }, isInstalled: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.size = size
         self.install = install
         self.update = update
+        self.isInstalled = isInstalled
     }
 }
 
@@ -85,6 +87,18 @@ public final class SentPageModel {
         listen(to: analyzePage(draft.page))
     }
 
+    public func tryWithYTDLP() {
+        draft.askForTools()
+        sizeToolsIfNeeded()
+    }
+
+    private func offerYTDLPIfNeeded() async {
+        guard draft.phase == .nothingFound, let tools else { return }
+        let installed = await tools.isInstalled()
+        guard draft.phase == .nothingFound else { return }
+        draft.setOffersYTDLP(!installed)
+    }
+
     public func declineTools() {
         draft.declineTools()
     }
@@ -137,6 +151,7 @@ public final class SentPageModel {
                 guard let self, !Task.isCancelled else { return nil }
                 if let file = draft.update(update) { return file }
                 sizeToolsIfNeeded()
+                await offerYTDLPIfNeeded()
             }
             return nil
         }

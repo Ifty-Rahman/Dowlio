@@ -20,6 +20,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         public var headers: [String: String]
         public var requestSizeLimit: Int64?
         public var fragmentURLs: [URL]
+        private var videoCodecIsNone = false
+        private var audioCodecIsNone = false
 
         enum CodingKeys: String, CodingKey {
             case id = "format_id"
@@ -61,8 +63,12 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             id = try values.decode(String.self, forKey: .id)
             url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
             height = try? values.decodeIfPresent(Int.self, forKey: .height)
-            videoCodec = Self.codec(try? values.decodeIfPresent(String.self, forKey: .videoCodec))
-            audioCodec = Self.codec(try? values.decodeIfPresent(String.self, forKey: .audioCodec))
+            let video = try? values.decodeIfPresent(String.self, forKey: .videoCodec)
+            let audio = try? values.decodeIfPresent(String.self, forKey: .audioCodec)
+            videoCodec = Self.codec(video)
+            audioCodec = Self.codec(audio)
+            videoCodecIsNone = video == "none"
+            audioCodecIsNone = audio == "none"
             fileExtension = try? values.decodeIfPresent(String.self, forKey: .fileExtension)
             dynamicRange = try? values.decodeIfPresent(String.self, forKey: .dynamicRange)
             language = try? values.decodeIfPresent(String.self, forKey: .language)
@@ -101,8 +107,31 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
 
         static let originalTrackPreference = 10
 
-        public var hasVideo: Bool { videoCodec != nil }
-        public var hasAudio: Bool { audioCodec != nil }
+        private static let videoExtensions: Set<String> = ["mp4", "m4v", "webm", "mov", "mkv", "flv", "ogv", "avi", "3gp"]
+        private static let audioExtensions: Set<String> = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "flac", "wav"]
+
+        private var codecsUnknown: Bool { videoCodec == nil && audioCodec == nil && !videoCodecIsNone && !audioCodecIsNone }
+
+        public var hasVideo: Bool {
+            if videoCodec != nil { return true }
+            if videoCodecIsNone { return false }
+            if audioCodecIsNone { return true }
+            guard codecsUnknown else { return false }
+            return height != nil || Self.videoExtensions.contains(fileExtension ?? "")
+        }
+
+        public var hasAudio: Bool {
+            if audioCodec != nil { return true }
+            if audioCodecIsNone { return false }
+            if videoCodecIsNone { return true }
+            guard codecsUnknown else { return false }
+            return hasVideo || Self.audioExtensions.contains(fileExtension ?? "")
+        }
+
+        public var mayBeAAC: Bool {
+            guard let codec = audioCodec else { return ["mp4", "m4a"].contains(fileExtension ?? "") }
+            return MediaCodecs.isAAC(codec)
+        }
 
         public var isOriginalAudio: Bool {
             languagePreference == Self.originalTrackPreference || (note?.lowercased().contains("original") ?? false)

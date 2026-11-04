@@ -103,6 +103,40 @@ struct ToolConsentTests {
         #expect(model.draft.candidates == [video])
     }
 
+    @Test func nothingFoundOffersTryingWithYTDLPWhenItIsntInstalledAndThatLeadsToConsent() async throws {
+        let installs = Counter()
+        let page = SentPage(url: URL(string: "https://talks.example/creativity")!)
+        let talk = Candidate(label: "Do schools kill creativity?", versions: [])
+        let list = LinkList(
+            analyze: { _ in installs.count == 0 ? .once(.found([])) : .once(.found([talk])) },
+            tools: ToolConsent(size: { nil }, install: { _ in installs.add() }, isInstalled: { installs.count > 0 })
+        )
+        list.send(page)
+        try await waitOnMain { pageModel(of: list)?.draft.nothingFound.ytdlpAction != nil }
+        let model = try #require(pageModel(of: list))
+
+        #expect(model.draft.phase == .nothingFound)
+        #expect(model.draft.nothingFound.ytdlpAction == "Try with yt-dlp")
+        model.tryWithYTDLP()
+        #expect(model.draft.phase == .needsTools)
+        model.agreeToTools(keepUpToDate: true)
+        try await waitOnMain { model.draft.phase == .found }
+
+        #expect(model.draft.candidates == [talk])
+    }
+
+    @Test func nothingFoundWithYTDLPInstalledDoesntOfferIt() async throws {
+        let list = LinkList(
+            analyze: { _ in .once(.found([])) },
+            tools: ToolConsent(size: { nil }, install: { _ in }, isInstalled: { true })
+        )
+        list.send(SentPage(url: URL(string: "https://talks.example/creativity")!))
+        try await waitOnMain { pageModel(of: list)?.draft.phase == .nothingFound }
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(pageModel(of: list)?.draft.nothingFound.ytdlpAction == nil)
+    }
+
     @Test func aToolThatChangedOffersReinstallingIt() {
         var draft = SentPageDraft(page: page)
 

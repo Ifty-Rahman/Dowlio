@@ -34,7 +34,7 @@ enum YTDLPVersions {
         let original = originalAudio(in: audio)
         let aac = reach.best(original.filter(isAAC))
         let opus = reach.best(original.filter(isOpus))
-        let videos = usable.filter { $0.hasVideo && $0.height != nil }
+        let videos = usable.filter(\.hasVideo)
         let rows = Dictionary(grouping: videos, by: { $0.height ?? 0 })
             .sorted { $0.key > $1.key }
             .compactMap { height, formats in
@@ -48,11 +48,12 @@ enum YTDLPVersions {
         at height: Int, from formats: [MediaInfo.Format], aac: MediaInfo.Format?, opus: MediaInfo.Format?, decodesAV1: Bool, page: URL,
         reach: Reach
     ) -> Version? {
+        let shown = height == 0 ? nil : height
         let combined = formats.filter(\.hasAudio)
         let formats = formats.filter { !$0.hasAudio }
         let h264 = formats.filter { isH264($0) && isSDR($0) }
         if height <= tallestH264, let video = reach.best(h264), let aac {
-            return reach.version(of: [video, aac], container: .mp4, page: page, height: height)
+            return reach.version(of: [video, aac], container: .mp4, page: page, height: shown)
         }
         let av1 = formats.filter(isAV1)
         let vp9 = formats.filter(isVP)
@@ -62,12 +63,12 @@ enum YTDLPVersions {
             guard let video = reach.best(candidates) else { continue }
             let isWebM = isVP(video)
             guard let audio = isWebM ? opus : aac else { continue }
-            var chosen = reach.version(of: [video, audio], container: isWebM ? .webm : .mp4, page: page, height: height)
+            var chosen = reach.version(of: [video, audio], container: isWebM ? .webm : .mp4, page: page, height: shown)
             chosen?.isHDR = !isSDR(video)
             return chosen
         }
         guard let both = reach.best(combined.filter(isSDR)) ?? reach.best(combined) else { return nil }
-        var chosen = reach.version(of: [both], container: isVP(both) ? .webm : .mp4, page: page, height: height)
+        var chosen = reach.version(of: [both], container: isVP(both) ? .webm : .mp4, page: page, height: shown)
         chosen?.isHDR = !isSDR(both)
         return chosen
     }
@@ -100,7 +101,7 @@ enum YTDLPVersions {
     private static func isH264(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isH264(format.videoCodec ?? "") }
     private static func isAV1(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isAV1(format.videoCodec ?? "") }
     private static func isVP(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isVP(format.videoCodec ?? "") }
-    private static func isAAC(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isAAC(format.audioCodec ?? "") }
+    private static func isAAC(_ format: MediaInfo.Format) -> Bool { format.mayBeAAC }
     private static func isOpus(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isOpus(format.audioCodec ?? "") }
     private static func isSDR(_ format: MediaInfo.Format) -> Bool { (format.dynamicRange ?? "SDR") == "SDR" }
 
@@ -137,6 +138,13 @@ enum YTDLPVersions {
         let renewal = MediaRenewal(pageURL: page, formatIDs: formats.map(\.id))
         let expiry = formats.compactMap(\.expiry).min()
         let source: MediaSource
+        if formats.count == 1, let only = formats.first, only.hasVideo, only.hasAudio, only.videoCodec == nil,
+           path(of: only, playlists: playlists ?? [:]) == .engine, let url = only.url {
+            return Version(
+                source: .file(url), totalBytes: only.size ?? only.estimatedSize, isEstimatedSize: only.size == nil, height: height,
+                referrer: only.headers["Referer"].flatMap(URL.init(string:)), origin: only.headers["Origin"], userAgent: only.headers["User-Agent"]
+            )
+        }
         if let playlists {
             let tracks = formats.compactMap { track(of: $0, playlists: playlists) }
             guard tracks.count == formats.count,

@@ -343,6 +343,8 @@ final class AppModel {
             let updated = try await tools.update()
             await toolsModel.refresh()
             return updated
+        }, isInstalled: {
+            await tools.isInstalled
         })
     }
 

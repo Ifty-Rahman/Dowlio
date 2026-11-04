@@ -356,7 +356,13 @@ struct NothingFoundBody: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            Button(text.action) { media.lookAgain() }
+            HStack {
+                Button(text.action) { media.lookAgain() }
+                if let ytdlp = text.ytdlpAction {
+                    Button(ytdlp) { media.tryWithYTDLP() }
+                        .help("yt-dlp, a free open-source tool, can read many sites Dowlio can't. Dowlio asks before downloading it.")
+                }
+            }
             OpenInWindowButton(media: media)
         }
         .frame(maxWidth: .infinity)

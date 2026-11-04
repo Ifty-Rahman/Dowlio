@@ -40,6 +40,7 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var selected = 0
     public private(set) var isCheckingForMore = false
     public private(set) var toolsSize: Int64?
+    public private(set) var offersYTDLP = false
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
@@ -159,6 +160,15 @@ public struct SentPageDraft: Equatable, Sendable {
         phase = .declinedTools
     }
 
+    public mutating func setOffersYTDLP(_ offers: Bool) {
+        offersYTDLP = offers
+    }
+
+    public mutating func askForTools() {
+        offersYTDLP = false
+        phase = .needsTools
+    }
+
     public mutating func askForToolsAgain() {
         guard phase == .declinedTools || phase == .couldntInstallTools else { return }
         phase = .needsTools
@@ -260,7 +270,8 @@ public struct SentPageDraft: Equatable, Sendable {
         NothingFoundText(
             title: "No video or audio found on this page",
             explanation: "Dowlio couldn't find any audio or video to download on this page.",
-            action: play == nil ? "Look Again" : "Try Again"
+            action: play == nil ? "Look Again" : "Try Again",
+            ytdlpAction: offersYTDLP ? "Try with yt-dlp" : nil
         )
     }
 
@@ -335,11 +346,13 @@ public struct NothingFoundText: Equatable, Sendable {
     public var title: String
     public var explanation: String
     public var action: String
+    public var ytdlpAction: String?
 
-    public init(title: String, explanation: String, action: String) {
+    public init(title: String, explanation: String, action: String, ytdlpAction: String? = nil) {
         self.title = title
         self.explanation = explanation
         self.action = action
+        self.ytdlpAction = ytdlpAction
     }
 }
 
