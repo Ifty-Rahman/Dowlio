@@ -232,7 +232,10 @@ public actor DownloadEngine {
         options.allowsWorkStealing = allowsWorkStealing
 
         if let media = manifest.mediaSource {
-            let plan = MediaPlan(restoring: media, fileName: fileName, partial: partial, finished: manifest.finishedFragments ?? [])
+            let plan = MediaPlan(
+                restoring: media, fileName: fileName, partial: partial, requestSizeLimit: manifest.requestSizeLimit,
+                finished: manifest.finishedFragments ?? []
+            )
             var snapshot = DownloadSnapshot(
                 id: id, state: .paused, fileName: fileName, destinationFolder: folder,
                 isNotSecure: manifest.originalURL.isPlainHTTP, displayHost: manifest.originalURL.displayHost

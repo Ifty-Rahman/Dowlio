@@ -43,7 +43,12 @@ public struct SentPageDraft: Equatable, Sendable {
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
 
-    public var showing: Showing { showings[selected] ?? .video }
+    public var showing: Showing { showing(of: selected) }
+
+    private func showing(of index: Int) -> Showing {
+        if let chosen = showings[index] { return chosen }
+        return candidates.indices.contains(index) && candidates[index].opensAsAudio ? .audio : .video
+    }
     private var play: PlayRun?
 
     private enum PlayRun {
@@ -251,7 +256,7 @@ public struct SentPageDraft: Equatable, Sendable {
         guard candidates.indices.contains(index) else { return nil }
         let versions = candidates[index].versions
         guard !versions.isEmpty else { return nil }
-        let showing = showings[index] ?? .video
+        let showing = showing(of: index)
         if let pick = picks[index], versions.contains(pick), MediaText.isAudio(pick) == (showing == .audio) { return pick }
         if !versions.contains(where: MediaText.isAudio) || !versions.contains(where: { !MediaText.isAudio($0) }) {
             return preference.pick(from: versions, showing: MediaText.isAudio(versions[0]) ? .audio : .video) ?? versions.first

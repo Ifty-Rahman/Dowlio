@@ -127,11 +127,13 @@ public struct Candidate: Equatable, Sendable {
     public var isOnScreen: Bool
     public var isOther: Bool
     public var unprobed: [WatchedRequest]
+    public var opensAsAudio: Bool
 
     public init(
         label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version], restriction: Restriction? = nil,
-        isOnScreen: Bool = false, isOther: Bool = false, unprobed: [WatchedRequest] = []
+        isOnScreen: Bool = false, isOther: Bool = false, unprobed: [WatchedRequest] = [], opensAsAudio: Bool = false
     ) {
+        self.opensAsAudio = opensAsAudio
         self.label = label
         self.thumbnail = thumbnail
         self.duration = duration

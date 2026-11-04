@@ -1,6 +1,10 @@
 import Foundation
 
 enum MediaCodecs {
+    static func isH264(_ codec: String) -> Bool {
+        ["avc1", "avc3"].contains { codec.lowercased().hasPrefix($0) }
+    }
+
     static func isAAC(_ codec: String) -> Bool {
         codec.lowercased().hasPrefix("mp4a")
     }

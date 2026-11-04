@@ -151,8 +151,8 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
-        if YouTubeLink(page.url) != nil {
-            return report(await withYTDLP(page))
+        if let link = YouTubeLink(page.url) {
+            return report(await withYTDLP(page, opensAsAudio: link.isMusic))
         }
         let start = ContinuousClock.now
         if DASHVersions.isStream(page.url) {
@@ -195,13 +195,16 @@ public struct PageAnalyzer: Sendable {
         report(.found(Self.added(more.candidates, to: found)))
     }
 
-    private func withYTDLP(_ page: SentPage) async -> PageAnalysis {
+    private func withYTDLP(_ page: SentPage, opensAsAudio: Bool) async -> PageAnalysis {
         guard let ytdlp else { return .found([]) }
         guard await ytdlp.isInstalled else { return .needsTools }
         do {
             let info = try await ytdlp.info(for: page.url)
             let label = info.title ?? page.title ?? Self.site(of: page.url)
-            return .found([Candidate(label: label, thumbnail: info.thumbnail, duration: info.duration, versions: [])])
+            let versions = YTDLPVersions.versions(of: info, page: page.url)
+            return .found([Candidate(
+                label: label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
+            )])
         } catch ToolInstaller.Failure.changed {
             return .toolsChanged
         } catch {

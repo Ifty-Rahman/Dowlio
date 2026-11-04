@@ -64,7 +64,7 @@ extension DownloadRun {
             }
         }
         let partial = try PartialFile.create(for: fileName, in: folder)
-        let plan = MediaPlan(fileName: fileName, media: media, partial: partial)
+        let plan = MediaPlan(fileName: fileName, media: media, partial: partial, requestSizeLimit: options.requestSizeLimit)
         adopt(plan)
         do {
             try FileManager.default.createDirectory(at: plan.partsFolder, withIntermediateDirectories: true)
