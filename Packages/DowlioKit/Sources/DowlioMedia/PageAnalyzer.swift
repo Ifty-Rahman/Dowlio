@@ -312,14 +312,21 @@ public struct PageAnalyzer: Sendable {
             guard let id = entry.id ?? entry.url?.absoluteString else { return nil }
             let url = entry.url ?? URL(string: "https://www.youtube.com/watch?v=\(id)")!
             return PlaylistListing.Entry(
-                id: id, position: index + 1, title: entry.title ?? id, url: url, duration: entry.duration, isAvailable: entry.isAvailable
+                id: id, position: index + 1, title: entry.title ?? id, url: url, duration: entry.duration, thumbnail: entry.thumbnail,
+                isAvailable: entry.isAvailable
             )
         }
         return PlaylistListing(
             title: info.title ?? page.title ?? "Playlist", url: page.url, entries: Array(listed),
             total: info.playlistCount ?? (info.entries.count > YTDLPRunner.longestPlaylist ? nil : info.entries.count), isMusic: isMusic,
-            isCut: info.entries.count > YTDLPRunner.longestPlaylist
+            isCut: info.entries.count > YTDLPRunner.longestPlaylist, channel: info.channel, thumbnail: info.playlistThumbnail,
+            updated: info.modifiedDate.flatMap(Self.day)
         )
+    }
+
+    private static func day(_ text: String) -> Date? {
+        guard text.count == 8, let year = Int(text.prefix(4)), let month = Int(text.dropFirst(4).prefix(2)), let day = Int(text.suffix(2)) else { return nil }
+        return DateComponents(calendar: .current, year: year, month: month, day: day).date
     }
 
     private func video(_ page: SentPage, inPlaylist list: String, isMusic: Bool) async -> PageAnalysis {
@@ -410,6 +417,10 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func quickSteps(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> QuickSteps {
+        if readers.contains(where: { $0.recognises(page.url) && $0.post(in: page.url) != nil }) {
+            if let site = await readSite(page, reading: reading, refusals: refusals) { return QuickSteps(found: site.candidates, readerFound: true) }
+            return QuickSteps(found: await candidates(on: page, reading: reading, refusals: refusals, report: report), readerFound: false)
+        }
         async let fromSite = readSite(page, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
         let site = await fromSite

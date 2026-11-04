@@ -44,6 +44,24 @@ struct XReaderTests {
         #expect(candidates.first?.label == "Sample Author: Sample post text about the match that ends")
     }
 
+    @Test func aPostOpenedFromSearchShowsOnlyItsOwnVideoWhileLooking() async throws {
+        let x = try await xSite()
+        x.site.serve(html: "<title>Sample Author on X</title>", at: post)
+        try x.serve(fixture: "x-tweet-result.json", at: "/tweet-result")
+        let searched = (1...6).map { "/amplify_video/300000000000000000\($0)/vid/avc1/0/0/720x1280/search.mp4" }
+        for path in searched { x.site.serve(video: 4096, at: path) }
+        var page = SentPage(url: x.url(post), throughDowlioConnect: true)
+        page.watched = searched.map { WatchedRequest(url: x.url($0), kind: .file) }
+
+        var updates: [PageAnalysis] = []
+        for await update in x.site.analyzer.analyze(page) { updates.append(update) }
+
+        #expect(updates.count == 1)
+        guard case .found(let candidates)? = updates.last else { Issue.record("not found: \(updates)"); return }
+        #expect(candidates.map(\.label) == ["Sample Author: Sample post text about the match that ends"])
+        #expect(!x.site.server.requests.contains { $0.path.hasSuffix("search.mp4") })
+    }
+
     @Test func aPostServedOnlyAsAPlaylistIsReadThroughThePlaylist() async throws {
         let x = try await xSite()
         x.site.serve(html: "<title>X</title>", at: post)
