@@ -42,6 +42,26 @@ struct WebMTracksTests {
     }
 
     @Test(.enabled(if: TestFFmpeg.isAvailable))
+    func vp9InMP4WithAACFinishesAsAnMP4ThatPlayersCanOpen() async throws {
+        let server = try await TestServer()
+        let fixture = try await LibraryFixture(remux: MediaRemuxer(ffmpeg: TestFFmpeg.helper).remux)
+        let media = try MediaSource(
+            tracks: [
+                track(.video, "track-vp9.mp4", codecs: ["vp09.00.10.08"], on: server),
+                track(.audio, "track-aac.m4a", codecs: ["mp4a.40.2"], on: server),
+            ],
+            container: .mp4
+        )
+
+        let id = await fixture.library.add(.media(media), destination: .folder(fixture.folder), options: options("Story.mp4"))
+        let row = try await fixture.library.row(id) { $0.hasEnded }
+
+        #expect(row.state == .completed)
+        let file = try TestFFmpeg.describe(fixture.folder.appending(path: "Story.mp4"))
+        #expect(file.streams == ["video:vp9", "audio:aac"])
+    }
+
+    @Test(.enabled(if: TestFFmpeg.isAvailable))
     func av1WithAACFinishesAsOneMP4WithBothTracks() async throws {
         let server = try await TestServer()
         let fixture = try await LibraryFixture(remux: MediaRemuxer(ffmpeg: TestFFmpeg.helper).remux)

@@ -13,6 +13,11 @@ public struct InstagramReader: SiteReader {
     }
 
     public func post(in page: URL) -> String? {
+        let parts = page.pathComponents.filter { $0 != "/" }
+        if parts.first == "stories" {
+            guard parts.count >= 3, parts[1] != "highlights", !parts[2].isEmpty, parts[2].allSatisfy(\.isNumber) else { return nil }
+            return parts[2]
+        }
         guard let code = page.pathComponent(after: ["p", "reel", "reels", "tv"]) else { return nil }
         return code.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" } ? code : nil
     }
@@ -37,7 +42,7 @@ enum MetaMedia {
     static func videos(on page: SitePage, post code: String?) -> [SiteVideo] {
         let posts = posts(in: page.embeddedObjects, base: page.url)
         guard let code else { return posts.map(\.video) }
-        return posts.filter { $0.code == code }.map(\.video)
+        return posts.filter { $0.code == code || $0.key == code || $0.key.hasPrefix(code + "_") }.map(\.video)
     }
 
     static func posts(in objects: [Any], base: URL) -> [MediaItem] {

@@ -50,7 +50,8 @@ public struct MediaRemuxer: Sendable {
         let media = request.mediaSource
         if media.outputContainer == .webm || request.hasExtras { return .ffmpeg }
         let codecs = media.tracks.flatMap { $0.codecs ?? [] }
-        if codecs.contains(where: { !MediaCodecs.joinsInAVFoundation($0) }) { return .ffmpeg }
+        let joinsInAVFoundation = { (codec: String) in MediaCodecs.joinsInAVFoundation(codec) || MediaCodecs.isVP(codec) }
+        if codecs.contains(where: { !joinsInAVFoundation($0) }) { return .ffmpeg }
         if request.tracks.contains(where: isMatroska) { return .ffmpeg }
         return .avFoundation
     }
