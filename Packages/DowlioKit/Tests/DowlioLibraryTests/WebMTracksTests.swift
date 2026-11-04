@@ -41,6 +41,27 @@ struct WebMTracksTests {
         #expect(abs((file.duration ?? 0) - 3) < 0.3)
     }
 
+    @Test(.enabled(if: TestFFmpeg.isAvailable))
+    func av1WithAACFinishesAsOneMP4WithBothTracks() async throws {
+        let server = try await TestServer()
+        let fixture = try await LibraryFixture(remux: MediaRemuxer(ffmpeg: TestFFmpeg.helper).remux)
+        let media = try MediaSource(
+            tracks: [
+                track(.video, "track-av1.mp4", codecs: ["av01.0.13M.08"], on: server),
+                track(.audio, "track-aac.m4a", codecs: ["mp4a.40.2"], on: server),
+            ],
+            container: .mp4
+        )
+
+        let id = await fixture.library.add(.media(media), destination: .folder(fixture.folder), options: options("Clip.mp4"))
+        let row = try await fixture.library.row(id) { $0.hasEnded }
+
+        #expect(row.state == .completed)
+        let file = try TestFFmpeg.describe(fixture.folder.appending(path: "Clip.mp4"))
+        #expect(file.streams == ["video:av1", "audio:aac"])
+        #expect(abs((file.duration ?? 0) - 3) < 0.3)
+    }
+
     @Test func h264WithAACJoinsThroughAVFoundationEvenWithAHelper() async throws {
         let server = try await TestServer()
         let fixture = try await LibraryFixture(remux: MediaRemuxer(ffmpeg: URL(fileURLWithPath: "/usr/bin/false")).remux)

@@ -373,7 +373,7 @@ public enum MediaText {
     public static func detail(of version: Version) -> String {
         let parts = isAudio(version)
             ? [container(of: version), version.codecs, version.language, version.isExtractedAudio ? "extracted after download" : nil]
-            : [version.height == nil ? nil : container(of: version), version.codecs]
+            : [version.height == nil ? nil : container(of: version), version.codecs, version.isHDR ? "HDR" : nil]
         return parts.compactMap { $0 }.joined(separator: " · ")
     }
 

@@ -1,5 +1,6 @@
 import DowlioCore
 import Foundation
+import VideoToolbox
 
 public struct PageAnalyzer: Sendable {
     public typealias Inspect = @Sendable (URL, RequestOptions) async throws -> LinkInspection
@@ -16,6 +17,7 @@ public struct PageAnalyzer: Sendable {
     private let identity: BrowserIdentity
     private let cooldown: HostCooldown
     private let ytdlp: YTDLPRunner?
+    private let decodesAV1: Bool
 
     @TaskLocal static var reachesLocalNetwork = false
 
@@ -37,9 +39,11 @@ public struct PageAnalyzer: Sendable {
         readers: [any SiteReader] = SiteReaders.all,
         readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
         ytdlp: YTDLPRunner? = nil,
+        decodesAV1: Bool = VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
         inspect: @escaping Inspect
     ) {
         self.ytdlp = ytdlp
+        self.decodesAV1 = decodesAV1
         self.session = session
         self.identity = identity
         self.cooldown = cooldown
@@ -201,7 +205,7 @@ public struct PageAnalyzer: Sendable {
         let label = page.title ?? Self.site(of: page.url)
         do {
             let info = try await Self.infoRetryingWithSignIn(for: page, from: ytdlp)
-            let versions = YTDLPVersions.versions(of: info, page: page.url)
+            let versions = YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1)
             return .found([Candidate(
                 label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
             )])

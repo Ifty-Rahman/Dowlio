@@ -146,6 +146,9 @@ struct SentPageDraftTests {
         let video = Version(source: .media(media), height: 2160, codecs: "VP9 + Opus")
 
         #expect(MediaText.detail(of: video) == "WebM · VP9 + Opus")
+        var hdr = video
+        hdr.isHDR = true
+        #expect(MediaText.detail(of: hdr) == "WebM · VP9 + Opus · HDR")
         #expect(MediaText.fileExtension(of: video) == "webm")
     }
 
