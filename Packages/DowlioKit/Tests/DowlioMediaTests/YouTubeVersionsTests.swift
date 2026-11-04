@@ -79,6 +79,52 @@ struct YouTubeVersionsTests {
         #expect(YouTubeLink(URL(string: link)!) == nil)
     }
 
+    private func listed(_ json: String) async throws -> Candidate {
+        let file = try TestFiles.makeFolder().appending(path: "listing.json")
+        try json.write(to: file, atomically: true, encoding: .utf8)
+        let standIn = try await YTDLPStandIn.install(script: "cat '\(file.path)'")
+        let analyzer = PageAnalyzer(readers: [], ytdlp: YTDLPRunner(installer: standIn.installer)) { _, _ in throw URLError(.cannotConnectToHost) }
+        var last: PageAnalysis?
+        for await update in analyzer.analyze(SentPage(url: watch)) { last = update }
+        guard case .found(let candidates)? = last, let first = candidates.first else { throw FoundNothing() }
+        return first
+    }
+
+    private static let base = "https://rr1---sn-fixture.googlevideo.com/videoplayback"
+
+    @Test func oneOddFormatDoesntLoseTheOthersAndAFormatWithoutAnExactSizeTakesItFromItsLink() async throws {
+        let video = try await listed("""
+            {"title": "Clip", "formats": [
+              {"format_note": "no id"},
+              {"format_id": "140", "vcodec": "none", "acodec": "mp4a.40.2", "protocol": "https", "tbr": 129,
+               "url": "\(Self.base)?itag=140&clen=4000", "http_headers": {"User-Agent": "Agent", "Odd": 7}},
+              {"format_id": "137", "height": 1080, "vcodec": "avc1.640028", "acodec": "none", "protocol": "https", "filesize_approx": 90000,
+               "url": "\(Self.base)?itag=137&clen=88888"}
+            ]}
+            """)
+
+        let tallest = try #require(video.versions.first)
+        #expect(tallest.height == 1080)
+        #expect(tallest.userAgent == "Agent")
+        guard case .media(let media) = tallest.source else { Issue.record("not media"); return }
+        #expect(media.tracks.map { $0.fragments.map(\.bytes) } == [[0...88_887], [0...3_999]])
+    }
+
+    @Test func withNoTrackMarkedOriginalTheMostPreferredLanguageIsPaired() async throws {
+        let video = try await listed("""
+            {"title": "Clip", "formats": [
+              {"format_id": "140-1", "vcodec": "none", "acodec": "mp4a.40.2", "protocol": "https", "tbr": 200, "language": "de",
+               "language_preference": -1, "url": "\(Self.base)?itag=140&lang=de", "filesize": 10},
+              {"format_id": "140-0", "vcodec": "none", "acodec": "mp4a.40.2", "protocol": "https", "tbr": 129, "language": "en",
+               "language_preference": 5, "url": "\(Self.base)?itag=140&lang=en", "filesize": 10},
+              {"format_id": "137", "height": 1080, "vcodec": "avc1.640028", "acodec": "none", "protocol": "https", "filesize": 10,
+               "url": "\(Self.base)?itag=137"}
+            ]}
+            """)
+
+        #expect(video.versions.first?.renewal?.formatIDs == ["137", "140-0"])
+    }
+
     @Test func aYouTubeMusicLinkOpensOnAudioOnly() async throws {
         let song = try await candidate(URL(string: "https://music.youtube.com/watch?v=2Vv-BfVoq4g")!, fixture: "video-1080p.json")
         let video = try await candidate(watch, fixture: "video-1080p.json")

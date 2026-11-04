@@ -13,7 +13,7 @@ enum YTDLPVersions {
             .sorted { ($0.height ?? 0) > ($1.height ?? 0) }
         let rows = videos.compactMap { version(of: [$0, aac], container: .mp4, page: page, height: $0.height) }
         let sound = version(of: [aac], container: .m4a, page: page, height: nil)
-        return rows + [sound].compactMap { $0 }
+        return rows + (sound.map { [$0] } ?? [])
     }
 
     private static func isUsable(_ format: MediaInfo.Format) -> Bool {
@@ -30,7 +30,9 @@ enum YTDLPVersions {
     private static func originalAudio(in formats: [MediaInfo.Format]) -> [MediaInfo.Format] {
         let audio = formats.filter { $0.hasAudio && !$0.hasVideo }
         let original = audio.filter(\.isOriginalAudio)
-        return original.isEmpty ? audio : original
+        if !original.isEmpty { return original }
+        let preferred = audio.compactMap(\.languagePreference).max()
+        return audio.filter { $0.languagePreference == preferred }
     }
 
     private static func best(_ formats: [MediaInfo.Format]) -> MediaInfo.Format? {
@@ -52,7 +54,7 @@ enum YTDLPVersions {
             isEstimatedSize: !exact,
             height: height,
             codecs: MediaCodecs.names(formats.compactMap { $0.videoCodec } + formats.compactMap { $0.audioCodec }),
-            userAgent: formats.first?.headers["User-Agent"],
+            userAgent: formats.lazy.compactMap { $0.headers["User-Agent"] }.first,
             requestSizeLimit: formats.compactMap(\.requestSizeLimit).min()
         )
     }

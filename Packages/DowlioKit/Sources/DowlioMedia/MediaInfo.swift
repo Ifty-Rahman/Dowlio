@@ -51,6 +51,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         public init(from decoder: any Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             id = try values.decode(String.self, forKey: .id)
+            url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
             height = try? values.decodeIfPresent(Int.self, forKey: .height)
             videoCodec = Self.codec(try? values.decodeIfPresent(String.self, forKey: .videoCodec))
             audioCodec = Self.codec(try? values.decodeIfPresent(String.self, forKey: .audioCodec))
@@ -60,12 +61,11 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             languagePreference = try? values.decodeIfPresent(Int.self, forKey: .languagePreference)
             note = try? values.decodeIfPresent(String.self, forKey: .note)
             audioChannels = try? values.decodeIfPresent(Int.self, forKey: .audioChannels)
-            size = Self.bytes(values, .size)
+            size = Self.bytes(values, .size) ?? Self.contentLength(in: url)
             estimatedSize = Self.bytes(values, .estimatedSize)
             bitrate = try? values.decodeIfPresent(Double.self, forKey: .bitrate)
             `protocol` = try? values.decodeIfPresent(String.self, forKey: .protocol)
-            url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
-            headers = (try? values.decodeIfPresent([String: String].self, forKey: .headers)) ?? [:]
+            headers = ((try? values.decodeIfPresent([String: Lenient<String>].self, forKey: .headers)) ?? [:]).compactMapValues(\.value)
             requestSizeLimit = (try? values.decodeIfPresent(DownloaderOptions.self, forKey: .downloaderOptions))?.chunkSize
         }
 
@@ -79,11 +79,18 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             return (try? values.decodeIfPresent(Double.self, forKey: key)).map { Int64($0) }
         }
 
+        private static func contentLength(in url: URL?) -> Int64? {
+            guard let url, let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+            return items.first { $0.name == "clen" }?.value.flatMap { Int64($0) }
+        }
+
+        static let originalTrackPreference = 10
+
         public var hasVideo: Bool { videoCodec != nil }
         public var hasAudio: Bool { audioCodec != nil }
 
         public var isOriginalAudio: Bool {
-            languagePreference == 10 || (note?.lowercased().contains("original") ?? false)
+            languagePreference == Self.originalTrackPreference || (note?.lowercased().contains("original") ?? false)
         }
 
         public var expiry: Date? {
@@ -113,6 +120,14 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         duration = try? values.decodeIfPresent(Double.self, forKey: .duration)
         liveStatus = try? values.decodeIfPresent(String.self, forKey: .liveStatus)
         webpageURL = (try? values.decodeIfPresent(String.self, forKey: .webpageURL)).flatMap(URL.init(string:))
-        formats = (try? values.decodeIfPresent([Format].self, forKey: .formats)) ?? []
+        formats = ((try? values.decodeIfPresent([Lenient<Format>].self, forKey: .formats)) ?? []).compactMap(\.value)
+    }
+}
+
+struct Lenient<Value: Decodable>: Decodable {
+    var value: Value?
+
+    init(from decoder: any Decoder) throws {
+        value = try? Value(from: decoder)
     }
 }

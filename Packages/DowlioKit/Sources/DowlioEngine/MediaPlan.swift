@@ -12,6 +12,7 @@ final class MediaPlan: @unchecked Sendable {
     let partial: PartialFile
     let pieces: [Piece]
     let keys = FragmentKeys()
+    private let knownTotal: Int64?
     private let lock = NSLock()
     private var finished: [FragmentPosition: Int64]
     private var receiving: [FragmentPosition: Int64] = [:]
@@ -29,10 +30,13 @@ final class MediaPlan: @unchecked Sendable {
                 .enumerated()
                 .map { Piece(position: FragmentPosition(track: track, fragment: $0.offset), fragment: $0.element) }
         }
+        knownTotal = pieces.allSatisfy { $0.fragment.bytes != nil && $0.fragment.key == nil }
+            ? pieces.reduce(0) { $0 + Int64($1.fragment.bytes?.count ?? 0) }
+            : nil
     }
 
     private static func split(_ fragment: MediaFragment, within limit: Int64?) -> [MediaFragment] {
-        guard let limit, limit > 0, let bytes = fragment.bytes, Int64(bytes.count) > limit else { return [fragment] }
+        guard let limit, limit > 0, fragment.key == nil, let bytes = fragment.bytes, Int64(bytes.count) > limit else { return [fragment] }
         return stride(from: bytes.lowerBound, through: bytes.upperBound, by: Int(limit)).map { start in
             var piece = fragment
             piece.bytes = start...min(start + limit - 1, bytes.upperBound)
@@ -89,11 +93,6 @@ final class MediaPlan: @unchecked Sendable {
         var receivedBytes: Int64
         var estimatedTotal: Int64?
         var activeConnections: Int
-    }
-
-    private var knownTotal: Int64? {
-        guard pieces.allSatisfy({ $0.fragment.bytes != nil && $0.fragment.key == nil }) else { return nil }
-        return pieces.reduce(0) { $0 + Int64($1.fragment.bytes?.count ?? 0) }
     }
 
     var reading: Reading {
