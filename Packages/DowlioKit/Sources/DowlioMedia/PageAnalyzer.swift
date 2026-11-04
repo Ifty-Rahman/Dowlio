@@ -185,7 +185,7 @@ public struct PageAnalyzer: Sendable {
         let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
         let framed = await fromFrames
         var found = framed.isEmpty ? steps.found : Self.merged(steps.found + framed)
-        switch await youTubeEmbeds(in: reading, on: page) {
+        switch await youTubeEmbeds(in: reading, on: page, within: longestLooking - (ContinuousClock.now - start)) {
         case .found(let embedded) where !embedded.isEmpty:
             found = Self.merged(found + embedded)
         case .needsTools where found.isEmpty:
@@ -196,9 +196,14 @@ public struct PageAnalyzer: Sendable {
         if found.isEmpty, let ytdlp, await ytdlp.isInstalled {
             let tried = await withYTDLP(page, opensAsAudio: false)
             switch tried {
-            case .found(let candidates) where !candidates.isEmpty: return report(tried)
-            case .found, .ytdlpFailed(.unsupportedSite): break
-            default: return report(tried)
+            case .found(let candidates) where candidates.contains(where: Self.isOffered):
+                return report(.found(candidates.filter(Self.isOffered)))
+            case .ytdlpFailed(.private), .ytdlpFailed(.geoBlocked), .ytdlpFailed(.live), .ytdlpFailed(.rateLimited), .toolsChanged:
+                return report(tried)
+            case .needsSignIn where !refusals.blocked:
+                return report(.needsSignIn)
+            default:
+                break
             }
         }
         if found.isEmpty, refusals.blocked {
@@ -266,26 +271,38 @@ public struct PageAnalyzer: Sendable {
 
     static let mostEmbedsRead = 3
 
-    private func youTubeEmbeds(in reading: HTMLReader?, on page: SentPage) async -> PageAnalysis {
-        guard ytdlp != nil, page.framedBy == nil, let reading else { return .found([]) }
+    private static func isOffered(_ candidate: Candidate) -> Bool {
+        !candidate.versions.isEmpty || candidate.restriction != nil
+    }
+
+    private func youTubeEmbeds(in reading: HTMLReader?, on page: SentPage, within limit: Duration) async -> PageAnalysis {
+        guard ytdlp != nil, page.framedBy == nil, let reading, limit > .zero else { return .found([]) }
         var seen = Set<URL>()
-        let embeds = reading.frames.map(\.url).filter { YouTubeLink($0) != nil && seen.insert($0).inserted }.prefix(Self.mostEmbedsRead)
+        let embeds = Array(reading.frames.map(\.url).filter { YouTubeLink($0) != nil && seen.insert($0).inserted }.prefix(Self.mostEmbedsRead))
         guard !embeds.isEmpty else { return .found([]) }
-        let results = await withTaskGroup(of: (Int, PageAnalysis).self) { group in
+        let results = await withTaskGroup(of: (Int, PageAnalysis)?.self) { group in
             for (index, url) in embeds.enumerated() {
                 group.addTask {
                     let framed = SentPage(url: url, userAgent: page.userAgent, framedBy: page.url)
                     return (index, await self.withYTDLP(framed, opensAsAudio: false))
                 }
             }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
             var found: [Int: PageAnalysis] = [:]
-            for await (index, analysis) in group { found[index] = analysis }
+            while found.count < embeds.count, let next = await group.next() {
+                guard let (index, analysis) = next else { break }
+                found[index] = analysis
+            }
+            group.cancelAll()
             return embeds.indices.compactMap { found[$0] }
         }
         if results.contains(.needsTools) { return .needsTools }
         return .found(results.flatMap { result -> [Candidate] in
             guard case .found(let candidates) = result else { return [] }
-            return candidates.filter { !$0.versions.isEmpty }
+            return candidates.filter(Self.isOffered)
         })
     }
 

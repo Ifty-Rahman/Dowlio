@@ -112,9 +112,11 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
 
         private var codecsUnknown: Bool { videoCodec == nil && audioCodec == nil && !videoCodecIsNone && !audioCodecIsNone }
 
+        private static let imageExtensions: Set<String> = ["mhtml", "jpg", "jpeg", "png", "webp", "gif"]
+
         public var hasVideo: Bool {
             if videoCodec != nil { return true }
-            if videoCodecIsNone { return false }
+            if videoCodecIsNone || Self.imageExtensions.contains(fileExtension ?? "") { return false }
             if audioCodecIsNone { return true }
             guard codecsUnknown else { return false }
             return height != nil || Self.videoExtensions.contains(fileExtension ?? "")
@@ -122,7 +124,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
 
         public var hasAudio: Bool {
             if audioCodec != nil { return true }
-            if audioCodecIsNone { return false }
+            if audioCodecIsNone || Self.imageExtensions.contains(fileExtension ?? "") { return false }
             if videoCodecIsNone { return true }
             guard codecsUnknown else { return false }
             return hasVideo || Self.audioExtensions.contains(fileExtension ?? "")

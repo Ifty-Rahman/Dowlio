@@ -74,6 +74,7 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public mutating func update(_ analysis: PageAnalysis) -> URL? {
+        offersYTDLP = false
         switch analysis {
         case .looking:
             return nil

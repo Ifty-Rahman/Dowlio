@@ -88,6 +88,7 @@ public final class SentPageModel {
     }
 
     public func tryWithYTDLP() {
+        guard tools != nil, draft.phase == .nothingFound else { return }
         draft.askForTools()
         sizeToolsIfNeeded()
     }

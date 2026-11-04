@@ -35,7 +35,12 @@ enum YTDLPVersions {
         let aac = reach.best(original.filter(isAAC))
         let opus = reach.best(original.filter(isOpus))
         let videos = usable.filter(\.hasVideo)
-        let rows = Dictionary(grouping: videos, by: { $0.height ?? 0 })
+        var unsized = 0
+        let rows = Dictionary(grouping: videos, by: { format -> Int in
+            if let height = format.height { return height }
+            unsized -= 1
+            return unsized
+        })
             .sorted { $0.key > $1.key }
             .compactMap { height, formats in
                 row(at: height, from: formats, aac: aac, opus: opus, decodesAV1: decodesAV1, page: page, reach: reach)
@@ -48,7 +53,7 @@ enum YTDLPVersions {
         at height: Int, from formats: [MediaInfo.Format], aac: MediaInfo.Format?, opus: MediaInfo.Format?, decodesAV1: Bool, page: URL,
         reach: Reach
     ) -> Version? {
-        let shown = height == 0 ? nil : height
+        let shown = height <= 0 ? nil : height
         let combined = formats.filter(\.hasAudio)
         let formats = formats.filter { !$0.hasAudio }
         let h264 = formats.filter { isH264($0) && isSDR($0) }
@@ -142,7 +147,8 @@ enum YTDLPVersions {
            path(of: only, playlists: playlists ?? [:]) == .engine, let url = only.url {
             return Version(
                 source: .file(url), totalBytes: only.size ?? only.estimatedSize, isEstimatedSize: only.size == nil, height: height,
-                referrer: only.headers["Referer"].flatMap(URL.init(string:)), origin: only.headers["Origin"], userAgent: only.headers["User-Agent"]
+                referrer: only.headers["Referer"].flatMap(URL.init(string:)), origin: only.headers["Origin"], userAgent: only.headers["User-Agent"],
+                requestSizeLimit: only.requestSizeLimit
             )
         }
         if let playlists {
