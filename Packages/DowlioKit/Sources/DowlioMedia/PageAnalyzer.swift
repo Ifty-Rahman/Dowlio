@@ -419,7 +419,7 @@ public struct PageAnalyzer: Sendable {
     private func quickSteps(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> QuickSteps {
         if readers.contains(where: { $0.recognises(page.url) && $0.post(in: page.url) != nil }) {
             if let site = await readSite(page, reading: reading, refusals: refusals) { return QuickSteps(found: site.candidates, readerFound: true) }
-            return QuickSteps(found: await candidates(on: page, reading: reading, refusals: refusals, report: report), readerFound: false)
+            return QuickSteps(found: await candidates(on: page, reading: reading, refusals: refusals, keepsOnlyPlayers: true, report: report), readerFound: false)
         }
         async let fromSite = readSite(page, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
@@ -502,7 +502,9 @@ public struct PageAnalyzer: Sendable {
         var fragments = StreamFragments()
     }
 
-    private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
+    private func candidates(
+        on page: SentPage, reading: HTMLReader?, refusals: Refusals, keepsOnlyPlayers: Bool = false, report: (PageAnalysis) -> Void
+    ) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
         let readMedia = reading?.media ?? []
@@ -524,7 +526,7 @@ public struct PageAnalyzer: Sendable {
             }
         }
         for url in scriptedFiles { players.add(ScannedMedia(url: url, kind: MediaFile.kind(of: url) ?? .video), from: "watched") }
-        let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams)
+        let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams, keepsOnlyPlayers: keepsOnlyPlayers)
         let label = Self.label(of: page, reading: reading)
         let fragments = StreamFragments()
         let context = PageContext(
