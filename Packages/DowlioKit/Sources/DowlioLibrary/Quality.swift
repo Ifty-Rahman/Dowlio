@@ -64,7 +64,7 @@ public enum PlaylistNaming {
 
     public static func folderName(_ title: String) -> String {
         let cleaned = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
         return cleaned.isEmpty ? "Playlist" : String(cleaned.prefix(120))
     }
 

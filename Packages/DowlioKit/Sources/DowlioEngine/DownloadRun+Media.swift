@@ -7,7 +7,8 @@ extension DownloadRun {
         do {
             var plan = try await prepareMedia(media)
             current = plan
-            if canRenew(plan), plan.media.renewal?.needsListing == true {
+            if plan.media.renewal?.needsListing == true {
+                guard canRenew(plan) else { throw DownloadError.needsTools }
                 plan = try await renewing(plan)
                 current = plan
             }

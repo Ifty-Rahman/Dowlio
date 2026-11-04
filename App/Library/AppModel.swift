@@ -440,26 +440,12 @@ final class AppModel {
         let addsResolution = settings.nameConflictPolicy == .keepBoth
         let subtitles = UserDefaults.standard.subtitlePreference
         let added = list.downloads.flatMap { download -> [(DownloadSource, RequestOptions, DownloadOrigin?)] in
-            switch download {
-            case let .playlist(page, listing, entries, showing, quality):
-                let chosen = draft.options(for: page.url)
-                return entries.map { entry in
-                    let media = PlaylistNaming.media(
-                        for: entry, showing: showing, quality: quality, subtitles: subtitles.downloads ? subtitles.languages : []
-                    )
-                    var options = settings.options(connections: chosen.connections)
-                    options.fileName = PlaylistNaming.fileName(
-                        position: entry.position, of: listing.entries.count, title: entry.title, fileExtension: media.fileExtension
-                    )
-                    options.subfolder = PlaylistNaming.folderName(listing.title)
-                    options.playlistGroup = listing.url.absoluteString
-                    return (.media(media), options, draft.origin(for: page.url))
-                }
-            default:
-                return [single(download)]
+            if case let .playlist(page, listing, entries, showing, quality) = download {
+                return playlistDownloads(page, listing, entries, showing, quality, draft: draft, subtitles: subtitles)
             }
+            return single(download).map { [$0] } ?? []
         }
-        func single(_ download: LinkDownload) -> (DownloadSource, RequestOptions, DownloadOrigin?) {
+        func single(_ download: LinkDownload) -> (DownloadSource, RequestOptions, DownloadOrigin?)? {
             switch download {
             case let .media(page, candidate, version, name):
                 let chosen = draft.options(for: page.url)
@@ -479,14 +465,32 @@ final class AppModel {
                 options.cookies = chosen.cookies
                 options.fileName = name
                 return (.file(url), options, draft.origin(for: url))
-            case .playlist(let page, _, _, _, _):
-                return (.file(page.url), settings.options(connections: draft.options(for: page.url).connections), draft.origin(for: page.url))
+            case .playlist:
+                return nil
             }
         }
         perform { library in
             for (source, options, origin) in added {
                 await library.add(source, destination: destination, options: options, startImmediately: draft.startImmediately, origin: origin)
             }
+        }
+    }
+
+    private func playlistDownloads(
+        _ page: SentPage, _ listing: PlaylistListing, _ entries: [PlaylistListing.Entry], _ showing: SentPageDraft.Showing,
+        _ quality: VideoQuality, draft: NewDownloadDraft, subtitles: SubtitlePreference
+    ) -> [(DownloadSource, RequestOptions, DownloadOrigin?)] {
+        let chosen = draft.options(for: page.url)
+        return entries.map { entry in
+            let media = PlaylistNaming.media(for: entry, showing: showing, quality: quality, subtitles: subtitles.downloads ? subtitles.languages : [])
+            var options = settings.options(connections: chosen.connections)
+            options.referrer = chosen.referrer ?? page.url
+            options.userAgent = chosen.userAgent ?? page.userAgent
+            options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: entry.url, from: page.url)
+            options.fileName = PlaylistNaming.fileName(position: entry.position, of: listing.entries.count, title: entry.title, fileExtension: media.fileExtension)
+            options.subfolder = PlaylistNaming.folderName(listing.title)
+            options.playlistGroup = listing.url.absoluteString
+            return (.media(media), options, draft.origin(for: page.url))
         }
     }
 

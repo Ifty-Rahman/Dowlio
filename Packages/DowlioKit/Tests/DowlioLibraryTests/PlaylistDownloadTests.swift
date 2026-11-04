@@ -141,5 +141,15 @@ struct PlaylistDownloadTests {
         #expect(PlaylistNaming.fileName(position: 3, of: 20, title: "Song", fileExtension: "m4a") == "03 Song.m4a")
         #expect(PlaylistNaming.fileName(position: 7, of: 140, title: "Lesson", fileExtension: "mp4") == "007 Lesson.mp4")
         #expect(PlaylistNaming.fileName(position: 1, of: 5, title: "A/B: C", fileExtension: "mp4") == "01 A-B- C.mp4")
+        #expect(PlaylistNaming.folderName("..") == "Playlist")
+    }
+
+    @Test func anEntryThatCantBeListedNeedsTheTools() async throws {
+        let fixture = try await LibraryFixture()
+
+        let ids = await add(entries(1), to: fixture)
+        let row = try await fixture.library.row(ids[0]) { $0.hasEnded }
+
+        #expect(row.state == .failed(.needsTools))
     }
 }

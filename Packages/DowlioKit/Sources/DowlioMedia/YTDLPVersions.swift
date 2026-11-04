@@ -21,7 +21,7 @@ enum YTDLPVersions {
     static func pick(from versions: [Version], for choice: MediaRenewal.Choice) -> Version? {
         if choice.audioOnly { return versions.first { $0.isAudio && $0.language == nil } ?? versions.first(where: \.isAudio) }
         let videos = versions.filter { !$0.isAudio && $0.height != nil }
-        guard let tallest = choice.tallest else { return videos.max { ($0.height ?? 0) < ($1.height ?? 0) } ?? versions.first }
+        guard let tallest = choice.tallest else { return videos.max { ($0.height ?? 0) < ($1.height ?? 0) } ?? versions.first { !$0.isAudio } }
         let fitting = videos.filter { ($0.height ?? 0) <= tallest }
         return fitting.max { ($0.height ?? 0) < ($1.height ?? 0) } ?? videos.min { ($0.height ?? 0) < ($1.height ?? 0) }
     }
