@@ -438,7 +438,28 @@ final class AppModel {
         }
         let isTaken = Self.nameIsTaken(in: draft.folder)
         let addsResolution = settings.nameConflictPolicy == .keepBoth
-        let added = list.downloads.map { download -> (DownloadSource, RequestOptions, DownloadOrigin?) in
+        let subtitles = UserDefaults.standard.subtitlePreference
+        let added = list.downloads.flatMap { download -> [(DownloadSource, RequestOptions, DownloadOrigin?)] in
+            switch download {
+            case let .playlist(page, listing, entries, showing, quality):
+                let chosen = draft.options(for: page.url)
+                return entries.map { entry in
+                    let media = PlaylistNaming.media(
+                        for: entry, showing: showing, quality: quality, subtitles: subtitles.downloads ? subtitles.languages : []
+                    )
+                    var options = settings.options(connections: chosen.connections)
+                    options.fileName = PlaylistNaming.fileName(
+                        position: entry.position, of: listing.entries.count, title: entry.title, fileExtension: media.fileExtension
+                    )
+                    options.subfolder = PlaylistNaming.folderName(listing.title)
+                    options.playlistGroup = listing.url.absoluteString
+                    return (.media(media), options, draft.origin(for: page.url))
+                }
+            default:
+                return [single(download)]
+            }
+        }
+        func single(_ download: LinkDownload) -> (DownloadSource, RequestOptions, DownloadOrigin?) {
             switch download {
             case let .media(page, candidate, version, name):
                 let chosen = draft.options(for: page.url)
@@ -458,6 +479,8 @@ final class AppModel {
                 options.cookies = chosen.cookies
                 options.fileName = name
                 return (.file(url), options, draft.origin(for: url))
+            case .playlist(let page, _, _, _, _):
+                return (.file(page.url), settings.options(connections: draft.options(for: page.url).connections), draft.origin(for: page.url))
             }
         }
         perform { library in

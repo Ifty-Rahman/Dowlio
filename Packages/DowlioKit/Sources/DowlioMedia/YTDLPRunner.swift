@@ -1,5 +1,6 @@
 import DowlioCore
 import Foundation
+import VideoToolbox
 import os
 
 public struct YTDLPRunner: Sendable {
@@ -71,7 +72,10 @@ public struct YTDLPRunner: Sendable {
 }
 
 extension YTDLPRunner {
-    public func renew(_ media: MediaSource, signIn: @Sendable (URL) async -> [Cookie] = { _ in [] }) async throws -> MediaSource {
+    public func renew(
+        _ media: MediaSource, signIn: @Sendable (URL) async -> [Cookie] = { _ in [] },
+        decodesAV1: Bool = VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+    ) async throws -> MediaSource {
         guard let renewal = media.renewal else { throw RenewalFailure.failed }
         guard await isInstalled else { throw RenewalFailure.toolsMissing }
         let info: MediaInfo
@@ -80,11 +84,21 @@ extension YTDLPRunner {
         } catch ToolInstaller.Failure.notInstalled {
             throw RenewalFailure.toolsMissing
         } catch let failure as YTDLPFailure {
+            if renewal.needsListing { throw failure.downloadError }
             switch failure {
             case .needsSignIn, .private: throw RenewalFailure.needsSignIn
             case .network, .rateLimited: throw RenewalFailure.network
             default: throw RenewalFailure.failed
             }
+        }
+        if renewal.needsListing {
+            let choice = renewal.choice ?? MediaRenewal.Choice()
+            let preference = SubtitlePreference(downloads: !choice.subtitleLanguages.isEmpty, languages: choice.subtitleLanguages)
+            let versions = YTDLPVersions.withExtras(YTDLPVersions.versions(of: info, page: renewal.pageURL, decodesAV1: decodesAV1), of: info, subtitles: preference)
+            guard let picked = YTDLPVersions.pick(from: versions, for: choice), case .media(let source) = picked.source else {
+                throw DownloadError.mediaUnplayable
+            }
+            return source
         }
         let formats = renewal.formatIDs.compactMap { id in info.formats.first { $0.id == id } }
         let tracks = formats.compactMap { YTDLPVersions.track(of: $0) }

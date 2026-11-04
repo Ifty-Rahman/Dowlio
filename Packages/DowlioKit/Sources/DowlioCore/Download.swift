@@ -133,6 +133,8 @@ public struct RequestOptions: Equatable, Sendable {
     /// work. With this off, each connection closes when its own segment is done.
     public var allowsWorkStealing = true
     public var requestSizeLimit: Int64?
+    public var subfolder: String?
+    public var playlistGroup: String?
     /// The name the user chose for the finished file. Unsafe characters are removed. `nil` takes
     /// the name the server or the link gives.
     public var fileName: String?

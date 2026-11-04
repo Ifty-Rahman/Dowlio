@@ -23,6 +23,7 @@ public struct LinkItem: Identifiable {
 public enum LinkDownload: Equatable, Sendable {
     case media(page: SentPage, candidate: Candidate, version: Version, name: String?)
     case file(URL, name: String?)
+    case playlist(page: SentPage, listing: PlaylistListing, entries: [PlaylistListing.Entry], showing: SentPageDraft.Showing, quality: VideoQuality)
 }
 
 @MainActor
@@ -226,7 +227,7 @@ public final class LinkList {
         case .checking, .file:
             return true
         case .page(let model):
-            guard let candidate else { return model.draft.phase.isLooking }
+            guard let candidate else { return model.draft.phase.isLooking || model.draft.phase == .playlist }
             return model.draft.candidates.indices.contains(candidate) && model.draft.candidates[candidate].restriction == nil
         }
     }
@@ -280,6 +281,14 @@ public final class LinkList {
             case .file(let url, _):
                 return .file(url, name: name)
             case .page(let model):
+                if model.draft.phase == .playlist, let listing = model.draft.playlist {
+                    let entries = model.draft.includedEntries
+                    guard !entries.isEmpty else { return nil }
+                    return .playlist(
+                        page: model.draft.page, listing: listing, entries: entries, showing: model.draft.playlistShowing,
+                        quality: model.draft.playlistQuality
+                    )
+                }
                 return model.draft.phase.isLooking ? nil : .file(model.draft.page.url, name: name)
             case .video(let model, let candidate):
                 guard let version = model.draft.chosenVersion(of: candidate) else { return nil }

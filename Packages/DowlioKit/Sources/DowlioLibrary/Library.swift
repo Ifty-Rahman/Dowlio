@@ -108,10 +108,11 @@ public actor Library {
         origin: DownloadOrigin? = nil
     ) async -> DownloadID {
         let id = DownloadID()
-        let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
         var record = StoredDownload(
-            id: id.rawValue, source: source, destination: destination, options: options, state: state, addedAt: now()
+            id: id.rawValue, source: source, destination: destination, options: options, state: .queued, addedAt: now()
         )
+        let state: StoredDownload.State = !startImmediately ? .paused : hasRoom(for: record) ? .downloading : .queued
+        record.state = state
         record.origin = origin
         records[id] = record
         save(record)
@@ -170,6 +171,14 @@ public actor Library {
         records.values.count { $0.state == .downloading }
     }
 
+    public static let playlistAtOnce = 3
+
+    private func hasRoom(for record: StoredDownload) -> Bool {
+        guard activeCount < maximumActive else { return false }
+        guard let group = record.playlistGroup else { return true }
+        return records.values.count { $0.state == .downloading && $0.playlistGroup == group && $0.id != record.id } < Self.playlistAtOnce
+    }
+
     private func setState(_ state: StoredDownload.State, of id: DownloadID) {
         guard var record = records[id], record.state != state else { return }
         record.state = state
@@ -179,7 +188,7 @@ public actor Library {
     }
 
     private func runOrQueue(_ id: DownloadID) async {
-        guard activeCount < maximumActive else { return setState(.queued, of: id) }
+        guard let record = records[id], hasRoom(for: record) else { return setState(.queued, of: id) }
         await run(id)
     }
 
@@ -199,7 +208,7 @@ public actor Library {
 
     private func fillSlots() async {
         while !pausingAll, activeCount < maximumActive,
-              let next = records.values.filter({ $0.state == .queued }).min(by: { $0.addedAt < $1.addedAt }) {
+              let next = records.values.filter({ $0.state == .queued && hasRoom(for: $0) }).min(by: { $0.addedAt < $1.addedAt }) {
             await run(DownloadID(rawValue: next.id))
         }
     }

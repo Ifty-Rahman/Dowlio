@@ -143,13 +143,29 @@ public struct MediaExtras: Codable, Equatable, Sendable {
 }
 
 public struct MediaRenewal: Codable, Equatable, Sendable {
+    public struct Choice: Codable, Equatable, Sendable {
+        public var tallest: Int?
+        public var audioOnly: Bool
+        public var subtitleLanguages: [String]
+
+        public init(tallest: Int? = nil, audioOnly: Bool = false, subtitleLanguages: [String] = []) {
+            self.tallest = tallest
+            self.audioOnly = audioOnly
+            self.subtitleLanguages = subtitleLanguages
+        }
+    }
+
     public var pageURL: URL
     public var formatIDs: [String]
+    public var choice: Choice?
 
-    public init(pageURL: URL, formatIDs: [String]) {
+    public init(pageURL: URL, formatIDs: [String], choice: Choice? = nil) {
         self.pageURL = pageURL
         self.formatIDs = formatIDs
+        self.choice = choice
     }
+
+    public var needsListing: Bool { formatIDs.isEmpty }
 }
 
 public struct MediaTrack: Codable, Equatable, Sendable {

@@ -4,6 +4,28 @@ import Foundation
 enum YTDLPVersions {
     static let tallestH264 = 1080
 
+    static func withExtras(_ versions: [Version], of info: MediaInfo, subtitles: SubtitlePreference) -> [Version] {
+        let chapters = info.chapters.map { MediaExtras.Chapter(start: $0.start, end: $0.end, title: $0.title) }
+        let video = MediaExtras(subtitles: SubtitleSelection.choose(info, for: subtitles), chapters: chapters, coverArt: info.coverArt)
+        let audio = MediaExtras(coverArt: info.coverArt)
+        return versions.map { version in
+            guard case .media(let media) = version.source else { return version }
+            var extras = media.isAudio ? audio : video
+            if media.outputContainer == .webm { extras.coverArt = nil }
+            var withExtras = version
+            withExtras.source = .media(media.with(extras: extras))
+            return withExtras
+        }
+    }
+
+    static func pick(from versions: [Version], for choice: MediaRenewal.Choice) -> Version? {
+        if choice.audioOnly { return versions.first { $0.isAudio && $0.language == nil } ?? versions.first(where: \.isAudio) }
+        let videos = versions.filter { !$0.isAudio && $0.height != nil }
+        guard let tallest = choice.tallest else { return videos.max { ($0.height ?? 0) < ($1.height ?? 0) } ?? versions.first }
+        let fitting = videos.filter { ($0.height ?? 0) <= tallest }
+        return fitting.max { ($0.height ?? 0) < ($1.height ?? 0) } ?? videos.min { ($0.height ?? 0) < ($1.height ?? 0) }
+    }
+
     enum Path: Equatable {
         case engine
         case hls

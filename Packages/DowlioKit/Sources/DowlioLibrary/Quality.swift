@@ -1,3 +1,4 @@
+import DowlioCore
 import DowlioMedia
 import Foundation
 
@@ -49,5 +50,33 @@ public enum MediaNaming {
         guard addsResolution, isTaken(named), let height = version.height else { return named }
         let withResolution = "\(base) (\(height)p)"
         return ext.isEmpty ? withResolution : "\(withResolution).\(ext)"
+    }
+}
+
+public enum PlaylistNaming {
+    public static func fileName(position: Int, of count: Int, title: String, fileExtension: String) -> String {
+        let width = max(2, String(count).count)
+        let number = String(repeating: "0", count: max(width - String(position).count, 0)) + String(position)
+        let cleaned = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(number) \(cleaned.isEmpty ? "Video" : String(cleaned.prefix(120))).\(fileExtension)"
+    }
+
+    public static func folderName(_ title: String) -> String {
+        let cleaned = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Playlist" : String(cleaned.prefix(120))
+    }
+
+    public static func media(for entry: PlaylistListing.Entry, showing: SentPageDraft.Showing, quality: VideoQuality, subtitles: [String]) -> MediaSource {
+        let audioOnly = showing == .audio
+        var tallest: Int?
+        if case .upTo(let cap) = quality { tallest = cap }
+        let choice = MediaRenewal.Choice(tallest: tallest, audioOnly: audioOnly, subtitleLanguages: audioOnly ? [] : subtitles)
+        return try! MediaSource(
+            tracks: [MediaTrack(kind: audioOnly ? .audio : .combined, fragments: [MediaFragment(url: entry.url)])],
+            container: audioOnly ? .m4a : .mp4,
+            renewal: MediaRenewal(pageURL: entry.url, formatIDs: [], choice: choice)
+        )
     }
 }

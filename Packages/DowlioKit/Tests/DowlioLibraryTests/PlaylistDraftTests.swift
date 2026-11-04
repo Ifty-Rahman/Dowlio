@@ -79,6 +79,23 @@ struct PlaylistDraftTests {
         #expect(model.draft.includedEntries.count == 18)
     }
 
+    @Test func downloadingAPlaylistHandsOverTheIncludedVideosAndTheOneChoice() async throws {
+        let playlist = listing(available: 4, unavailable: 1, isMusic: true)
+        let list = LinkList(analyze: { _ in .once(.playlist(playlist)) })
+        list.send(SentPage(url: playlist.url))
+        try await waitForPage(list) { $0.draft.phase == .playlist }
+        let model = try #require(page(of: list))
+        model.include(playlist.entries[1], false)
+
+        guard case .playlist(_, let listing, let entries, let showing, _)? = list.downloads.first else {
+            Issue.record("no playlist download: \(list.downloads)")
+            return
+        }
+        #expect(listing.title == "Mix")
+        #expect(entries.map(\.position) == [1, 3, 4])
+        #expect(showing == .audio)
+    }
+
     @Test func aChannelSaysChannelsArentSupported() {
         var draft = SentPageDraft(page: SentPage(url: URL(string: "https://www.youtube.com/@x")!))
 

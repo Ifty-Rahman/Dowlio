@@ -7,6 +7,10 @@ extension DownloadRun {
         do {
             var plan = try await prepareMedia(media)
             current = plan
+            if canRenew(plan), plan.media.renewal?.needsListing == true {
+                plan = try await renewing(plan)
+                current = plan
+            }
             if plan.media.downloadsWithYTDLP {
                 saveManifest(plan)
                 return try await downloadWithYTDLP(plan)
@@ -49,7 +53,7 @@ extension DownloadRun {
 
         let fileName = options.fileName.map(FileNaming.chosen) ?? Self.mediaFileName(for: url, of: media)
         let contentType = media.contentType
-        let folder = destination.folder(forFileNamed: fileName, contentType: contentType)
+        let folder = Self.folder(destination.folder(forFileNamed: fileName, contentType: contentType), within: options.subfolder)
         let category = FileCategory(fileName: fileName, contentType: contentType)
         let isNotSecure = media.tracks.contains { track in
             (track.fragments + (track.initialization.map { [$0] } ?? [])).contains { $0.url.isPlainHTTP }
@@ -78,6 +82,11 @@ extension DownloadRun {
             throw DownloadError.destinationNotWritable
         }
         return plan
+    }
+
+    static func folder(_ folder: URL, within subfolder: String?) -> URL {
+        guard let subfolder, !FileNaming.chosen(subfolder).isEmpty else { return folder }
+        return folder.appending(path: FileNaming.chosen(subfolder), directoryHint: .isDirectory)
     }
 
     static func mediaFileName(for url: URL, of media: MediaSource) -> String {
@@ -251,6 +260,8 @@ extension DownloadRun {
             fresh = try await renew(plan.media)
         } catch RenewalFailure.toolsMissing {
             throw DownloadError.needsTools
+        } catch let error as DownloadError {
+            throw error
         } catch RenewalFailure.needsSignIn {
             throw DownloadError.needsSignIn
         } catch RenewalFailure.network {
@@ -262,8 +273,10 @@ extension DownloadRun {
         }
         try Task.checkCancellation()
         let keepsParts = Self.sameLayout(plan.media, fresh)
+        let (base, _) = FileNaming.split(plan.fileName)
+        let fileName = fresh.fileExtension == plan.media.fileExtension ? plan.fileName : "\(base).\(fresh.fileExtension)"
         let next = MediaPlan(
-            fileName: plan.fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit,
+            fileName: fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit,
             finished: keepsParts ? plan.finishedBytes : [:]
         )
         saveManifest(next)
@@ -279,6 +292,7 @@ extension DownloadRun {
         let reading = next.reading
         await changeSnapshot {
             $0.renewedMedia = fresh
+            $0.fileName = fileName
             $0.apply(reading)
         }
         return next
