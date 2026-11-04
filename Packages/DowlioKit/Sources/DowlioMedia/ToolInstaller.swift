@@ -89,6 +89,7 @@ public actor ToolInstaller {
     private let source: GitHubSource
     private let session: URLSession
     private var installing: Task<Void, Error>?
+    private var busy: Task<Void, Never>?
 
     public init(folder: URL, source: GitHubSource = .official, session: URLSession = PageAnalyzer.makeSession()) {
         self.folder = folder
@@ -97,6 +98,14 @@ public actor ToolInstaller {
     }
 
     private var recordsURL: URL { folder.appending(path: "tools.json") }
+
+    public static let updateInterval: TimeInterval = 7 * 24 * 60 * 60
+
+    public static func isUpdateCheckDue(lastCheck: Date?, now: Date, keepsUpToDate: Bool) -> Bool {
+        guard keepsUpToDate else { return false }
+        guard let lastCheck else { return true }
+        return now.timeIntervalSince(lastCheck) >= updateInterval
+    }
 
     private func location(of tool: Tool) -> URL {
         switch tool {
@@ -155,10 +164,65 @@ public actor ToolInstaller {
 
     public func install() async throws {
         if let installing { return try await installing.value }
-        let run = Task { try await installBoth() }
+        let run = Task { try await self.exclusively { try await self.installLatest() } }
         installing = run
         defer { installing = nil }
         try await run.value
+    }
+
+    public func checkForUpdate() async throws -> [Tool] {
+        try await newerReleases().map(\.0)
+    }
+
+    public func update() async throws -> Bool {
+        try await exclusively { try await self.installNewer() }
+    }
+
+    public func remove() async throws {
+        try await exclusively { try await self.removeBoth() }
+    }
+
+    private func exclusively<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        while let busy { await busy.value }
+        let run = Task { try await work() }
+        busy = Task { _ = try? await run.value }
+        defer { busy = nil }
+        return try await run.value
+    }
+
+    private func installLatest() async throws {
+        var releases: [(Tool, Release)] = []
+        for tool in Tool.allCases {
+            releases.append((tool, try await latestRelease(of: tool)))
+        }
+        try await install(releases)
+    }
+
+    private func installNewer() async throws -> Bool {
+        let newer = try await newerReleases()
+        guard !newer.isEmpty else { return false }
+        try await install(newer)
+        return true
+    }
+
+    private func removeBoth() throws {
+        let manager = FileManager.default
+        for tool in Tool.allCases {
+            let item = installedItem(of: tool)
+            if manager.fileExists(atPath: item.path) { try manager.removeItem(at: item) }
+        }
+        if manager.fileExists(atPath: recordsURL.path) { try manager.removeItem(at: recordsURL) }
+        Self.logger.info("Removed yt-dlp and QuickJS-NG")
+    }
+
+    private func newerReleases() async throws -> [(Tool, Release)] {
+        let known = records()
+        var newer: [(Tool, Release)] = []
+        for tool in Tool.allCases {
+            let release = try await latestRelease(of: tool)
+            if known[tool]?.version != release.tagName { newer.append((tool, release)) }
+        }
+        return newer
     }
 
     private struct Staged {
@@ -167,12 +231,11 @@ public actor ToolInstaller {
         var record: Record
     }
 
-    private func installBoth() async throws {
+    private func install(_ releases: [(Tool, Release)]) async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var staged: [Staged] = []
         defer { staged.forEach { try? FileManager.default.removeItem(at: $0.item) } }
-        for tool in Tool.allCases {
-            let release = try await latestRelease(of: tool)
+        for (tool, release) in releases {
             staged.append(try await stage(tool, from: release))
         }
         var known = records()

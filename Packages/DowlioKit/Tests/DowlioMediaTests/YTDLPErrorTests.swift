@@ -45,6 +45,33 @@ struct YTDLPErrorTests {
         #expect(try await analyze(SentPage(url: watch), with: standIn) == expected)
     }
 
+    @Test func aBrokenSiteChecksForAnUpdateFirstAndRunsTheNewYTDLPOnce() async throws {
+        let standIn = try await YTDLPStandIn.failing(with: "extractorBroken")
+        try standIn.publishUpdate(script: "cat '\(YTDLPStandIn.fixture("video-1080p.json").path)'")
+
+        let found = try await analyze(SentPage(url: watch), with: standIn)
+
+        guard case .found(let candidates) = found else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.first?.versions.isEmpty == false)
+        #expect(standIn.runs == 2)
+        #expect(await standIn.installer.installedVersions()[.ytdlp] == "2026.11.03")
+    }
+
+    @Test func aBrokenSiteWithNoUpdateShowsTheErrorAfterOneRun() async throws {
+        let standIn = try await YTDLPStandIn.failing(with: "extractorBroken")
+
+        #expect(try await analyze(SentPage(url: watch), with: standIn) == .ytdlpFailed(.extractorBroken))
+        #expect(standIn.runs == 1)
+    }
+
+    @Test func aBrokenSiteThatStaysBrokenAfterTheUpdateShowsTheError() async throws {
+        let standIn = try await YTDLPStandIn.failing(with: "extractorBroken")
+        try standIn.publishUpdate(script: "cat '\(YTDLPStandIn.errorText("extractorBroken").path)' >&2\nexit 1")
+
+        #expect(try await analyze(SentPage(url: watch), with: standIn) == .ytdlpFailed(.extractorBroken))
+        #expect(standIn.runs == 2)
+    }
+
     @Test func aProtectedVideoUsesTheProtectedState() async throws {
         let standIn = try await YTDLPStandIn.failing(with: "protected")
 

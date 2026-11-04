@@ -55,6 +55,7 @@ final class AppModel {
     private let library: Library?
     private var connectServer: ConnectServer?
     let tools: ToolInstaller
+    let toolsModel: ToolsModel
 
     init() {
         UserDefaults.standard.removeRetiredSettings()
@@ -65,6 +66,8 @@ final class AppModel {
             path: AppIdentity.supportFolderName, directoryHint: .isDirectory
         )
         tools = ToolInstaller(folder: support.appending(path: "Tools", directoryHint: .isDirectory))
+        toolsModel = ToolsModel(installer: tools)
+        toolsModel.startWeeklyChecks()
         do {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
@@ -323,9 +326,16 @@ final class AppModel {
 
     private var toolConsent: ToolConsent {
         let tools = tools
+        let toolsModel = toolsModel
         return ToolConsent(size: { try? await tools.downloadSize() }, install: { keeps in
             try await tools.install()
             if let keeps { UserDefaults.standard.set(keeps, forKey: SettingsKey.keepsYTDLPUpToDate) }
+            UserDefaults.standard.set(Date(), forKey: SettingsKey.lastYTDLPUpdateCheck)
+            await toolsModel.refresh()
+        }, update: {
+            let updated = try await tools.update()
+            await toolsModel.refresh()
+            return updated
         })
     }
 

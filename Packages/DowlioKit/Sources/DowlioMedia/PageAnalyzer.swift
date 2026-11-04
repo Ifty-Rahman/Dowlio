@@ -222,9 +222,18 @@ public struct PageAnalyzer: Sendable {
 
     private static func infoRetryingWithSignIn(for page: SentPage, from ytdlp: YTDLPRunner) async throws -> MediaInfo {
         do {
-            return try await ytdlp.info(for: page.url)
+            return try await infoUpdatingIfBroken(for: page, from: ytdlp)
         } catch let failure as YTDLPFailure where (failure == .needsSignIn || failure == .private) && !page.cookies.isEmpty {
             return try await ytdlp.info(for: page.url, cookies: page.cookies)
+        }
+    }
+
+    private static func infoUpdatingIfBroken(for page: SentPage, from ytdlp: YTDLPRunner) async throws -> MediaInfo {
+        do {
+            return try await ytdlp.info(for: page.url)
+        } catch YTDLPFailure.extractorBroken {
+            guard (try? await ytdlp.installer.update()) == true else { throw YTDLPFailure.extractorBroken }
+            return try await ytdlp.info(for: page.url)
         }
     }
 

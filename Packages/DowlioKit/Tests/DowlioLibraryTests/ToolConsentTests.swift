@@ -82,6 +82,27 @@ struct ToolConsentTests {
         #expect(model.draft.couldntInstallLine == "Dowlio couldn't download yt-dlp and QuickJS-NG from GitHub. Check your connection and try again.")
     }
 
+    @Test func checkForUpdateUpdatesTheToolsThenReadsThePageAgain() async throws {
+        let updates = Counter()
+        let video = Candidate(label: "Perfect", versions: [])
+        let list = LinkList(
+            analyze: { _ in updates.count == 0 ? .once(.ytdlpFailed(.extractorBroken)) : .once(.found([video])) },
+            tools: ToolConsent(size: { nil }, install: { _ in }, update: {
+                updates.add()
+                return true
+            })
+        )
+        list.send(page)
+        try await waitOnMain { pageModel(of: list)?.draft.phase == .ytdlpFailed(.extractorBroken) }
+        let model = try #require(pageModel(of: list))
+
+        model.checkForToolUpdate()
+        try await waitOnMain { model.draft.phase == .found }
+
+        #expect(updates.count == 1)
+        #expect(model.draft.candidates == [video])
+    }
+
     @Test func aToolThatChangedOffersReinstallingIt() {
         var draft = SentPageDraft(page: page)
 

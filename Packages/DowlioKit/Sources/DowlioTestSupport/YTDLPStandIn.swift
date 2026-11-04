@@ -22,9 +22,8 @@ public struct YTDLPStandIn: Sendable {
         try await install(script: "cat '\(errorText(error).path)' >&2\nexit 1")
     }
 
-    public static func install(script: String) async throws -> YTDLPStandIn {
-        let log = try TestFiles.makeFolder()
-        let body = """
+    private static func body(_ script: String, log: URL) -> String {
+        """
             printf '%s\\n' "$@" > '\(log.path)/arguments'
             env > '\(log.path)/environment'
             echo run >> '\(log.path)/runs'
@@ -32,12 +31,20 @@ public struct YTDLPStandIn: Sendable {
             printf '%s\n' "$@" >> '\(log.path)/all-arguments'
             \(script)
             """
+    }
+
+    public static func install(script: String) async throws -> YTDLPStandIn {
+        let log = try TestFiles.makeFolder()
         let github = try await FakeGitHub()
-        github.publishYTDLP(version: "2026.10.26", zip: try FakeGitHub.standInYTDLP(script: body))
+        github.publishYTDLP(version: "2026.10.26", zip: try FakeGitHub.standInYTDLP(script: body(script, log: log)))
         github.publishQuickJS(version: "v0.18.0", binary: FakeGitHub.standInQuickJS())
         let installer = ToolInstaller(folder: log.appending(path: "Tools", directoryHint: .isDirectory), source: .testing(api: github.api))
         try await installer.install()
         return YTDLPStandIn(installer: installer, github: github, log: log)
+    }
+
+    public func publishUpdate(version: String = "2026.11.03", script: String) throws {
+        github.publishYTDLP(version: version, zip: try FakeGitHub.standInYTDLP(script: Self.body(script, log: log)))
     }
 
     public static func notInstalled() async throws -> YTDLPStandIn {

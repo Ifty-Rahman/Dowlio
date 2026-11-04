@@ -6,10 +6,15 @@ import Observation
 public struct ToolConsent: Sendable {
     public var size: @Sendable () async -> Int64?
     public var install: @Sendable (_ keepsUpToDate: Bool?) async throws -> Void
+    public var update: @Sendable () async throws -> Bool
 
-    public init(size: @escaping @Sendable () async -> Int64?, install: @escaping @Sendable (_ keepsUpToDate: Bool?) async throws -> Void) {
+    public init(
+        size: @escaping @Sendable () async -> Int64?, install: @escaping @Sendable (_ keepsUpToDate: Bool?) async throws -> Void,
+        update: @escaping @Sendable () async throws -> Bool = { false }
+    ) {
         self.size = size
         self.install = install
+        self.update = update
     }
 }
 
@@ -65,7 +70,14 @@ public final class SentPageModel {
     }
 
     public func checkForToolUpdate() {
-        tryAgain()
+        guard let tools else { return tryAgain() }
+        draft.startLookingAgain()
+        installing?.cancel()
+        installing = Task { [weak self] in
+            _ = try? await tools.update()
+            guard let self, !Task.isCancelled else { return }
+            listen(to: analyzePage(draft.page))
+        }
     }
 
     public func tryAgain() {
