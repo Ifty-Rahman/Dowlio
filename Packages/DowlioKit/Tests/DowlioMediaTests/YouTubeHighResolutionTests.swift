@@ -72,7 +72,9 @@ struct YouTubeHighResolutionTests {
         let dubs = audio.dropFirst()
         #expect(dubs.count == 20)
         #expect(dubs.allSatisfy { $0.codecs == "AAC" && $0.outputContainer == .m4a })
-        let german = Locale.current.localizedString(forLanguageCode: "de")
+        let german = Locale.current.localizedString(forIdentifier: "de")
+        let names = dubs.compactMap(\.language)
+        #expect(names == names.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
         #expect(dubs.contains { $0.language == german && $0.renewal?.formatIDs == ["140-1"] })
     }
 

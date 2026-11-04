@@ -26,31 +26,37 @@ enum YTDLPVersions {
             return version(of: [video, aac], container: .mp4, page: page, height: height)
         }
         let av1 = formats.filter(isAV1)
-        let vp9 = formats.filter(isVP9)
+        let vp9 = formats.filter(isVP)
         let preferred = decodesAV1 ? [av1, vp9] : [vp9, av1]
         let choices = preferred.map { $0.filter(isSDR) } + preferred.map { $0.filter { !isSDR($0) } }
         for candidates in choices {
             guard let video = best(candidates) else { continue }
-            let isWebM = isVP9(video)
+            let isWebM = isVP(video)
             guard let audio = isWebM ? opus : aac else { continue }
-            var row = version(of: [video, audio], container: isWebM ? .webm : .mp4, page: page, height: height)
-            row?.isHDR = !isSDR(video)
-            return row
+            var chosen = version(of: [video, audio], container: isWebM ? .webm : .mp4, page: page, height: height)
+            chosen?.isHDR = !isSDR(video)
+            return chosen
         }
         return nil
     }
 
     private static func dubs(in audio: [MediaInfo.Format], besides original: [MediaInfo.Format], page: URL) -> [Version] {
-        let originalLanguages = Set(original.compactMap(\.language))
-        let others = Dictionary(grouping: audio.filter { isAAC($0) && $0.language != nil && !originalLanguages.contains($0.language ?? "") }) {
-            $0.language ?? ""
+        let originalLanguages = Set(original.compactMap { $0.language.map(baseLanguage) })
+        var byName: [String: [MediaInfo.Format]] = [:]
+        for format in audio where isAAC(format) {
+            guard let code = format.language, !originalLanguages.contains(baseLanguage(code)) else { continue }
+            byName[Locale.current.localizedString(forIdentifier: code) ?? code, default: []].append(format)
         }
-        return others.keys.sorted().compactMap { language in
-            guard let dub = best(others[language] ?? []) else { return nil }
-            var version = version(of: [dub], container: .m4a, page: page, height: nil)
-            version?.language = Locale.current.localizedString(forLanguageCode: language) ?? language
-            return version
+        return byName.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.compactMap { name in
+            guard let format = best(byName[name] ?? []) else { return nil }
+            var dub = version(of: [format], container: .m4a, page: page, height: nil)
+            dub?.language = name
+            return dub
         }
+    }
+
+    private static func baseLanguage(_ code: String) -> String {
+        String(code.lowercased().prefix { $0 != "-" && $0 != "_" })
     }
 
     private static func isUsable(_ format: MediaInfo.Format) -> Bool {
@@ -60,10 +66,10 @@ enum YTDLPVersions {
     }
 
     private static func isH264(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isH264(format.videoCodec ?? "") }
-    private static func isAV1(_ format: MediaInfo.Format) -> Bool { (format.videoCodec ?? "").lowercased().hasPrefix("av01") }
-    private static func isVP9(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isVP(format.videoCodec ?? "") }
+    private static func isAV1(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isAV1(format.videoCodec ?? "") }
+    private static func isVP(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isVP(format.videoCodec ?? "") }
     private static func isAAC(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isAAC(format.audioCodec ?? "") }
-    private static func isOpus(_ format: MediaInfo.Format) -> Bool { (format.audioCodec ?? "").lowercased().hasPrefix("opus") }
+    private static func isOpus(_ format: MediaInfo.Format) -> Bool { MediaCodecs.isOpus(format.audioCodec ?? "") }
     private static func isSDR(_ format: MediaInfo.Format) -> Bool { (format.dynamicRange ?? "SDR") == "SDR" }
 
     private static func originalAudio(in audio: [MediaInfo.Format]) -> [MediaInfo.Format] {

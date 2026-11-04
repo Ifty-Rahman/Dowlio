@@ -5,6 +5,14 @@ enum MediaCodecs {
         ["avc1", "avc3"].contains { codec.lowercased().hasPrefix($0) }
     }
 
+    static func isAV1(_ codec: String) -> Bool {
+        codec.lowercased().hasPrefix("av01")
+    }
+
+    static func isOpus(_ codec: String) -> Bool {
+        codec.lowercased().hasPrefix("opus")
+    }
+
     static func isAAC(_ codec: String) -> Bool {
         codec.lowercased().hasPrefix("mp4a")
     }
