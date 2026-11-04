@@ -202,7 +202,12 @@ public struct Version: Equatable, Sendable {
     public var outputContainer: MediaContainer? { mediaSource?.container }
 
     public var resolution: String? {
-        guard let height else { return nil }
+        height.map { Self.resolution(height: $0, frameRate: frameRate) }
+    }
+
+    public var isHighFrameRate: Bool { (frameRate ?? 0) > 30 }
+
+    public static func resolution(height: Int, frameRate: Int?) -> String {
         guard let frameRate, frameRate > 30 else { return "\(height)p" }
         return "\(height)p\(frameRate)"
     }

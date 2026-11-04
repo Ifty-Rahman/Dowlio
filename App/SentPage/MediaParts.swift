@@ -225,7 +225,7 @@ struct VersionRows: View {
     }
 
     private func list(_ versions: [Version]) -> some View {
-        let labelWidth: CGFloat = versions.contains { ($0.frameRate ?? 0) > 30 } ? 78 : 58
+        let labelWidth: CGFloat = versions.contains(where: \.isHighFrameRate) ? 78 : 58
         return VStack(spacing: Self.spacing) {
             ForEach(Array(versions.enumerated()), id: \.offset) { index, version in
                 VersionRow(version: version, isChosen: version == media.draft.chosenVersion, labelWidth: labelWidth) {

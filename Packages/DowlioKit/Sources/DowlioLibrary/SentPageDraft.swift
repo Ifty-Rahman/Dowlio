@@ -276,8 +276,7 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public func resolutionName(of height: Int) -> String {
-        guard let rate = playlist?.frameRates[height], rate > 30 else { return "\(height)p" }
-        return "\(height)p\(rate)"
+        Version.resolution(height: height, frameRate: playlist?.frameRates[height])
     }
 
     public var isCheckingResolutions: Bool {
