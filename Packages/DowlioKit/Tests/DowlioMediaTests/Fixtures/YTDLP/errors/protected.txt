@@ -1,0 +1,2 @@
+WARNING: [youtube] 4hN6Vq0q3eE: Some web client https formats have been skipped as they are DRM protected. The current session may have an experiment that applies DRM to all videos on the tv client. See  https://github.com/yt-dlp/yt-dlp/issues/12563  for more details.
+ERROR: [youtube] 4hN6Vq0q3eE: This video is DRM protected

@@ -1,0 +1,192 @@
+{
+ "_type": "video",
+ "id": "rFZHOHl-L8A",
+ "title": "lofi hip hop radio 📚 beats to relax/study to 2026-11-04 13:45",
+ "thumbnail": "https://i.ytimg.com/vi/rFZHOHl-L8A/maxresdefault.jpg",
+ "live_status": "is_live",
+ "was_live": false,
+ "is_live": true,
+ "extractor": "youtube",
+ "extractor_key": "Youtube",
+ "webpage_url": "https://www.youtube.com/watch?v=rFZHOHl-L8A",
+ "original_url": "https://www.youtube.com/watch?v=rFZHOHl-L8A",
+ "language": null,
+ "channel": "Lofi Girl",
+ "uploader": "Lofi Girl",
+ "availability": "public",
+ "chapters": null,
+ "formats": [
+  {
+   "format_id": "233",
+   "format_note": "Default, low",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "vcodec": "none",
+   "language": null,
+   "tbr": null,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "233 - audio only (Default, low)"
+  },
+  {
+   "format_id": "234",
+   "format_note": "Default, high",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "vcodec": "none",
+   "language": null,
+   "tbr": null,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "234 - audio only (Default, high)"
+  },
+  {
+   "format_id": "269",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "width": 256,
+   "height": 144,
+   "fps": 15.0,
+   "vcodec": "avc1.42C00B",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 269.034,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "269 - 256x144"
+  },
+  {
+   "format_id": "229",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "width": 426,
+   "height": 240,
+   "fps": 30.0,
+   "vcodec": "avc1.4D4015",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 507.418,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "229 - 426x240"
+  },
+  {
+   "format_id": "230",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "width": 640,
+   "height": 360,
+   "fps": 30.0,
+   "vcodec": "avc1.4D401E",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 962.461,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "230 - 640x360"
+  },
+  {
+   "format_id": "231",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "width": 854,
+   "height": 480,
+   "fps": 30.0,
+   "vcodec": "avc1.4D401F",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 1282.517,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "231 - 854x480"
+  },
+  {
+   "format_id": "232",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "width": 1280,
+   "height": 720,
+   "fps": 30.0,
+   "vcodec": "avc1.4D401F",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 2447.97,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "232 - 1280x720"
+  },
+  {
+   "format_id": "270",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "manifest_url": "https://rr1---sn-fixture.googlevideo.com/videoplayback",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30.0,
+   "vcodec": "avc1.640028",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 4561.186,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "270 - 1920x1080"
+  }
+ ],
+ "subtitles": {},
+ "automatic_captions": {}
+}

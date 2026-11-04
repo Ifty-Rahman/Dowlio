@@ -1,0 +1,225 @@
+{
+ "_type": "video",
+ "id": "66",
+ "title": "Do schools kill creativity?",
+ "thumbnail": "https://pe.tedcdn.com/images/ted/0fa21bf9f73bd5815bf7fcc9f95682ff4e80c6db_2400x1800.jpg",
+ "duration": 1151,
+ "extractor": "TedTalk",
+ "extractor_key": "TedTalk",
+ "webpage_url": "https://www.ted.com/talks/ken_robinson_do_schools_kill_creativity",
+ "original_url": "https://www.ted.com/talks/ken_robinson_do_schools_kill_creativity",
+ "language": "en",
+ "uploader": "Sir Ken Robinson",
+ "formats": [
+  {
+   "format_id": "hls-audio0-low",
+   "format_note": "low",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f5-a1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "vcodec": "none",
+   "language": "en",
+   "tbr": null,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-audio0-low - audio only (low)"
+  },
+  {
+   "format_id": "hls-audio0-medium",
+   "format_note": "medium",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f8-a1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "vcodec": "none",
+   "language": "en",
+   "tbr": null,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-audio0-medium - audio only (medium)"
+  },
+  {
+   "format_id": "h264-1200k",
+   "ext": "mp4",
+   "protocol": "https",
+   "url": "https://py.tedcdn.com/consus/projects/00/12/51/016/products/2006-sir-ken-robinson-016-fallback-c0fb144f267e9f1a5e2b234fb866c5ec-1200k.mp4",
+   "dynamic_range": "SDR",
+   "filesize_approx": 172650000,
+   "tbr": 1200,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "format": "h264-1200k - unknown"
+  },
+  {
+   "format_id": "hls-150",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f1-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 240,
+   "height": 180,
+   "fps": 29.97,
+   "vcodec": "avc1.42c00d",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 150.935,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-150 - 240x180"
+  },
+  {
+   "format_id": "hls-219",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f2-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 240,
+   "height": 180,
+   "fps": 29.97,
+   "vcodec": "avc1.42c01e",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 219.408,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-219 - 240x180"
+  },
+  {
+   "format_id": "hls-336",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f3-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 312,
+   "height": 234,
+   "fps": 29.97,
+   "vcodec": "avc1.42c01e",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 336.501,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-336 - 312x234"
+  },
+  {
+   "format_id": "hls-437",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f4-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 312,
+   "height": 234,
+   "fps": 29.97,
+   "vcodec": "avc1.64001e",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 437.003,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-437 - 312x234"
+  },
+  {
+   "format_id": "hls-511",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f6-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 360,
+   "height": 270,
+   "fps": 29.97,
+   "vcodec": "avc1.64001f",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 511.265,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-511 - 360x270"
+  },
+  {
+   "format_id": "hls-851",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f7-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 480,
+   "height": 360,
+   "fps": 29.97,
+   "vcodec": "avc1.64001f",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 851.063,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-851 - 480x360"
+  },
+  {
+   "format_id": "hls-1017",
+   "ext": "mp4",
+   "protocol": "m3u8_native",
+   "url": "https://hls.ted.com/project_masters/1253/index-f9-v1.m3u8",
+   "manifest_url": "https://hls.ted.com/project_masters/1253/manifest.m3u8",
+   "width": 640,
+   "height": 480,
+   "fps": 29.97,
+   "vcodec": "avc1.64001f",
+   "acodec": "none",
+   "dynamic_range": "SDR",
+   "tbr": 1017.657,
+   "http_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-us,en;q=0.5",
+    "Sec-Fetch-Mode": "navigate"
+   },
+   "has_drm": false,
+   "format": "hls-1017 - 640x480"
+  }
+ ],
+ "subtitles": {},
+ "automatic_captions": {}
+}
