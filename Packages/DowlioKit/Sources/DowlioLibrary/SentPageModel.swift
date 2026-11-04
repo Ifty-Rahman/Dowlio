@@ -3,12 +3,26 @@ import DowlioMedia
 import Foundation
 import Observation
 
+public struct ToolConsent: Sendable {
+    public var size: @Sendable () async -> Int64?
+    public var install: @Sendable (_ keepsUpToDate: Bool?) async throws -> Void
+
+    public init(size: @escaping @Sendable () async -> Int64?, install: @escaping @Sendable (_ keepsUpToDate: Bool?) async throws -> Void) {
+        self.size = size
+        self.install = install
+    }
+}
+
 @MainActor
 @Observable
 public final class SentPageModel {
     public private(set) var draft: SentPageDraft
     @ObservationIgnored private var analysis: Task<Void, Never>?
     @ObservationIgnored private let playPage: (SentPage) -> AsyncStream<PageAnalysis>
+    @ObservationIgnored private let analyzePage: (SentPage) -> AsyncStream<PageAnalysis>
+    @ObservationIgnored private let tools: ToolConsent?
+    @ObservationIgnored private var installing: Task<Void, Never>?
+    @ObservationIgnored private var sizing: Task<Void, Never>?
     @ObservationIgnored private let probeCandidate: (SentPage, Candidate) async -> Candidate
     @ObservationIgnored private var probes: [Task<Void, Never>] = []
     @ObservationIgnored private var probing: [Candidate] = []
@@ -16,11 +30,55 @@ public final class SentPageModel {
 
     init(
         page: SentPage, preference: QualityPreference, playPage: @escaping (SentPage) -> AsyncStream<PageAnalysis>,
+        analyzePage: @escaping (SentPage) -> AsyncStream<PageAnalysis>, tools: ToolConsent?,
         probe: @escaping (SentPage, Candidate) async -> Candidate
     ) {
         draft = SentPageDraft(page: page, preference: preference)
         self.playPage = playPage
+        self.analyzePage = analyzePage
+        self.tools = tools
         probeCandidate = probe
+    }
+
+    public func agreeToTools(keepUpToDate: Bool) {
+        install(keepingUpToDate: keepUpToDate)
+    }
+
+    public func reinstallTools() {
+        install(keepingUpToDate: nil)
+    }
+
+    private func install(keepingUpToDate keeps: Bool?) {
+        guard let tools else { return }
+        draft.startInstallingTools()
+        installing?.cancel()
+        installing = Task { [weak self] in
+            do {
+                try await tools.install(keeps)
+                guard let self, !Task.isCancelled else { return }
+                listen(to: analyzePage(draft.page))
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                draft.failInstallingTools()
+            }
+        }
+    }
+
+    public func declineTools() {
+        draft.declineTools()
+    }
+
+    public func askForToolsAgain() {
+        draft.askForToolsAgain()
+    }
+
+    private func sizeToolsIfNeeded() {
+        guard draft.phase == .needsTools, draft.toolsSize == nil, sizing == nil, let tools else { return }
+        sizing = Task { [weak self] in
+            let size = await tools.size()
+            guard let self, !Task.isCancelled else { return }
+            draft.toolsSize = size
+        }
     }
 
     private func probeIfNeeded(_ index: Int) {
@@ -57,6 +115,7 @@ public final class SentPageModel {
             for await update in updates {
                 guard let self, !Task.isCancelled else { return nil }
                 if let file = draft.update(update) { return file }
+                sizeToolsIfNeeded()
             }
             return nil
         }
@@ -72,6 +131,8 @@ public final class SentPageModel {
 
     func stop() {
         analysis?.cancel()
+        installing?.cancel()
+        sizing?.cancel()
         following?.cancel()
         probes.forEach { $0.cancel() }
     }

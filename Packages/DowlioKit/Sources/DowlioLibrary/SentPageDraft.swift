@@ -11,6 +11,11 @@ public struct SentPageDraft: Equatable, Sendable {
         case needsSignIn
         case blocked
         case restricted(Candidate.Restriction)
+        case needsTools
+        case installingTools
+        case declinedTools
+        case couldntInstallTools
+        case toolsChanged
     }
 
     public enum Showing: Equatable, Sendable {
@@ -29,6 +34,7 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
     public private(set) var isCheckingForMore = false
+    public var toolsSize: Int64?
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
@@ -78,6 +84,14 @@ public struct SentPageDraft: Equatable, Sendable {
             return nil
         case .plainFile(let url):
             return url
+        case .needsTools:
+            candidates = []
+            phase = .needsTools
+            return nil
+        case .toolsChanged:
+            candidates = []
+            phase = .toolsChanged
+            return nil
         case .found(let found):
             show(found)
             return nil
@@ -118,6 +132,45 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public var checkingLine: String { "Checking for more versions" }
+
+    public mutating func startInstallingTools() {
+        phase = .installingTools
+    }
+
+    public mutating func declineTools() {
+        phase = .declinedTools
+    }
+
+    public mutating func askForToolsAgain() {
+        guard phase == .declinedTools || phase == .couldntInstallTools else { return }
+        phase = .needsTools
+    }
+
+    public mutating func failInstallingTools() {
+        phase = .couldntInstallTools
+    }
+
+    public var toolConsent: ToolConsentText {
+        let size = toolsSize.map { " About \(max(Int((Double($0) / 1_000_000).rounded()), 1)) MB." } ?? ""
+        return ToolConsentText(
+            title: "Download yt-dlp and QuickJS-NG?",
+            explanation: "This site needs yt-dlp, a free open-source tool, and QuickJS-NG, which yt-dlp uses for YouTube. "
+                + "Dowlio downloads them from their GitHub pages." + size,
+            tools: Tool.allCases.map { ToolConsentText.Link(name: $0.name, project: $0.project) },
+            keepsUpToDate: true,
+            agree: "Download",
+            decline: "Not Now"
+        )
+    }
+
+    public var installingLine: String { "Downloading yt-dlp and QuickJS-NG" }
+    public var declinedLine: String { "Dowlio needs yt-dlp to read this page. Nothing was downloaded." }
+    public var couldntInstallLine: String {
+        "Dowlio couldn't download yt-dlp and QuickJS-NG from GitHub. Check your connection and try again."
+    }
+    public var toolsChangedLine: String {
+        "yt-dlp or QuickJS-NG changed since Dowlio installed it, so Dowlio won't run it. Reinstall it to read this page."
+    }
 
     private static func phase(of found: [Candidate]) -> Phase {
         guard !found.isEmpty else { return .nothingFound }
@@ -310,4 +363,18 @@ public enum MediaText {
         let (hours, minutes, rest) = (total / 3600, total % 3600 / 60, total % 60)
         return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
     }
+}
+
+public struct ToolConsentText: Equatable, Sendable {
+    public struct Link: Equatable, Sendable {
+        public var name: String
+        public var project: URL
+    }
+
+    public var title: String
+    public var explanation: String
+    public var tools: [Link]
+    public var keepsUpToDate: Bool
+    public var agree: String
+    public var decline: String
 }

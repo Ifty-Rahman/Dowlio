@@ -208,4 +208,6 @@ public enum PageAnalysis: Equatable, Sendable {
     case blocked
     case plainFile(URL)
     case found([Candidate])
+    case needsTools
+    case toolsChanged
 }

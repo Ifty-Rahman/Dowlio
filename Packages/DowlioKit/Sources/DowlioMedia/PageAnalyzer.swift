@@ -15,6 +15,7 @@ public struct PageAnalyzer: Sendable {
     private let sizes: SizeCheck
     private let identity: BrowserIdentity
     private let cooldown: HostCooldown
+    private let ytdlp: YTDLPRunner?
 
     @TaskLocal static var reachesLocalNetwork = false
 
@@ -35,8 +36,10 @@ public struct PageAnalyzer: Sendable {
         lookingFor longestLooking: Duration = .seconds(15),
         readers: [any SiteReader] = SiteReaders.all,
         readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
+        ytdlp: YTDLPRunner? = nil,
         inspect: @escaping Inspect
     ) {
+        self.ytdlp = ytdlp
         self.session = session
         self.identity = identity
         self.cooldown = cooldown
@@ -148,6 +151,9 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+        if YouTubeLink(page.url) != nil {
+            return report(await withYTDLP(page))
+        }
         let start = ContinuousClock.now
         if DASHVersions.isStream(page.url) {
             return report(await linkedPlaylist(page, label: page.url.lastPathComponent))
@@ -187,6 +193,20 @@ public struct PageAnalyzer: Sendable {
         report(.checkingForMore(found))
         guard let more = await lookedAgain(page, within: left) else { return }
         report(.found(Self.added(more.candidates, to: found)))
+    }
+
+    private func withYTDLP(_ page: SentPage) async -> PageAnalysis {
+        guard let ytdlp else { return .found([]) }
+        guard await ytdlp.isInstalled else { return .needsTools }
+        do {
+            let info = try await ytdlp.info(for: page.url)
+            let label = info.title ?? page.title ?? Self.site(of: page.url)
+            return .found([Candidate(label: label, thumbnail: info.thumbnail, duration: info.duration, versions: [])])
+        } catch ToolInstaller.Failure.changed {
+            return .toolsChanged
+        } catch {
+            return .found([])
+        }
     }
 
     static let mostFramesRead = 3
@@ -920,7 +940,7 @@ private extension PageAnalysis {
         case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
         case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
         case .checkingForMore(let candidates): return .checkingForMore(candidates.map { $0.requested(by: agent) })
-        case .playing, .needsSignIn, .blocked, .plainFile: return self
+        case .playing, .needsSignIn, .blocked, .plainFile, .needsTools, .toolsChanged: return self
         }
     }
 }

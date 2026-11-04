@@ -54,11 +54,16 @@ final class AppModel {
 
     private let library: Library?
     private var connectServer: ConnectServer?
+    let tools: ToolInstaller
 
     init() {
         UserDefaults.standard.removeRetiredSettings()
         URLCache.shared = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 0)
         Task.detached(priority: .background) { Self.removeSavedWebData() }
+        let supportFolder = DebugLaunch.supportFolder ?? URL.applicationSupportDirectory.appending(
+            path: AppIdentity.supportFolderName, directoryHint: .isDirectory
+        )
+        tools = ToolInstaller(folder: supportFolder.appending(path: "Tools", directoryHint: .isDirectory))
         do {
             let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
@@ -253,7 +258,10 @@ final class AppModel {
         #else
         let readerFailed = ReaderFailure.log
         #endif
-        return PageAnalyzer(identity: .standard, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
+        return PageAnalyzer(
+            identity: .standard, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed,
+            ytdlp: YTDLPRunner(installer: tools)
+        ) { url, options in
             try await library.inspect(url, options: options)
         }
     }
@@ -314,10 +322,21 @@ final class AppModel {
         }
     }
 
+    private var toolConsent: ToolConsent {
+        let tools = tools
+        return ToolConsent(size: { try? await tools.downloadSize() }, install: { keeps in
+            try await tools.install()
+            if let keeps { UserDefaults.standard.set(keeps, forKey: SettingsKey.keepsYTDLPUpToDate) }
+        })
+    }
+
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
         guard let library else { return nil }
-        let list = LinkList(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
+        let list = LinkList(
+            analyze: analyze, lookAgain: lookAgain, probe: probe, preference: { AppModel.currentSettings().qualityPreference },
+            tools: toolConsent
+        )
         let model = NewDownloadModel(text: text, folder: downloadsFolder, list: list, inspect: { url, options in
             try await library.inspect(url, options: options)
         }, signIn: { [weak self] url in

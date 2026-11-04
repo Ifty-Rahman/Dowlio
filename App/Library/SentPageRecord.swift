@@ -110,6 +110,10 @@ enum SentPageRecord {
             record["needsSignIn"] = true
         case .blocked:
             record["blocked"] = true
+        case .needsTools:
+            record["needsTools"] = true
+        case .toolsChanged:
+            record["toolsChanged"] = true
         case .looking, .checkingForMore, .playing, nil:
             record["unfinished"] = true
         }
