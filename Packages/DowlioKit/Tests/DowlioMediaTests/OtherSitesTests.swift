@@ -31,6 +31,15 @@ struct OtherSitesTests {
         #expect(standIn.arguments.last == site.url("/talks/creativity").absoluteString)
     }
 
+    @Test func aBilibiliLinkOnTheEnglishSiteIsGivenToYTDLPWithoutItsLanguage() async throws {
+        let standIn = try await YTDLPStandIn.printing("other-site.json")
+        let runner = YTDLPRunner(installer: standIn.installer)
+
+        _ = try await runner.info(for: URL(string: "https://www.bilibili.com/en/video/BV1mmJt6kEYW/?spm_id_from=333.1007")!)
+
+        #expect(standIn.arguments.last == "https://www.bilibili.com/video/BV1mmJt6kEYW/?spm_id_from=333.1007")
+    }
+
     @Test func aPageTheEarlierStepsReadNeverRunsYTDLP() async throws {
         let standIn = try await YTDLPStandIn.printing("other-site.json")
         let site = try await site(with: standIn)

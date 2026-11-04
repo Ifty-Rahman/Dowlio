@@ -43,6 +43,13 @@ public struct YTDLPRunner: Sendable {
 
     public static let longestPlaylist = 1000
 
+    static func address(of page: URL) -> String {
+        guard page.isOn(["bilibili.com"]), var parts = URLComponents(url: page, resolvingAgainstBaseURL: false),
+              parts.path.hasPrefix("/en/") else { return page.absoluteString }
+        parts.path = String(parts.path.dropFirst("/en".count))
+        return parts.url?.absoluteString ?? page.absoluteString
+    }
+
     public func info(for url: URL, cookies: [Cookie] = [], flatPlaylist: Bool = false) async throws -> MediaInfo {
         let tools = try await installer.verifiedTools()
         var arguments = ["--ignore-config", "--no-cache-dir"]
@@ -54,7 +61,7 @@ public struct YTDLPRunner: Sendable {
         let jar = try cookies.isEmpty ? nil : CookieJar(cookies, in: cookieFolder)
         defer { jar?.remove() }
         if let jar { arguments += ["--cookies", jar.file.path] }
-        arguments += ["--", url.absoluteString]
+        arguments += ["--", Self.address(of: url)]
         let result = try await ChildProcess.run(tools.ytdlp, arguments, timeout: timeout)
         if result.timedOut {
             Self.logger.error("yt-dlp ran past its timeout")
@@ -161,7 +168,7 @@ extension YTDLPRunner {
         let jar = try cookies.isEmpty ? nil : CookieJar(cookies, in: cookieFolder)
         defer { jar?.remove() }
         if let jar { arguments += ["--cookies", jar.file.path] }
-        arguments += ["--", page.absoluteString]
+        arguments += ["--", Self.address(of: page)]
         let meter = ProgressMeter(formats: formats, report: request.progress)
         let result = try await ChildProcess.run(tools.ytdlp, arguments, timeout: Self.downloadTimeout) { line in meter.read(line) }
         if result.timedOut { throw DownloadError.network(NetworkFailure(code: .timedOut, message: "yt-dlp ran past its time limit")) }
