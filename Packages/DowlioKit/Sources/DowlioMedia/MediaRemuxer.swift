@@ -48,7 +48,7 @@ public struct MediaRemuxer: Sendable {
 
     static func choice(for request: RemuxRequest) -> Choice {
         let media = request.mediaSource
-        if media.outputContainer == .webm { return .ffmpeg }
+        if media.outputContainer == .webm || request.hasExtras { return .ffmpeg }
         let codecs = media.tracks.flatMap { $0.codecs ?? [] }
         if codecs.contains(where: { !MediaCodecs.joinsInAVFoundation($0) }) { return .ffmpeg }
         if request.tracks.contains(where: isMatroska) { return .ffmpeg }

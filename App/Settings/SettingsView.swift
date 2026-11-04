@@ -171,6 +171,7 @@ private struct DownloadsSettings: View {
             LabeledContent("History") {
                 Button("Clear History…") { confirmingClear = true }
             }
+            SubtitlesSection()
             Section {
                 ToolsRows(tools: model.toolsModel)
             } header: {

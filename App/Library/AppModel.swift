@@ -270,7 +270,7 @@ final class AppModel {
         #endif
         return PageAnalyzer(
             identity: .standard, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed,
-            ytdlp: YTDLPRunner(installer: tools)
+            ytdlp: YTDLPRunner(installer: tools), subtitles: { UserDefaults.standard.subtitlePreference }
         ) { url, options in
             try await library.inspect(url, options: options)
         }

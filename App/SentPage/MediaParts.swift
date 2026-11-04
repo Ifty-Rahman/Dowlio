@@ -138,6 +138,11 @@ struct MediaChoices: View {
                 .foregroundStyle(.secondary)
         } else {
             choices
+            if let subtitles = media.draft.subtitlesLine {
+                Label(subtitles, systemImage: "captions.bubble")
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
+            }
             if media.draft.isCheckingForMore { CheckingForMoreLine(media: media) }
         }
     }

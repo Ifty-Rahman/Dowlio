@@ -145,7 +145,7 @@ extension DownloadRun {
             }
         }
         defer { reporter.cancel() }
-        let output: URL
+        var output: URL
         do {
             output = try await download(request)
         } catch RenewalFailure.toolsMissing {
@@ -165,6 +165,7 @@ extension DownloadRun {
             $0.timeRemaining = nil
             $0.state = .finalizing
         }
+        output = await addingExtras(to: output, of: plan)
         let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int64) ?? nil
         let finished = try plan.partial.finish(
             named: plan.fileName, in: plan.partial.packageURL.deletingLastPathComponent(),
@@ -180,6 +181,22 @@ extension DownloadRun {
             $0.fileName = finished.name
             $0.wasSkipped = finished.wasSkipped
             $0.state = .completed
+        }
+    }
+
+    private func addingExtras(to output: URL, of plan: MediaPlan) async -> URL {
+        guard plan.media.extras != nil, let remux = configuration.remux else { return output }
+        let extras = await fetchExtras(of: plan)
+        let chapters = plan.media.extras?.chapters ?? []
+        guard !extras.subtitles.isEmpty || !chapters.isEmpty || extras.coverArt != nil else { return output }
+        let joined = plan.partial.packageURL.appending(path: "with-extras.\(output.pathExtension)")
+        do {
+            try await remux(RemuxRequest(
+                tracks: [output], output: joined, mediaSource: plan.media, subtitles: extras.subtitles, chapters: chapters, coverArt: extras.coverArt
+            ))
+            return joined
+        } catch {
+            return output
         }
     }
 
@@ -386,8 +403,13 @@ extension DownloadRun {
         guard let remux = configuration.remux else { throw DownloadError.mediaUnplayable }
         let joined = try join(plan)
         let output = plan.partial.packageURL.appending(path: "output.\(plan.media.fileExtension)")
+        let extras = await fetchExtras(of: plan)
+        try Task.checkCancellation()
         do {
-            try await remux(RemuxRequest(tracks: joined, output: output, mediaSource: plan.media))
+            try await remux(RemuxRequest(
+                tracks: joined, output: output, mediaSource: plan.media, subtitles: extras.subtitles,
+                chapters: plan.media.extras?.chapters ?? [], coverArt: extras.coverArt
+            ))
         } catch {
             throw DownloadError.mediaUnplayable
         }
@@ -403,6 +425,42 @@ extension DownloadRun {
             $0.wasSkipped = finished.wasSkipped
             $0.state = .completed
         }
+    }
+
+    static let largestExtra = 16 * 1024 * 1024
+
+    private func fetchExtras(of plan: MediaPlan) async -> (subtitles: [RemuxRequest.SubtitleFile], coverArt: URL?) {
+        guard let extras = plan.media.extras else { return ([], nil) }
+        var subtitles: [RemuxRequest.SubtitleFile] = []
+        for (index, subtitle) in extras.subtitles.enumerated() {
+            let file = plan.partial.packageURL.appending(path: "subtitle-\(index).\(subtitle.format)")
+            if await fetchWhole(subtitle.url, to: file) {
+                subtitles.append(RemuxRequest.SubtitleFile(file: file, language: subtitle.language, name: subtitle.name))
+            }
+        }
+        var cover: URL?
+        if let art = extras.coverArt {
+            let file = plan.partial.packageURL.appending(path: "cover.\(art.pathExtension.isEmpty ? "jpg" : art.pathExtension.lowercased())")
+            if await fetchWhole(art, to: file) { cover = file }
+        }
+        return (subtitles, cover)
+    }
+
+    private func fetchWhole(_ url: URL, to file: URL) async -> Bool {
+        let connection = connections.open(url, range: nil)
+        defer { connection.cancel() }
+        guard let response = try? await connection.firstResponse(), response.statusCode == 200 else { return false }
+        var data = Data()
+        do {
+            for try await event in connection.events {
+                guard case .data(let chunk) = event else { continue }
+                data.append(chunk)
+                if data.count > Self.largestExtra { return false }
+            }
+        } catch {
+            return false
+        }
+        return !data.isEmpty && FileManager.default.createFile(atPath: file.path, contents: data)
     }
 
     private func join(_ plan: MediaPlan) throws -> [URL] {

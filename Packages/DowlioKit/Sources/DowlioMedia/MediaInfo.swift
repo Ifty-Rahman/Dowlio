@@ -146,19 +146,52 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         }
     }
 
+    public struct TextTrack: Decodable, Equatable, Sendable {
+        public var ext: String?
+        public var url: URL?
+        public var name: String?
+
+        enum CodingKeys: String, CodingKey { case ext, url, name }
+
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            ext = try? values.decodeIfPresent(String.self, forKey: .ext)
+            url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
+            name = try? values.decodeIfPresent(String.self, forKey: .name)
+        }
+
+        public var isTranslation: Bool { url?.query()?.contains("tlang=") ?? false }
+    }
+
+    public struct Chapter: Decodable, Equatable, Sendable {
+        public var start: Double
+        public var end: Double
+        public var title: String
+
+        enum CodingKeys: String, CodingKey {
+            case title
+            case start = "start_time"
+            case end = "end_time"
+        }
+    }
+
     public var title: String?
     public var thumbnail: URL?
     public var duration: Double?
     public var liveStatus: String?
     public var webpageURL: URL?
     public var formats: [Format]
+    public var subtitles: [String: [TextTrack]]
+    public var automaticCaptions: [String: [TextTrack]]
+    public var chapters: [Chapter]
 
     public var isLiveNow: Bool { liveStatus == "is_live" || liveStatus == "is_upcoming" }
 
     enum CodingKeys: String, CodingKey {
-        case title, thumbnail, duration, formats
+        case title, thumbnail, duration, formats, subtitles, chapters
         case liveStatus = "live_status"
         case webpageURL = "webpage_url"
+        case automaticCaptions = "automatic_captions"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -169,6 +202,9 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         liveStatus = try? values.decodeIfPresent(String.self, forKey: .liveStatus)
         webpageURL = (try? values.decodeIfPresent(String.self, forKey: .webpageURL)).flatMap(URL.init(string:))
         formats = ((try? values.decodeIfPresent([Lenient<Format>].self, forKey: .formats)) ?? []).compactMap(\.value)
+        subtitles = (try? values.decodeIfPresent([String: [TextTrack]].self, forKey: .subtitles)) ?? [:]
+        automaticCaptions = (try? values.decodeIfPresent([String: [TextTrack]].self, forKey: .automaticCaptions)) ?? [:]
+        chapters = ((try? values.decodeIfPresent([Lenient<Chapter>].self, forKey: .chapters)) ?? []).compactMap(\.value)
     }
 }
 

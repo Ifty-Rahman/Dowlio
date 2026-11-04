@@ -24,11 +24,13 @@ public struct MediaSource: Codable, Equatable, Sendable {
     public let expiry: Date?
     public let renewal: MediaRenewal?
     public let downloadsWithYTDLP: Bool
+    public let extras: MediaExtras?
 
     public init(
         tracks: [MediaTrack], keepsAudioOnly: Bool = false, container: MediaContainer? = nil, expiry: Date? = nil,
-        renewal: MediaRenewal? = nil, downloadsWithYTDLP: Bool = false
+        renewal: MediaRenewal? = nil, downloadsWithYTDLP: Bool = false, extras: MediaExtras? = nil
     ) throws {
+        self.extras = extras?.isEmpty == true ? nil : extras
         guard !tracks.isEmpty else { throw Error.noTracks }
         guard tracks.allSatisfy({ !$0.fragments.isEmpty }) else { throw Error.trackWithoutFragments }
         self.tracks = tracks
@@ -47,12 +49,20 @@ public struct MediaSource: Codable, Equatable, Sendable {
             container: values.decodeIfPresent(MediaContainer.self, forKey: .container),
             expiry: values.decodeIfPresent(Date.self, forKey: .expiry),
             renewal: values.decodeIfPresent(MediaRenewal.self, forKey: .renewal),
-            downloadsWithYTDLP: values.decodeIfPresent(Bool.self, forKey: .downloadsWithYTDLP) ?? false
+            downloadsWithYTDLP: values.decodeIfPresent(Bool.self, forKey: .downloadsWithYTDLP) ?? false,
+            extras: values.decodeIfPresent(MediaExtras.self, forKey: .extras)
         )
     }
 
     public var isAudio: Bool {
         keepsAudioOnly || tracks.allSatisfy { $0.kind == .audio }
+    }
+
+    public func with(extras: MediaExtras?) -> MediaSource {
+        (try? MediaSource(
+            tracks: tracks, keepsAudioOnly: keepsAudioOnly, container: container, expiry: expiry, renewal: renewal,
+            downloadsWithYTDLP: downloadsWithYTDLP, extras: extras
+        )) ?? self
     }
 
     public var outputContainer: MediaContainer { container ?? (isAudio ? .m4a : .mp4) }
@@ -90,6 +100,46 @@ public enum MediaContainer: String, Codable, Sendable {
         case .webm: isAudio ? "audio/webm" : "video/webm"
         }
     }
+}
+
+public struct MediaExtras: Codable, Equatable, Sendable {
+    public struct Subtitle: Codable, Equatable, Sendable {
+        public var language: String
+        public var name: String
+        public var url: URL
+        public var format: String
+
+        public init(language: String, name: String, url: URL, format: String) {
+            self.language = language
+            self.name = name
+            self.url = url
+            self.format = format
+        }
+    }
+
+    public struct Chapter: Codable, Equatable, Sendable {
+        public var start: Double
+        public var end: Double
+        public var title: String
+
+        public init(start: Double, end: Double, title: String) {
+            self.start = start
+            self.end = end
+            self.title = title
+        }
+    }
+
+    public var subtitles: [Subtitle]
+    public var chapters: [Chapter]
+    public var coverArt: URL?
+
+    public init(subtitles: [Subtitle] = [], chapters: [Chapter] = [], coverArt: URL? = nil) {
+        self.subtitles = subtitles
+        self.chapters = chapters
+        self.coverArt = coverArt
+    }
+
+    public var isEmpty: Bool { subtitles.isEmpty && chapters.isEmpty && coverArt == nil }
 }
 
 public struct MediaRenewal: Codable, Equatable, Sendable {
@@ -181,13 +231,36 @@ public struct YTDLPDownload: Sendable {
 }
 
 public struct RemuxRequest: Sendable {
+    public struct SubtitleFile: Equatable, Sendable {
+        public var file: URL
+        public var language: String
+        public var name: String
+
+        public init(file: URL, language: String, name: String) {
+            self.file = file
+            self.language = language
+            self.name = name
+        }
+    }
+
     public var tracks: [URL]
     public var output: URL
     public var mediaSource: MediaSource
+    public var subtitles: [SubtitleFile]
+    public var chapters: [MediaExtras.Chapter]
+    public var coverArt: URL?
 
-    public init(tracks: [URL], output: URL, mediaSource: MediaSource) {
+    public init(
+        tracks: [URL], output: URL, mediaSource: MediaSource, subtitles: [SubtitleFile] = [], chapters: [MediaExtras.Chapter] = [],
+        coverArt: URL? = nil
+    ) {
         self.tracks = tracks
         self.output = output
         self.mediaSource = mediaSource
+        self.subtitles = subtitles
+        self.chapters = chapters
+        self.coverArt = coverArt
     }
+
+    public var hasExtras: Bool { !subtitles.isEmpty || !chapters.isEmpty || coverArt != nil }
 }

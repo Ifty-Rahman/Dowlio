@@ -1,6 +1,7 @@
 import DowlioConnect
 import DowlioCore
 import DowlioLibrary
+import DowlioMedia
 import Foundation
 
 enum SettingsKey {
@@ -25,6 +26,8 @@ enum SettingsKey {
     static let neverCatchSites = "neverCatchSites"
     static let usesBrowserSignIn = "usesBrowserSignIn"
     static let keepsYTDLPUpToDate = "keepsYTDLPUpToDate"
+    static let downloadsSubtitles = "downloadsSubtitles"
+    static let subtitleLanguages = "subtitleLanguages"
     static let retiredKeys = ["sharesSignIn", "noSignInSites", "signInLog"]
 }
 
@@ -63,6 +66,13 @@ extension UserDefaults {
             set(newValue.catches, forKey: SettingsKey.catchesDownloads)
             set(newValue.neverCatch, forKey: SettingsKey.neverCatchSites)
         }
+    }
+
+    var subtitlePreference: SubtitlePreference {
+        SubtitlePreference(
+            downloads: bool(forKey: SettingsKey.downloadsSubtitles),
+            languages: stringArray(forKey: SettingsKey.subtitleLanguages) ?? SubtitlePreference.macLanguages
+        )
     }
 
     func setVideoQualityCap(_ height: Int) {

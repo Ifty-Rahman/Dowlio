@@ -214,6 +214,12 @@ public struct SentPageDraft: Equatable, Sendable {
         }
     }
 
+    public var subtitlesLine: String? {
+        guard let version = chosenVersion, case .media(let media) = version.source,
+              let subtitles = media.extras?.subtitles, !subtitles.isEmpty else { return nil }
+        return "Subtitles: " + subtitles.map(\.name).joined(separator: ", ")
+    }
+
     public var installingLine: String { "Downloading yt-dlp and QuickJS-NG" }
     public var declinedLine: String { "Dowlio needs yt-dlp to read this page. Nothing was downloaded." }
     public var couldntInstallLine: String {

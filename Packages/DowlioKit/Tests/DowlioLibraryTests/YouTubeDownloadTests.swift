@@ -122,4 +122,22 @@ struct YouTubeDraftTests {
         #expect(draft.chosenVersion?.height == 720)
         #expect(draft.chosenVersion.map(MediaText.detail) == "MP4 · H.264 + AAC")
     }
+
+    @Test func quickAddNamesTheSubtitlesAVersionWillCarry() throws {
+        let url = URL(string: "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=137")!
+        let subtitles = [
+            MediaExtras.Subtitle(language: "en", name: "English", url: url, format: "vtt"),
+            MediaExtras.Subtitle(language: "bn", name: "Bangla", url: url, format: "vtt"),
+        ]
+        let media = try MediaSource(tracks: [MediaTrack(kind: .video, fragments: [MediaFragment(url: url)])], container: .mp4, extras: MediaExtras(subtitles: subtitles))
+        let plain = try MediaSource(tracks: [MediaTrack(kind: .audio, fragments: [MediaFragment(url: url)])], container: .m4a)
+        let clip = Candidate(label: "Perfect", versions: [Version(source: .media(media), height: 1080), Version(source: .media(plain))])
+        var draft = SentPageDraft(page: SentPage(url: URL(string: "https://www.youtube.com/watch?v=2Vv-BfVoq4g")!))
+
+        _ = draft.update(.found([clip]))
+        #expect(draft.subtitlesLine == "Subtitles: English, Bangla")
+
+        draft.show(.audio)
+        #expect(draft.subtitlesLine == nil)
+    }
 }

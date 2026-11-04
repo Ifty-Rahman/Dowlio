@@ -18,6 +18,7 @@ public struct PageAnalyzer: Sendable {
     private let cooldown: HostCooldown
     private let ytdlp: YTDLPRunner?
     private let decodesAV1: Bool
+    private let subtitles: @Sendable () -> SubtitlePreference
 
     @TaskLocal static var reachesLocalNetwork = false
 
@@ -40,8 +41,10 @@ public struct PageAnalyzer: Sendable {
         readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
         ytdlp: YTDLPRunner? = nil,
         decodesAV1: Bool = VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
+        subtitles: @escaping @Sendable () -> SubtitlePreference = { .off },
         inspect: @escaping Inspect
     ) {
+        self.subtitles = subtitles
         self.ytdlp = ytdlp
         self.decodesAV1 = decodesAV1
         self.session = session
@@ -227,7 +230,11 @@ public struct PageAnalyzer: Sendable {
         do {
             let info = try await Self.infoRetryingWithSignIn(for: page, from: ytdlp)
             let playlists = await playlists(neededBy: info, on: page)
-            let versions = YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1, playlists: playlists)
+            let versions = Self.withExtras(
+                YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1, playlists: playlists),
+                video: MediaExtras(subtitles: SubtitleSelection.choose(info, for: subtitles())),
+                audio: MediaExtras()
+            )
             return .found([Candidate(
                 label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
             )])
@@ -270,6 +277,15 @@ public struct PageAnalyzer: Sendable {
     }
 
     static let mostEmbedsRead = 3
+
+    private static func withExtras(_ versions: [Version], video: MediaExtras, audio: MediaExtras) -> [Version] {
+        versions.map { version in
+            guard case .media(let media) = version.source else { return version }
+            var withExtras = version
+            withExtras.source = .media(media.with(extras: media.isAudio ? audio : video))
+            return withExtras
+        }
+    }
 
     private static func isOffered(_ candidate: Candidate) -> Bool {
         !candidate.versions.isEmpty || candidate.restriction != nil
