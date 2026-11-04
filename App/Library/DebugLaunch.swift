@@ -69,6 +69,7 @@ enum DebugLaunch {
     static var opensSettings: Bool { flag("DOWLIO_DEBUG_OPEN_SETTINGS") }
     static var opensOnboardingSetup: Bool { flag("DOWLIO_DEBUG_ONBOARDING_SETUP") }
     static var opensOnboardingBrowsers: Bool { flag("DOWLIO_DEBUG_ONBOARDING_BROWSERS") }
+    static var opensOnboardingTools: Bool { flag("DOWLIO_DEBUG_ONBOARDING_TOOLS") }
 
     static var quickAddLink: String? {
         #if DEBUG

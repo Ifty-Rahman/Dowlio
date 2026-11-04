@@ -7,13 +7,15 @@ struct OnboardingSheet: View {
     let model: AppModel
     let finish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var page = DebugLaunch.opensOnboardingBrowsers ? Page.browsers : DebugLaunch.opensOnboardingSetup ? Page.setup : Page.welcome
+    @State private var page = DebugLaunch.opensOnboardingTools ? Page.tools
+        : DebugLaunch.opensOnboardingBrowsers ? Page.browsers : DebugLaunch.opensOnboardingSetup ? Page.setup : Page.welcome
 
     enum Page: Int, CaseIterable {
         case welcome
         case setup
         case notifications
         case browsers
+        case tools
         case shortcut
     }
 
@@ -36,6 +38,7 @@ struct OnboardingSheet: View {
         case .setup: SetupPage(model: model)
         case .notifications: NotificationsPage()
         case .browsers: BrowsersPage(model: model)
+        case .tools: ToolsPage(model: model)
         case .shortcut: ShortcutPage()
         }
     }
@@ -86,6 +89,7 @@ private struct PageHeader: View {
     let symbol: String
     let title: String
     let subtitle: String
+    var info: String?
 
     var body: some View {
         HStack(spacing: DowlioDesign.Spacing.md) {
@@ -96,10 +100,13 @@ private struct PageHeader: View {
                 .background(DowlioDesign.brandAccent.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(DowlioDesign.TypeRole.title)
-                    .foregroundStyle(.primary)
-                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: DowlioDesign.Spacing.xs) {
+                    Text(title)
+                        .font(DowlioDesign.TypeRole.title)
+                        .foregroundStyle(.primary)
+                        .accessibilityAddTraits(.isHeader)
+                    if let info { InfoButton(topic: title, text: info) }
+                }
                 Text(subtitle)
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
@@ -174,6 +181,25 @@ private struct BrowsersPage: View {
                 }
             } header: {
                 PageHeader(symbol: "puzzlepiece.extension.fill", title: "Catch downloads from your browser", subtitle: "Add Dowlio Connect to a browser, and files you download there finish in Dowlio.")
+            }
+        }
+        .onboardingForm()
+    }
+}
+
+private struct ToolsPage: View {
+    let model: AppModel
+
+    var body: some View {
+        Form {
+            Section {
+                ToolsRows(tools: model.toolsModel)
+            } header: {
+                PageHeader(
+                    symbol: "shippingbox.fill", title: ToolsText.title,
+                    subtitle: "Two free open-source tools let Dowlio save video from YouTube and many other sites. Install them now, or Dowlio asks the first time a site needs them.",
+                    info: ToolsText.info
+                )
             }
         }
         .onboardingForm()

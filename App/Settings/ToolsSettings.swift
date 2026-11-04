@@ -8,6 +8,7 @@ final class ToolsModel {
     private(set) var versions: [Tool: String] = [:]
     private(set) var isBusy = false
     private(set) var status: String?
+    private(set) var downloadSize: Int64?
     private let installer: ToolInstaller
     @ObservationIgnored private var weekly: Task<Void, Never>?
 
@@ -19,6 +20,22 @@ final class ToolsModel {
 
     func refresh() async {
         versions = await installer.installedVersions()
+        if versions.isEmpty, downloadSize == nil {
+            downloadSize = try? await installer.downloadSize()
+        }
+    }
+
+    var sizeText: String {
+        guard let downloadSize else { return "From GitHub" }
+        return "About \(max(Int((Double(downloadSize) / 1_000_000).rounded()), 1)) MB from GitHub"
+    }
+
+    func install() {
+        run { installer in
+            try await installer.install()
+            let versions = await installer.installedVersions()
+            return "Installed yt-dlp \(versions[.ytdlp] ?? "") and QuickJS-NG \(versions[.quickJS] ?? "")."
+        }
     }
 
     func checkForUpdate() {
@@ -81,42 +98,65 @@ final class ToolsModel {
     }
 }
 
-struct ToolsSection: View {
+enum ToolsText {
+    static let title = "Tools"
+    static let info = "YouTube and many other sites hide their videos behind players, signed links and scripts. "
+        + "yt-dlp, a free open-source tool, reads those sites and tells Dowlio where each video is. "
+        + "QuickJS-NG runs the scripts YouTube uses, so yt-dlp can read it. "
+        + "Dowlio downloads both from their official GitHub releases, checks each against the hash published there, "
+        + "and never runs a copy that has changed. Dowlio still downloads every video itself."
+}
+
+struct ToolsInfoTitle: View {
+    var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.xs) {
+            Text(ToolsText.title)
+            InfoButton(topic: ToolsText.title, text: ToolsText.info)
+        }
+    }
+}
+
+struct ToolsRows: View {
     let tools: ToolsModel
     @AppStorage(SettingsKey.keepsYTDLPUpToDate) private var keepsUpToDate = true
     @State private var confirmingRemove = false
 
     var body: some View {
-        Section("yt-dlp") {
-            ForEach(Tool.allCases, id: \.self) { tool in
-                LabeledContent {
-                    Text(tools.versions[tool] ?? "Not installed").foregroundStyle(.secondary)
-                } label: {
-                    Link(destination: tool.project) {
-                        Label {
-                            Text(tool.name)
-                        } icon: {
-                            Image("GitHubMark").resizable().frame(width: 12, height: 12)
-                        }
-                    }
-                    .help(tool.project.absoluteString)
-                }
-            }
-            Toggle("Keep yt-dlp up to date", isOn: $keepsUpToDate)
+        ForEach(Tool.allCases, id: \.self) { tool in
             LabeledContent {
-                HStack {
-                    if tools.isBusy { ProgressView().controlSize(.small) }
-                    Button("Check for Update") { tools.checkForUpdate() }
-                        .disabled(tools.isBusy || !tools.isInstalled)
-                    Button("Remove…") { confirmingRemove = true }
-                        .disabled(tools.isBusy || !tools.isInstalled)
-                }
-            } label: {
-                Text(tools.status ?? "yt-dlp reads YouTube and other sites. QuickJS-NG runs YouTube's scripts for it.")
-                    .font(DowlioDesign.TypeRole.detail)
+                Text(tools.versions[tool] ?? "Not installed")
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .monospacedDigit()
+            } label: {
+                HStack(spacing: DowlioDesign.Spacing.xs) {
+                    Text(tool.name)
+                    Link(destination: tool.project) {
+                        Image("GitHubMark").resizable().frame(width: 12, height: 12)
+                    }
+                    .foregroundStyle(.secondary)
+                    .help("Open \(tool.name) on GitHub")
+                    .accessibilityLabel("\(tool.name) on GitHub")
+                }
+                Text(tool == .ytdlp ? "Reads YouTube and other sites" : "Runs YouTube's scripts for yt-dlp")
             }
+        }
+        Toggle("Keep yt-dlp up to date", isOn: $keepsUpToDate)
+        LabeledContent {
+            HStack {
+                if tools.isBusy { ProgressView().controlSize(.small) }
+                if tools.isInstalled {
+                    Button("Check for Update") { tools.checkForUpdate() }
+                    Button("Remove…") { confirmingRemove = true }
+                } else {
+                    Button("Download and Install") { tools.install() }
+                }
+            }
+            .disabled(tools.isBusy)
+        } label: {
+            Text(tools.status ?? (tools.isInstalled ? "Installed in Dowlio's own folder" : tools.sizeText))
+                .font(DowlioDesign.TypeRole.detail)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .task { await tools.refresh() }
         .alert("Remove yt-dlp and QuickJS-NG?", isPresented: $confirmingRemove) {

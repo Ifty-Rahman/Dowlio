@@ -171,7 +171,11 @@ private struct DownloadsSettings: View {
             LabeledContent("History") {
                 Button("Clear History…") { confirmingClear = true }
             }
-            ToolsSection(tools: model.toolsModel)
+            Section {
+                ToolsRows(tools: model.toolsModel)
+            } header: {
+                ToolsInfoTitle()
+            }
         }
         .settingsForm()
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
