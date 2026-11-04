@@ -226,7 +226,7 @@ extension DownloadRun {
         let joined = try join(plan)
         let output = plan.partial.packageURL.appending(path: "output.\(plan.media.fileExtension)")
         do {
-            try await remux(RemuxRequest(tracks: joined, output: output, media: plan.media))
+            try await remux(RemuxRequest(tracks: joined, output: output, mediaSource: plan.media))
         } catch {
             throw DownloadError.mediaUnplayable
         }

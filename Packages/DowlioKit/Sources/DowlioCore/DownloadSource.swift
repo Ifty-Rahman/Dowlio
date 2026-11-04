@@ -20,11 +20,8 @@ public struct MediaSource: Codable, Equatable, Sendable {
 
     public let tracks: [MediaTrack]
     public let keepsAudioOnly: Bool
-    /// The finished file's container. `nil` takes MP4, or M4A for audio.
     public let container: MediaContainer?
-    /// When the tracks' links stop working, for links that say so.
     public let expiry: Date?
-    /// How to get fresh links for the same formats once these expire.
     public let renewal: MediaRenewal?
 
     public init(
@@ -41,13 +38,13 @@ public struct MediaSource: Codable, Equatable, Sendable {
     }
 
     public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
-            tracks: container.decode([MediaTrack].self, forKey: .tracks),
-            keepsAudioOnly: container.decodeIfPresent(Bool.self, forKey: .keepsAudioOnly) ?? false,
-            container: container.decodeIfPresent(MediaContainer.self, forKey: .container),
-            expiry: container.decodeIfPresent(Date.self, forKey: .expiry),
-            renewal: container.decodeIfPresent(MediaRenewal.self, forKey: .renewal)
+            tracks: values.decode([MediaTrack].self, forKey: .tracks),
+            keepsAudioOnly: values.decodeIfPresent(Bool.self, forKey: .keepsAudioOnly) ?? false,
+            container: values.decodeIfPresent(MediaContainer.self, forKey: .container),
+            expiry: values.decodeIfPresent(Date.self, forKey: .expiry),
+            renewal: values.decodeIfPresent(MediaRenewal.self, forKey: .renewal)
         )
     }
 
@@ -85,7 +82,6 @@ public enum MediaContainer: String, Codable, Sendable {
 }
 
 public struct MediaRenewal: Codable, Equatable, Sendable {
-    /// The page yt-dlp read the formats from.
     public var pageURL: URL
     public var formatIDs: [String]
 
@@ -145,15 +141,14 @@ public struct FragmentPosition: Codable, Hashable, Sendable {
     }
 }
 
-/// The downloaded tracks of a media download, and the one file they become.
 public struct RemuxRequest: Sendable {
     public var tracks: [URL]
     public var output: URL
-    public var media: MediaSource
+    public var mediaSource: MediaSource
 
-    public init(tracks: [URL], output: URL, media: MediaSource) {
+    public init(tracks: [URL], output: URL, mediaSource: MediaSource) {
         self.tracks = tracks
         self.output = output
-        self.media = media
+        self.mediaSource = mediaSource
     }
 }

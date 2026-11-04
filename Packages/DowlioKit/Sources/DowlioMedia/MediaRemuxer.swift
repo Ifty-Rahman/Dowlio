@@ -1,7 +1,6 @@
 import DowlioCore
 import Foundation
 
-/// Joins a media download's tracks into one file with whichever remuxer can read them.
 public enum MediaRemuxer {
     enum Choice: Equatable {
         case avFoundation

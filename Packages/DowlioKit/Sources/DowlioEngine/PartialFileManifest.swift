@@ -5,7 +5,6 @@ import Foundation
 /// partial file is self-contained (architecture.md, files on disk). It never holds cookies.
 struct PartialFileManifest: Codable, Equatable, Sendable {
     /// Format 2 added `layout`, format 3 `nameConflictPolicy`, format 4 `mediaSource` and `finishedFragments`.
-    /// `requestSizeLimit` is optional and older versions ignore it, so it didn't need a new format.
     static let currentFormatVersion = 4
     /// The oldest format this version still reads.
     static let oldestReadableFormatVersion = 1
