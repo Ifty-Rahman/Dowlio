@@ -292,7 +292,12 @@ public struct PageAnalyzer: Sendable {
         guard let ytdlp else { return .found([]) }
         guard await ytdlp.isInstalled else { return .needsTools }
         do {
-            let info = try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: [], flatPlaylist: true)
+            let info: MediaInfo
+            do {
+                info = try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: [], flatPlaylist: true)
+            } catch let failure as YTDLPFailure where (failure == .needsSignIn || failure == .private) && !page.cookies.isEmpty {
+                info = try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: page.cookies, flatPlaylist: true)
+            }
             return .playlist(Self.playlist(from: info, page: page, isMusic: isMusic))
         } catch ToolInstaller.Failure.changed, is ChildProcess.CouldNotStart {
             return .toolsChanged
@@ -315,14 +320,14 @@ public struct PageAnalyzer: Sendable {
         }
         return PlaylistListing(
             title: info.title ?? page.title ?? "Playlist", url: page.url, entries: Array(listed),
-            total: max(info.playlistCount ?? info.entries.count, info.entries.count, listed.count), isMusic: isMusic,
+            total: info.playlistCount ?? (info.entries.count > YTDLPRunner.longestPlaylist ? nil : info.entries.count), isMusic: isMusic,
             isCut: info.entries.count > YTDLPRunner.longestPlaylist
         )
     }
 
     private func video(_ page: SentPage, inPlaylist list: String, isMusic: Bool) async -> PageAnalysis {
         let whole = YouTubeLink.playlistURL(list: list)
-        async let listing = playlist(SentPage(url: whole), isMusic: isMusic)
+        async let listing = playlist(SentPage(url: whole, cookies: page.cookies), isMusic: isMusic)
         let single = await withYTDLP(page, opensAsAudio: isMusic)
         guard case .found(var candidates) = single, !candidates.isEmpty else { return single }
         if case .playlist(let playlist) = await listing, playlist.available.count > 1 {

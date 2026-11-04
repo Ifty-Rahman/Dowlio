@@ -84,7 +84,7 @@ struct PlaylistDraftTests {
 
         _ = draft.update(.ytdlpFailed(.channel))
 
-        #expect(draft.problem?.sentence == "Channels aren't supported. Send a video or a playlist instead.")
+        #expect(draft.problem?.sentence == "Channels aren't supported.")
     }
 }
 

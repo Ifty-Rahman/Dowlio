@@ -141,10 +141,7 @@ struct NewDownloadSheet: View {
             MediaHeader(media: media)
             ProblemBody(media: media)
         case .playlist:
-            VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
-                Text(media.draft.playlist?.title ?? "Playlist").font(DowlioDesign.TypeRole.heading).lineLimit(2)
-                PlaylistBody(media: media)
-            }
+            PlaylistBody(media: media)
         default:
             MediaHeader(media: media)
             ToolsBody(media: media)

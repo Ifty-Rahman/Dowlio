@@ -26,7 +26,7 @@ public struct YouTubeLink: Equatable, Sendable {
         case "youtube.com", "m.youtube.com", "music.youtube.com":
             if parts == ["playlist"], value("list") != nil {
                 kind = .playlist
-            } else if isWatch, let list = value("list") {
+            } else if isWatch, let list = value("list"), Self.isRealPlaylist(list) {
                 kind = .videoInPlaylist(list: list)
             } else if isWatch {
                 kind = .video
@@ -41,13 +41,17 @@ public struct YouTubeLink: Equatable, Sendable {
             }
         case "youtu.be":
             guard parts.count == 1 else { return nil }
-            kind = value("list").map { .videoInPlaylist(list: $0) } ?? .video
+            kind = value("list").flatMap { Self.isRealPlaylist($0) ? .videoInPlaylist(list: $0) : nil } ?? .video
         case "youtube-nocookie.com":
             guard first == "embed", hasID else { return nil }
             kind = .video
         default:
             return nil
         }
+    }
+
+    static func isRealPlaylist(_ list: String) -> Bool {
+        !["WL", "LL", "LM"].contains(list) && !list.hasPrefix("RD")
     }
 
     public static func playlistURL(list: String) -> URL {

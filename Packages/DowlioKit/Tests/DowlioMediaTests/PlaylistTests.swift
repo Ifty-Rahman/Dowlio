@@ -71,6 +71,19 @@ struct PlaylistTests {
         #expect(video.playlistOffer?.url == URL(string: "https://www.youtube.com/playlist?list=PLlaN88a7y2_plecYoJxvRFTLHVbIVAOoc"))
     }
 
+    @Test(arguments: ["https://www.youtube.com/watch?v=2Vv-BfVoq4g&list=RD2Vv-BfVoq4g", "https://www.youtube.com/watch?v=2Vv-BfVoq4g&list=WL"])
+    func aMixOrPersonalListIsTreatedAsJustTheVideo(link: String) {
+        #expect(YouTubeLink(URL(string: link)!)?.kind == .video)
+    }
+
+    @Test func aVideoInAPlaylistTwiceGetsTwoEntries() {
+        let url = URL(string: "https://www.youtube.com/watch?v=x")!
+        let first = PlaylistListing.Entry(id: "x", position: 1, title: "X", url: url)
+        let second = PlaylistListing.Entry(id: "x", position: 5, title: "X", url: url)
+
+        #expect(first.id != second.id)
+    }
+
     @Test(arguments: [
         "https://www.youtube.com/@RickAstleyYT",
         "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw",

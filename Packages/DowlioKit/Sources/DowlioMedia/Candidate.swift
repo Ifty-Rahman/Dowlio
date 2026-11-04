@@ -229,15 +229,17 @@ public struct PlaylistOffer: Equatable, Sendable {
 
 public struct PlaylistListing: Equatable, Sendable {
     public struct Entry: Equatable, Sendable, Identifiable {
-        public var id: String
+        public var videoID: String
         public var position: Int
         public var title: String
         public var url: URL
         public var duration: Double?
         public var isAvailable: Bool
 
-        public init(id: String, position: Int, title: String, url: URL, duration: Double? = nil, isAvailable: Bool = true) {
-            self.id = id
+        public var id: String { "\(position)-\(videoID)" }
+
+        public init(id videoID: String, position: Int, title: String, url: URL, duration: Double? = nil, isAvailable: Bool = true) {
+            self.videoID = videoID
             self.position = position
             self.title = title
             self.url = url
@@ -249,11 +251,11 @@ public struct PlaylistListing: Equatable, Sendable {
     public var title: String
     public var url: URL
     public var entries: [Entry]
-    public var total: Int
+    public var total: Int?
     public var isMusic: Bool
     public var isCut: Bool
 
-    public init(title: String, url: URL, entries: [Entry], total: Int, isMusic: Bool, isCut: Bool = false) {
+    public init(title: String, url: URL, entries: [Entry], total: Int?, isMusic: Bool, isCut: Bool = false) {
         self.title = title
         self.url = url
         self.entries = entries

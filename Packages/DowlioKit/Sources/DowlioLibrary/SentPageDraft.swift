@@ -207,6 +207,8 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public mutating func startLookingAgain() {
         candidates = []
+        playlist = nil
+        skippedEntries = []
         phase = .looking
     }
 
@@ -224,7 +226,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case .network: ProblemText(sentence: "Dowlio couldn't reach the site.", action: .tryAgain)
         case .live: ProblemText(sentence: "This video is live. Download it after the stream ends.", action: nil)
         case .unavailable: ProblemText(sentence: "This video isn't available any more.", action: nil)
-        case .channel: ProblemText(sentence: "Channels aren't supported. Send a video or a playlist instead.", action: nil)
+        case .channel: ProblemText(sentence: "Channels aren't supported.", action: nil)
         }
     }
 
@@ -254,8 +256,11 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public var playlistNote: String? {
         guard let playlist, playlist.isCut else { return nil }
-        let number = NumberFormatter.localizedString(from: NSNumber(value: playlist.total), number: .decimal)
         let shown = NumberFormatter.localizedString(from: NSNumber(value: playlist.entries.count), number: .decimal)
+        guard let total = playlist.total, total > playlist.entries.count else {
+            return "This playlist has more than \(shown) videos. Dowlio lists the first \(shown)."
+        }
+        let number = NumberFormatter.localizedString(from: NSNumber(value: total), number: .decimal)
         return "This playlist has \(number) videos. Dowlio lists the first \(shown)."
     }
 

@@ -8,6 +8,7 @@ struct PlaylistBody: View {
     var body: some View {
         if let playlist = media.draft.playlist {
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
+                Text(playlist.title).font(DowlioDesign.TypeRole.heading).lineLimit(2)
                 HStack {
                     Picker("Quality", selection: choice) {
                         Text("Best available").tag(Choice.video(.best))

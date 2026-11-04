@@ -67,10 +67,7 @@ struct LinkItemBody: View {
             case .ytdlpFailed:
                 ProblemBody(media: page)
             case .playlist:
-                VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
-                    Text(page.draft.playlist?.title ?? "Playlist").font(DowlioDesign.TypeRole.heading).lineLimit(2)
-                    PlaylistBody(media: page)
-                }
+                PlaylistBody(media: page)
             case .nothingFound:
                 NothingFoundBody(media: page)
                 LinkCard(url: page.draft.page.url, check: sheet.draft.check(for: page.draft.page.url))
