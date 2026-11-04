@@ -41,7 +41,7 @@ struct PlaylistBody: View {
             ChipFlow(spacing: DowlioDesign.Spacing.xs) {
                 chip("Best", .video(.best))
                 ForEach(media.draft.playlistHeights, id: \.self) { height in
-                    chip(Self.name(of: height), .video(.upTo(height)))
+                    chip("\(height)p", .video(.upTo(height)))
                 }
                 chip("Audio only", .audio)
             }
@@ -100,15 +100,6 @@ struct PlaylistBody: View {
 
     static let rowHeight: CGFloat = 36
     private static let rowSpacing: CGFloat = 2
-
-    private static func name(of height: Int) -> String {
-        switch height {
-        case 2160: "2160p (4K)"
-        case 1440: "1440p (2K)"
-        case 4320: "4320p (8K)"
-        default: "\(height)p"
-        }
-    }
 
     private enum Choice: Hashable {
         case video(VideoQuality)
