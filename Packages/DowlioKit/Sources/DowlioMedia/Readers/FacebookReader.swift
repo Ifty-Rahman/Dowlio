@@ -62,7 +62,7 @@ public struct FacebookReader: SiteReader {
         var author: String?
 
         var label: String? {
-            text == nil ? nil : PostLabel.of(text: text, author: author)
+            PostLabel.of(text: text, author: author)
         }
     }
 
@@ -84,7 +84,12 @@ public struct FacebookReader: SiteReader {
         guard let object = value as? [String: Any] else { return }
         var story = inherited
         if let text = object.object("message")?.text("text") { story.text = text }
-        if let author = object.objects("actors").first?.text("name") ?? object.object("video_owner")?.text("name") { story.author = author }
+        if let author = Self.author(of: object) { story.author = author }
+        if object["attachments"] != nil || object["short_form_video_context"] != nil {
+            let beside = object.filter { $0.key != "attachments" }
+            story.text = story.text ?? Self.first(in: beside, depth: 8) { $0.object("message")?.text("text") }
+            story.author = story.author ?? Self.first(in: beside, depth: 8, Self.author(of:))
+        }
         guard isVideo(object) else {
             for child in object.values { collect(child, story: story, base: base, into: &found) }
             return
@@ -96,6 +101,27 @@ public struct FacebookReader: SiteReader {
         let label = found[index].video.label ?? video.label
         if item.isKept(over: found[index].video) { found[index] = item }
         found[index].video.label = label
+    }
+
+    private static func author(of object: [String: Any]) -> String? {
+        object.objects("actors").first?.text("name") ?? object.object("video_owner")?.text("name")
+    }
+
+    private static func first(in value: Any, depth: Int, _ found: ([String: Any]) -> String?) -> String? {
+        guard depth > 0 else { return nil }
+        let children: [Any]
+        if let list = value as? [Any] {
+            children = list
+        } else if let object = value as? [String: Any] {
+            if let hit = found(object) { return hit }
+            children = Array(object.values)
+        } else {
+            return nil
+        }
+        for child in children {
+            if let hit = first(in: child, depth: depth - 1, found) { return hit }
+        }
+        return nil
     }
 
     private func isVideo(_ object: [String: Any]) -> Bool {

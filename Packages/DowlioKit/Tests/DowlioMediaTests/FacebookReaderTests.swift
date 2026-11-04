@@ -112,6 +112,37 @@ struct FacebookReaderTests {
         #expect(candidates.map(\.label) == ["Sample Page: A reel about bread"])
     }
 
+    @Test func aReelIsNamedAfterItsPosterAndCaptionKeptBesideTheVideo() async throws {
+        let site = try await facebook()
+        site.site.serve(html: "<title>Facebook</title>", at: "/reel/3000000000000001/")
+        let media = try video(id: "3000000000000001", seconds: 30, file: "https://video.cdn.example/v/reel.mp4")
+        let reel: [String: Any] = ["video": ["creation_story": [
+            "comet_sections": [
+                "actor_photo": ["story": ["actors": [["name": "Sample Creator"]]]],
+                "message": ["story": ["message": ["text": "Morning run along the river with the whole crew today"]]],
+            ],
+            "attachments": [["media": media]],
+        ]]]
+
+        let candidates = try await site.candidates("/reel/3000000000000001/") { $0.embeddedJSON = [PageFixture.json(reel)] }
+
+        #expect(candidates.map(\.label) == ["Sample Creator: Morning run along the river with the whole"])
+    }
+
+    @Test func aReelWithoutACaptionIsNamedAfterItsPoster() async throws {
+        let site = try await facebook()
+        site.site.serve(html: "<title>Facebook</title>", at: "/reel/3000000000000001/")
+        let media = try video(id: "3000000000000001", seconds: 30, file: "https://video.cdn.example/v/reel.mp4")
+        let reel: [String: Any] = ["video": ["creation_story": [
+            "short_form_video_context": ["video_owner": ["name": "Sample Creator"]],
+            "attachments": [["media": media]],
+        ]]]
+
+        let candidates = try await site.candidates("/reel/3000000000000001/") { $0.embeddedJSON = [PageFixture.json(reel)] }
+
+        #expect(candidates.map(\.label) == ["Sample Creator"])
+    }
+
     @Test func aLiveVideoIsShownAsLive() async throws {
         let site = try await facebook()
         site.site.serve(html: "<title>Facebook</title>", at: "/watch/")
