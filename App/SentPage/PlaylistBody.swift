@@ -31,25 +31,40 @@ struct PlaylistBody: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.sm) {
-            HStack(spacing: DowlioDesign.Spacing.sm) {
-                Picker("Resolution", selection: choice) {
-                    Text("Best available").tag(Choice.video(.best))
-                    ForEach(media.draft.playlistHeights, id: \.self) { height in
-                        Text(Self.name(of: height)).tag(Choice.video(.upTo(height)))
-                    }
-                    Divider()
-                    Text("Audio only").tag(Choice.audio)
-                }
-                .fixedSize()
+            HStack(spacing: DowlioDesign.Spacing.xs) {
+                Text("Resolution").font(DowlioDesign.TypeRole.detail.weight(.semibold))
                 if media.draft.isCheckingResolutions {
-                    ProgressView().controlSize(.small)
-                        .help("Dowlio is reading which resolutions this playlist's videos come in")
+                    ProgressView().controlSize(.mini)
+                    Text("Checking").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
                 }
+            }
+            ChipFlow(spacing: DowlioDesign.Spacing.xs) {
+                chip("Best", .video(.best))
+                ForEach(media.draft.playlistHeights, id: \.self) { height in
+                    chip(Self.name(of: height), .video(.upTo(height)))
+                }
+                chip("Audio only", .audio)
             }
             ForEach([media.draft.playlistResolutionNote, media.draft.playlistNote].compactMap { $0 }, id: \.self) { note in
                 Text(note).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func chip(_ title: String, _ value: Choice) -> some View {
+        let isChosen = choice.wrappedValue == value
+        return Button { choice.wrappedValue = value } label: {
+            Text(title)
+                .font(DowlioDesign.TypeRole.detail.weight(isChosen ? .semibold : .regular))
+                .monospacedDigit()
+                .padding(.horizontal, DowlioDesign.Spacing.sm)
+                .padding(.vertical, DowlioDesign.Spacing.xs)
+                .foregroundStyle(isChosen ? Color.white : Color.primary)
+                .background(isChosen ? Color.accentColor : Color.primary.opacity(0.08), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
     }
 
     private func videos(_ playlist: PlaylistListing) -> some View {
@@ -185,5 +200,52 @@ private struct PlaylistCover: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
             .accessibilityHidden(true)
+    }
+}
+
+private struct ChipFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(for: subviews, width: proposal.width ?? .infinity)
+        var height: CGFloat = 0
+        var width: CGFloat = 0
+        for row in rows {
+            let sizes = row.map { subviews[$0].sizeThatFits(.unspecified) }
+            let rowWidth = sizes.map(\.width).reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
+            width = max(width, rowWidth)
+            height += sizes.map(\.height).max() ?? 0
+        }
+        height += spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(for: subviews, width: bounds.width) {
+            var x = bounds.minX
+            let height = row.map { subviews[$0].sizeThatFits(.unspecified).height }.max() ?? 0
+            for index in row {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += height + spacing
+        }
+    }
+
+    private func rows(for subviews: Subviews, width: CGFloat) -> [[Int]] {
+        var rows: [[Int]] = [[]]
+        var used: CGFloat = 0
+        for index in subviews.indices {
+            let item = subviews[index].sizeThatFits(.unspecified).width
+            if !rows[rows.count - 1].isEmpty, used + spacing + item > width {
+                rows.append([])
+                used = 0
+            }
+            used += (rows[rows.count - 1].isEmpty ? 0 : spacing) + item
+            rows[rows.count - 1].append(index)
+        }
+        return rows
     }
 }
