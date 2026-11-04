@@ -23,10 +23,11 @@ public struct MediaSource: Codable, Equatable, Sendable {
     public let container: MediaContainer?
     public let expiry: Date?
     public let renewal: MediaRenewal?
+    public let downloadsWithYTDLP: Bool
 
     public init(
         tracks: [MediaTrack], keepsAudioOnly: Bool = false, container: MediaContainer? = nil, expiry: Date? = nil,
-        renewal: MediaRenewal? = nil
+        renewal: MediaRenewal? = nil, downloadsWithYTDLP: Bool = false
     ) throws {
         guard !tracks.isEmpty else { throw Error.noTracks }
         guard tracks.allSatisfy({ !$0.fragments.isEmpty }) else { throw Error.trackWithoutFragments }
@@ -35,6 +36,7 @@ public struct MediaSource: Codable, Equatable, Sendable {
         self.container = container
         self.expiry = expiry
         self.renewal = renewal
+        self.downloadsWithYTDLP = downloadsWithYTDLP
     }
 
     public init(from decoder: any Decoder) throws {
@@ -44,7 +46,8 @@ public struct MediaSource: Codable, Equatable, Sendable {
             keepsAudioOnly: values.decodeIfPresent(Bool.self, forKey: .keepsAudioOnly) ?? false,
             container: values.decodeIfPresent(MediaContainer.self, forKey: .container),
             expiry: values.decodeIfPresent(Date.self, forKey: .expiry),
-            renewal: values.decodeIfPresent(MediaRenewal.self, forKey: .renewal)
+            renewal: values.decodeIfPresent(MediaRenewal.self, forKey: .renewal),
+            downloadsWithYTDLP: values.decodeIfPresent(Bool.self, forKey: .downloadsWithYTDLP) ?? false
         )
     }
 
@@ -148,6 +151,32 @@ public struct FragmentPosition: Codable, Hashable, Sendable {
     public init(track: Int, fragment: Int) {
         self.track = track
         self.fragment = fragment
+    }
+}
+
+public struct YTDLPProgress: Equatable, Sendable {
+    public var receivedBytes: Int64
+    public var totalBytes: Int64?
+    public var bytesPerSecond: Int64
+    public var secondsLeft: TimeInterval?
+
+    public init(receivedBytes: Int64, totalBytes: Int64?, bytesPerSecond: Int64, secondsLeft: TimeInterval?) {
+        self.receivedBytes = receivedBytes
+        self.totalBytes = totalBytes
+        self.bytesPerSecond = bytesPerSecond
+        self.secondsLeft = secondsLeft
+    }
+}
+
+public struct YTDLPDownload: Sendable {
+    public var media: MediaSource
+    public var folder: URL
+    public var progress: @Sendable (YTDLPProgress) -> Void
+
+    public init(media: MediaSource, folder: URL, progress: @escaping @Sendable (YTDLPProgress) -> Void) {
+        self.media = media
+        self.folder = folder
+        self.progress = progress
     }
 }
 

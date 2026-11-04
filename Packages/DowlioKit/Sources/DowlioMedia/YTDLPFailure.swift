@@ -1,3 +1,4 @@
+import DowlioCore
 import Foundation
 
 public enum YTDLPFailure: Error, Equatable, Hashable, Sendable {
@@ -35,5 +36,15 @@ public enum YTDLPFailure: Error, Equatable, Hashable, Sendable {
         }
         if message.contains("[generic]") { return .unsupportedSite }
         return .extractorBroken
+    }
+
+    public var downloadError: DownloadError {
+        switch self {
+        case .needsSignIn, .private: .needsSignIn
+        case .network, .rateLimited: .network(NetworkFailure(code: .notConnectedToInternet, message: "yt-dlp couldn't reach the site"))
+        case .protected, .geoBlocked: .forbidden
+        case .unavailable, .unsupportedSite: .notFound
+        case .live, .extractorBroken: .mediaUnplayable
+        }
     }
 }

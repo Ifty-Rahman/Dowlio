@@ -18,7 +18,9 @@ struct ChildProcess {
         ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()]
     }
 
-    static func run(_ executable: URL, _ arguments: [String], timeout: Duration) async throws -> Result {
+    static func run(
+        _ executable: URL, _ arguments: [String], timeout: Duration, onOutputLine: (@Sendable (String) -> Void)? = nil
+    ) async throws -> Result {
         try Task.checkCancellation()
         let process = Process()
         process.executableURL = executable
@@ -30,7 +32,7 @@ struct ChildProcess {
         process.standardOutput = output
         process.standardError = errors
         process.standardInput = FileHandle.nullDevice
-        let run = RunState()
+        let run = RunState(onOutputLine: onOutputLine)
         output.fileHandleForReading.readabilityHandler = { handle in run.addOutput(handle.availableData) }
         errors.fileHandleForReading.readabilityHandler = { handle in run.addErrors(handle.availableData) }
         let watchdog = Task.detached {
@@ -61,6 +63,7 @@ struct ChildProcess {
         errors.fileHandleForReading.readabilityHandler = nil
         run.addOutput(output.fileHandleForReading.readDataToEndOfFile())
         run.addErrors(errors.fileHandleForReading.readDataToEndOfFile())
+        run.finishLine()
         try Task.checkCancellation()
         return run.result(status: status)
     }
@@ -81,12 +84,34 @@ private final class RunState: @unchecked Sendable {
     private var errors = Data()
     private var timedOut = false
     private var cancelled = false
+    private var pendingLine = Data()
+    private let onOutputLine: (@Sendable (String) -> Void)?
+
+    init(onOutputLine: (@Sendable (String) -> Void)?) {
+        self.onOutputLine = onOutputLine
+    }
 
     var isCancelled: Bool { lock.withLock { cancelled } }
 
     func addOutput(_ data: Data) {
         guard !data.isEmpty else { return }
-        lock.withLock { output.append(data) }
+        let lines: [String] = lock.withLock {
+            output.append(data)
+            guard onOutputLine != nil else { return [] }
+            pendingLine.append(data)
+            let parts = pendingLine.split(separator: 0x0A, omittingEmptySubsequences: false)
+            pendingLine = Data(parts.last ?? Data())
+            return parts.dropLast().map { String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .newlines) }.filter { !$0.isEmpty }
+        }
+        lines.forEach { onOutputLine?($0) }
+    }
+
+    func finishLine() {
+        let line: String? = lock.withLock {
+            defer { pendingLine = Data() }
+            return pendingLine.isEmpty ? nil : String(decoding: pendingLine, as: UTF8.self)
+        }
+        if let line, !line.isEmpty { onOutputLine?(line) }
     }
 
     func addErrors(_ data: Data) {

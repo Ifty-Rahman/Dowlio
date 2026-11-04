@@ -74,8 +74,11 @@ final class AppModel {
         do {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let renew = Self.renewal(tools: tools, signIn: renewalSignIn)
-            let library = Library(engine: DownloadEngine(remux: MediaRemuxer.remux, renew: renew, identity: { BrowserIdentity.standard }), store: store)
+            let engine = DownloadEngine(
+                remux: MediaRemuxer.remux, renew: Self.renewal(tools: tools, signIn: renewalSignIn),
+                downloadWithYTDLP: Self.ytdlpDownload(tools: tools, signIn: renewalSignIn), identity: { BrowserIdentity.standard }
+            )
+            let library = Library(engine: engine, store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
             renewalSignIn.set { [weak self] url in await self?.browserCookies(for: url) ?? [] }
@@ -518,6 +521,12 @@ final class AppModel {
     private func browserCookies(for url: URL) async -> [Cookie] {
         guard UserDefaults.standard.bool(forKey: SettingsKey.usesBrowserSignIn) else { return [] }
         return await connectServer?.signIn(for: url, frontBrowser: FrontBrowser.frontApp?.name)?.cookies ?? []
+    }
+
+    nonisolated private static func ytdlpDownload(
+        tools: ToolInstaller, signIn: RenewalSignIn
+    ) -> @Sendable (YTDLPDownload) async throws -> URL {
+        { request in try await YTDLPRunner(installer: tools).download(request) { url in await signIn.cookies(for: url) } }
     }
 
     nonisolated private static func renewal(

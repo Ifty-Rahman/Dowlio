@@ -10,6 +10,7 @@ package struct EngineConfiguration: Sendable {
     var hostLimits: any HostLimitStore = InMemoryHostLimitStore()
     package var remux: (@Sendable (RemuxRequest) async throws -> Void)?
     package var renew: (@Sendable (MediaSource) async throws -> MediaSource)?
+    package var downloadWithYTDLP: (@Sendable (YTDLPDownload) async throws -> URL)?
     package var identity: @Sendable () -> BrowserIdentity = { BrowserIdentity(userAgent: nil) }
 
     package init() {}

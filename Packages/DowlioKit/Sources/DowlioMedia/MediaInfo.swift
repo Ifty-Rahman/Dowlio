@@ -19,6 +19,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         public var url: URL?
         public var headers: [String: String]
         public var requestSizeLimit: Int64?
+        public var fragmentURLs: [URL]
 
         enum CodingKeys: String, CodingKey {
             case id = "format_id"
@@ -38,6 +39,13 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             case url
             case headers = "http_headers"
             case downloaderOptions = "downloader_options"
+            case fragments
+            case fragmentBaseURL = "fragment_base_url"
+        }
+
+        private struct Fragment: Decodable {
+            var url: String?
+            var path: String?
         }
 
         private struct DownloaderOptions: Decodable {
@@ -67,6 +75,13 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             `protocol` = try? values.decodeIfPresent(String.self, forKey: .protocol)
             headers = ((try? values.decodeIfPresent([String: Lenient<String>].self, forKey: .headers)) ?? [:]).compactMapValues(\.value)
             requestSizeLimit = (try? values.decodeIfPresent(DownloaderOptions.self, forKey: .downloaderOptions))?.chunkSize
+            let base = (try? values.decodeIfPresent(String.self, forKey: .fragmentBaseURL)).flatMap(URL.init(string:))
+            let fragments = ((try? values.decodeIfPresent([Lenient<Fragment>].self, forKey: .fragments)) ?? []).compactMap(\.value)
+            fragmentURLs = fragments.compactMap { fragment in
+                if let url = fragment.url { return URL(string: url) }
+                guard let path = fragment.path else { return nil }
+                return base.flatMap { URL(string: path, relativeTo: $0)?.absoluteURL } ?? URL(string: path)
+            }
         }
 
         private static func codec(_ value: String?) -> String? {

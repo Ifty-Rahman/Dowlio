@@ -205,7 +205,8 @@ public struct PageAnalyzer: Sendable {
         let label = page.title ?? Self.site(of: page.url)
         do {
             let info = try await Self.infoRetryingWithSignIn(for: page, from: ytdlp)
-            let versions = YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1)
+            let playlists = await playlists(neededBy: info, on: page)
+            let versions = YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1, playlists: playlists)
             return .found([Candidate(
                 label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
             )])
@@ -221,6 +222,27 @@ public struct PageAnalyzer: Sendable {
             }
         } catch {
             return .ytdlpFailed(.extractorBroken)
+        }
+    }
+
+    private func playlists(neededBy info: MediaInfo, on page: SentPage) async -> [String: MediaPlaylist] {
+        let needed = info.formats.filter { YTDLPVersions.needsPlaylist($0, among: info.formats) }
+        guard !needed.isEmpty else { return [:] }
+        let refusals = Refusals()
+        return await withTaskGroup(of: (String, MediaPlaylist)?.self) { group in
+            for format in needed {
+                guard let url = format.url else { continue }
+                var options = mediaOptions(page, for: url)
+                if let agent = format.headers["User-Agent"] { options.userAgent = agent }
+                group.addTask {
+                    guard case .media(let playlist) = await self.playlist(at: url, options: options, refusals: refusals),
+                          HLSVersions.restriction(of: playlist) == nil, !playlist.fragments.isEmpty else { return nil }
+                    return (format.id, playlist)
+                }
+            }
+            var found: [String: MediaPlaylist] = [:]
+            for await pair in group { if let pair { found[pair.0] = pair.1 } }
+            return found
         }
     }
 

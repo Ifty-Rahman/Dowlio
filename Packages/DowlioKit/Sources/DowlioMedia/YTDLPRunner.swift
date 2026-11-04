@@ -8,12 +8,21 @@ public struct YTDLPRunner: Sendable {
     public let installer: ToolInstaller
     let timeout: Duration
     let cookieFolder: URL
+    let ffmpeg: URL?
 
-    public init(installer: ToolInstaller, timeout: Duration = .seconds(30), cookieFolder: URL = YTDLPRunner.cookieFolder) {
+    public init(
+        installer: ToolInstaller, timeout: Duration = .seconds(30), cookieFolder: URL = YTDLPRunner.cookieFolder,
+        ffmpeg: URL? = MediaRemuxer.bundledHelper
+    ) {
         self.installer = installer
         self.timeout = timeout
         self.cookieFolder = cookieFolder
+        self.ffmpeg = ffmpeg
     }
+
+    static let downloadTimeout: Duration = .seconds(24 * 60 * 60)
+    static let progressPrefix = "dowlio-progress"
+    static let outputName = "media"
 
     public static var cookieFolder: URL {
         FileManager.default.temporaryDirectory.appending(path: "Dowlio Cookies", directoryHint: .isDirectory)
@@ -100,6 +109,88 @@ extension YTDLPRunner {
             guard await updateTools() else { throw YTDLPFailure.extractorBroken }
             return try await info(for: url, cookies: cookies)
         }
+    }
+}
+
+extension YTDLPRunner {
+    public func download(_ request: YTDLPDownload, signIn: @Sendable (URL) async -> [Cookie] = { _ in [] }) async throws -> URL {
+        guard let renewal = request.media.renewal else { throw RenewalFailure.failed }
+        guard await isInstalled else { throw RenewalFailure.toolsMissing }
+        do {
+            return try await downloadOnce(request, page: renewal.pageURL, formats: renewal.formatIDs, cookies: [])
+        } catch DownloadError.needsSignIn {
+            let cookies = await signIn(renewal.pageURL)
+            guard !cookies.isEmpty else { throw DownloadError.needsSignIn }
+            return try await downloadOnce(request, page: renewal.pageURL, formats: renewal.formatIDs, cookies: cookies)
+        }
+    }
+
+    private func downloadOnce(_ request: YTDLPDownload, page: URL, formats: [String], cookies: [Cookie]) async throws -> URL {
+        let tools = try await installer.verifiedTools()
+        try FileManager.default.createDirectory(at: request.folder, withIntermediateDirectories: true)
+        let container = request.media.outputContainer
+        var arguments = [
+            "--ignore-config", "--no-cache-dir", "--no-playlist",
+            "--js-runtimes", "quickjs:\(tools.quickJS.path)",
+            "-f", formats.joined(separator: "+"),
+            "--newline", "--no-colors", "--continue",
+            "--progress-template",
+            "download:\(Self.progressPrefix) %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s",
+            "-o", request.folder.appending(path: "\(Self.outputName).%(ext)s").path,
+        ]
+        if formats.count > 1 { arguments += ["--merge-output-format", container.rawValue] }
+        if let ffmpeg { arguments += ["--ffmpeg-location", ffmpeg.path] }
+        let jar = try cookies.isEmpty ? nil : CookieJar(cookies, in: cookieFolder)
+        defer { jar?.remove() }
+        if let jar { arguments += ["--cookies", jar.file.path] }
+        arguments += ["--", page.absoluteString]
+        let meter = ProgressMeter(parts: formats.count, report: request.progress)
+        let result = try await ChildProcess.run(tools.ytdlp, arguments, timeout: Self.downloadTimeout) { line in meter.read(line) }
+        guard result.status == 0, !result.timedOut else { throw YTDLPFailure.classify(result.errorText).downloadError }
+        let finished = try FileManager.default.contentsOfDirectory(at: request.folder, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix(Self.outputName + ".") && !["part", "ytdl", "temp"].contains($0.pathExtension) }
+        guard let file = finished.first(where: { $0.pathExtension == container.rawValue }) ?? finished.first else {
+            throw YTDLPFailure.extractorBroken
+        }
+        return file
+    }
+}
+
+final class ProgressMeter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let parts: Int
+    private let report: @Sendable (YTDLPProgress) -> Void
+    private var finishedBytes: Int64 = 0
+    private var finishedParts = 0
+    private var lastReceived: Int64 = 0
+    private var lastTotal: Int64?
+
+    init(parts: Int, report: @escaping @Sendable (YTDLPProgress) -> Void) {
+        self.parts = max(parts, 1)
+        self.report = report
+    }
+
+    func read(_ line: String) {
+        let fields = line.split(separator: " ").map(String.init)
+        guard fields.count == 6, fields[0] == YTDLPRunner.progressPrefix else { return }
+        func number(_ text: String) -> Double? { Double(text) }
+        guard let received = number(fields[1]).map({ Int64($0) }) else { return }
+        let total = (number(fields[2]) ?? number(fields[3])).map { Int64($0) }
+        let progress: YTDLPProgress = lock.withLock {
+            if received < lastReceived, finishedParts < parts - 1 {
+                finishedBytes += lastTotal ?? lastReceived
+                finishedParts += 1
+            }
+            lastReceived = received
+            lastTotal = total
+            let sum = finishedBytes + received
+            let whole = total.map { finishedBytes + $0 }
+            return YTDLPProgress(
+                receivedBytes: sum, totalBytes: finishedParts == parts - 1 ? whole : nil,
+                bytesPerSecond: number(fields[4]).map { Int64($0) } ?? 0, secondsLeft: number(fields[5])
+            )
+        }
+        report(progress)
     }
 }
 

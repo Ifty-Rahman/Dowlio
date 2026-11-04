@@ -7,6 +7,10 @@ extension DownloadRun {
         do {
             var plan = try await prepareMedia(media)
             current = plan
+            if plan.media.downloadsWithYTDLP {
+                saveManifest(plan)
+                return try await downloadWithYTDLP(plan)
+            }
             if canRenew(plan), Self.isExpiring(plan.media, at: configuration.now()) {
                 plan = try await renewingBeforeStart(plan)
                 current = plan
@@ -125,6 +129,72 @@ extension DownloadRun {
             adopted(renewed)
             try await reportingProgress(of: renewed) { try await receivePieces(of: renewed, resuming: resuming) }
             return renewed
+        }
+    }
+
+    private func downloadWithYTDLP(_ plan: MediaPlan) async throws {
+        guard let download = configuration.downloadWithYTDLP else { throw DownloadError.needsTools }
+        let latest = LatestProgress()
+        let request = YTDLPDownload(media: plan.media, folder: plan.partial.packageURL.appending(path: "yt-dlp", directoryHint: .isDirectory)) { progress in
+            latest.set(progress)
+        }
+        let reporter = Task {
+            while !Task.isCancelled {
+                if let progress = latest.take() { await show(progress) }
+                try? await Task.sleep(for: Self.progressInterval)
+            }
+        }
+        defer { reporter.cancel() }
+        let output: URL
+        do {
+            output = try await download(request)
+        } catch RenewalFailure.toolsMissing {
+            throw DownloadError.needsTools
+        } catch where Task.isCancelled {
+            throw CancellationError()
+        } catch let error as DownloadError {
+            throw error
+        } catch {
+            throw DownloadError.network(NetworkFailure(error))
+        }
+        reporter.cancel()
+        if let progress = latest.take() { await show(progress) }
+        try Task.checkCancellation()
+        await changeSnapshot {
+            $0.bytesPerSecond = 0
+            $0.timeRemaining = nil
+            $0.state = .finalizing
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int64) ?? nil
+        let finished = try plan.partial.finish(
+            named: plan.fileName, in: plan.partial.packageURL.deletingLastPathComponent(),
+            policy: options.nameConflictPolicy, source: url, replacingDataWith: output
+        )
+        partialFile.url = nil
+        mediaPlans.forget()
+        await changeSnapshot {
+            if let size {
+                $0.receivedBytes = size
+                $0.totalBytes = size
+            }
+            $0.fileName = finished.name
+            $0.wasSkipped = finished.wasSkipped
+            $0.state = .completed
+        }
+    }
+
+    private func show(_ progress: YTDLPProgress) async {
+        await changeSnapshot {
+            $0.receivedBytes = progress.receivedBytes
+            $0.totalBytes = progress.totalBytes
+            $0.bytesPerSecond = progress.bytesPerSecond
+            $0.timeRemaining = progress.secondsLeft
+            $0.activeConnections = 1
+            let whole = progress.totalBytes.map {
+                [SegmentProgress(start: 0, end: max($0 - 1, 0), receivedBytes: min(progress.receivedBytes, $0), isActive: true)]
+            } ?? []
+            $0.segments = whole
+            $0.plannedSegments = whole.map { SegmentBounds(start: $0.start, end: $0.end) }
         }
     }
 
@@ -411,5 +481,21 @@ extension DownloadSnapshot {
         let whole = reading.estimatedTotal.map { [SegmentProgress(start: 0, end: max($0 - 1, 0), receivedBytes: min(reading.receivedBytes, $0))] } ?? []
         segments = whole
         plannedSegments = whole.map { SegmentBounds(start: $0.start, end: $0.end) }
+    }
+}
+
+final class LatestProgress: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: YTDLPProgress?
+
+    func set(_ progress: YTDLPProgress) {
+        lock.withLock { value = progress }
+    }
+
+    func take() -> YTDLPProgress? {
+        lock.withLock {
+            defer { value = nil }
+            return value
+        }
     }
 }
