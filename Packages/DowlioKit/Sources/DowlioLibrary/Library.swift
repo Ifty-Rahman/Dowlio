@@ -403,8 +403,21 @@ public actor Library {
     }
 
     private func currentRows() -> [DownloadRow] {
-        records.values
-            .sorted { ($0.addedAt, $0.id.uuidString) > ($1.addedAt, $1.id.uuidString) }
+        var newestInPlaylist: [String: Date] = [:]
+        for record in records.values {
+            guard let group = record.playlistGroup else { continue }
+            newestInPlaylist[group] = max(newestInPlaylist[group] ?? record.addedAt, record.addedAt)
+        }
+        func placed(_ record: StoredDownload) -> Date {
+            record.playlistGroup.flatMap { newestInPlaylist[$0] } ?? record.addedAt
+        }
+        return records.values
+            .sorted { a, b in
+                let (first, second) = (placed(a), placed(b))
+                if first != second { return first > second }
+                if let group = a.playlistGroup, group == b.playlistGroup, a.addedAt != b.addedAt { return a.addedAt < b.addedAt }
+                return (a.addedAt, a.id.uuidString) > (b.addedAt, b.id.uuidString)
+            }
             .map { row(for: $0) }
     }
 

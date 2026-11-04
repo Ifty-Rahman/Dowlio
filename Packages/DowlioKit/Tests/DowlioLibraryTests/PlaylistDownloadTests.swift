@@ -72,6 +72,20 @@ struct PlaylistDownloadTests {
         for id in ids { _ = try await fixture.library.row(id) { $0.state == .completed } }
     }
 
+    @Test func aPlaylistIsListedInPlaylistOrderSoTheVideosDownloadingFirstAreOnTop() async throws {
+        let clip = Clip(server: try await TestServer())
+        try clip.serve(holding: true)
+        let fixture = try await LibraryFixture(renew: { try clip.listed($0) })
+
+        let ids = await add(entries(5), to: fixture)
+        let rows = try await fixture.library.firstRows { rows in rows.filter { $0.state == .downloading }.count == 3 }
+
+        #expect(rows.map(\.id) == ids)
+        #expect(rows.prefix(3).allSatisfy { $0.state == .downloading })
+        clip.server.releaseHeldResponses()
+        for id in ids { _ = try await fixture.library.row(id) { $0.state == .completed } }
+    }
+
     @Test func aVideoThatFailsBecomesFailedWithItsReasonAndTheRestCarryOn() async throws {
         let clip = Clip(server: try await TestServer())
         try clip.serve(holding: false)

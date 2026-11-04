@@ -25,12 +25,14 @@ public struct MediaSource: Codable, Equatable, Sendable {
     public let renewal: MediaRenewal?
     public let downloadsWithYTDLP: Bool
     public let extras: MediaExtras?
+    public let requestSizeLimit: Int64?
 
     public init(
         tracks: [MediaTrack], keepsAudioOnly: Bool = false, container: MediaContainer? = nil, expiry: Date? = nil,
-        renewal: MediaRenewal? = nil, downloadsWithYTDLP: Bool = false, extras: MediaExtras? = nil
+        renewal: MediaRenewal? = nil, downloadsWithYTDLP: Bool = false, extras: MediaExtras? = nil, requestSizeLimit: Int64? = nil
     ) throws {
         self.extras = extras?.isEmpty == true ? nil : extras
+        self.requestSizeLimit = requestSizeLimit
         guard !tracks.isEmpty else { throw Error.noTracks }
         guard tracks.allSatisfy({ !$0.fragments.isEmpty }) else { throw Error.trackWithoutFragments }
         self.tracks = tracks
@@ -50,7 +52,8 @@ public struct MediaSource: Codable, Equatable, Sendable {
             expiry: values.decodeIfPresent(Date.self, forKey: .expiry),
             renewal: values.decodeIfPresent(MediaRenewal.self, forKey: .renewal),
             downloadsWithYTDLP: values.decodeIfPresent(Bool.self, forKey: .downloadsWithYTDLP) ?? false,
-            extras: values.decodeIfPresent(MediaExtras.self, forKey: .extras)
+            extras: values.decodeIfPresent(MediaExtras.self, forKey: .extras),
+            requestSizeLimit: values.decodeIfPresent(Int64.self, forKey: .requestSizeLimit)
         )
     }
 
@@ -61,7 +64,7 @@ public struct MediaSource: Codable, Equatable, Sendable {
     public func with(extras: MediaExtras?) -> MediaSource {
         (try? MediaSource(
             tracks: tracks, keepsAudioOnly: keepsAudioOnly, container: container, expiry: expiry, renewal: renewal,
-            downloadsWithYTDLP: downloadsWithYTDLP, extras: extras
+            downloadsWithYTDLP: downloadsWithYTDLP, extras: extras, requestSizeLimit: requestSizeLimit
         )) ?? self
     }
 

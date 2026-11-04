@@ -54,6 +54,25 @@ struct YouTubeDownloadTests {
         #expect(abs(try await asset.load(.duration).seconds - 3) < 0.3)
     }
 
+    @Test func aPlaylistVideoListedWhenItStartsKeepsYouTubesRequestSizeLimit() async throws {
+        let server = try await TestServer()
+        let listed = try clip(on: server)
+        let limited = try MediaSource(tracks: listed.tracks, container: .mp4, renewal: listed.renewal, requestSizeLimit: 4096)
+        let fixture = try await LibraryFixture(renew: { _ in limited })
+        let entry = try MediaSource(
+            tracks: [MediaTrack(kind: .combined, fragments: [MediaFragment(url: URL(string: "https://www.youtube.com/watch?v=2Vv-BfVoq4g")!)])],
+            renewal: MediaRenewal(pageURL: URL(string: "https://www.youtube.com/watch?v=2Vv-BfVoq4g")!, formatIDs: [])
+        )
+
+        let id = await fixture.library.add(.media(entry), destination: .folder(fixture.folder), options: options(limit: nil))
+        let row = try await fixture.library.row(id) { $0.hasEnded }
+
+        #expect(row.state == .completed)
+        let ranges = server.requests.compactMap { $0.headers["range"] }
+        #expect(!ranges.isEmpty)
+        #expect(ranges.allSatisfy { (Self.requestedLength($0) ?? .max) <= 4096 })
+    }
+
     @Test func limitedRangesStillDownloadOverParallelConnections() async throws {
         let server = try await TestServer()
         let fixture = try await LibraryFixture()

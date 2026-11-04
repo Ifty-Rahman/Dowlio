@@ -178,7 +178,10 @@ enum YTDLPVersions {
         if let playlists {
             let tracks = formats.compactMap { track(of: $0, playlists: playlists) }
             guard tracks.count == formats.count,
-                  let built = try? MediaSource(tracks: tracks, container: container, expiry: expiry, renewal: renewal) else { return nil }
+                  let built = try? MediaSource(
+                      tracks: tracks, container: container, expiry: expiry, renewal: renewal,
+                      requestSizeLimit: formats.compactMap(\.requestSizeLimit).min()
+                  ) else { return nil }
             source = built
         } else {
             let kind: MediaTrack.Kind = formats.contains(where: \.hasVideo) ? .combined : .audio

@@ -75,7 +75,7 @@ extension DownloadRun {
             }
         }
         let partial = try PartialFile.create(for: fileName, in: folder)
-        let plan = MediaPlan(fileName: fileName, media: media, partial: partial, requestSizeLimit: options.requestSizeLimit)
+        let plan = MediaPlan(fileName: fileName, media: media, partial: partial, requestSizeLimit: options.requestSizeLimit ?? media.requestSizeLimit)
         adopt(plan)
         do {
             try FileManager.default.createDirectory(at: plan.partsFolder, withIntermediateDirectories: true)
@@ -277,7 +277,7 @@ extension DownloadRun {
         let (base, _) = FileNaming.split(plan.fileName)
         let fileName = fresh.fileExtension == plan.media.fileExtension ? plan.fileName : "\(base).\(fresh.fileExtension)"
         let next = MediaPlan(
-            fileName: fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit,
+            fileName: fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit ?? fresh.requestSizeLimit,
             finished: keepsParts ? plan.finishedBytes : [:]
         )
         saveManifest(next)
@@ -538,7 +538,7 @@ extension DownloadRun {
             nameConflictPolicy: options.nameConflictPolicy,
             mediaSource: plan.media,
             finishedFragments: plan.finishedPositions,
-            requestSizeLimit: options.requestSizeLimit
+            requestSizeLimit: options.requestSizeLimit ?? plan.media.requestSizeLimit
         )
         try? plan.partial.saveManifest(manifest)
     }
