@@ -27,6 +27,10 @@ struct PlaylistTests {
         #expect(playlist.entries.filter { !$0.isAvailable }.map(\.title) == ["[Private video]", "[Deleted video]"])
         #expect(!playlist.isMusic)
         #expect(!playlist.isCut)
+        #expect(playlist.channel == "Rick Astley")
+        #expect(playlist.thumbnail?.path() == "/vi/LLFhKaqnWwk/hqdefault.jpg")
+        #expect(playlist.updated == DateComponents(calendar: .current, year: 2026, month: 10, day: 1).date)
+        #expect(playlist.entries.first?.thumbnail?.path() == "/vi/LLFhKaqnWwk/hqdefault.jpg")
         #expect(standIn.arguments.contains("--flat-playlist"))
         #expect(!standIn.arguments.contains("--no-playlist"))
     }

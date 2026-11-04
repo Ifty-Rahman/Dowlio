@@ -251,7 +251,24 @@ public struct SentPageDraft: Equatable, Sendable {
     public var playlistLine: String? {
         guard let playlist else { return nil }
         let count = playlist.available.count
-        return "\(includedEntries.count) of \(count) \(count == 1 ? "video" : "videos")"
+        let line = "\(includedEntries.count) of \(count) \(playlist.noun(count))"
+        let length = includedEntries.compactMap(\.duration).reduce(0, +)
+        guard length >= 60 else { return line }
+        let minutes = Duration.seconds((length / 60).rounded() * 60)
+        return line + " · " + minutes.formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+    }
+
+    public var playlistByline: String? {
+        guard let playlist else { return nil }
+        let count = playlist.total ?? playlist.available.count
+        let size = "\(NumberFormatter.localizedString(from: NSNumber(value: count), number: .decimal)) \(playlist.noun(count))"
+        let updated = playlist.updated.map { "Updated " + $0.formatted(date: .abbreviated, time: .omitted) }
+        return [playlist.channel, size, updated].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    public var playlistResolutionNote: String? {
+        guard playlist != nil, playlistShowing == .video, case .upTo(let height) = playlistQuality else { return nil }
+        return "A video without \(height)p downloads at the next best resolution it has."
     }
 
     public var playlistNote: String? {
@@ -515,5 +532,16 @@ public struct ProblemText: Equatable, Sendable {
     public init(sentence: String, action: Action?) {
         self.sentence = sentence
         self.action = action
+    }
+}
+
+extension PlaylistListing {
+    func noun(_ count: Int) -> String {
+        switch (isMusic, count == 1) {
+        case (true, true): "song"
+        case (true, false): "songs"
+        case (false, true): "video"
+        case (false, false): "videos"
+        }
     }
 }

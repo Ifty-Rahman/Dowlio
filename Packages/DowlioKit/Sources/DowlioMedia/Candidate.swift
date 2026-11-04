@@ -234,16 +234,20 @@ public struct PlaylistListing: Equatable, Sendable {
         public var title: String
         public var url: URL
         public var duration: Double?
+        public var thumbnail: URL?
         public var isAvailable: Bool
 
         public var id: String { "\(position)-\(videoID)" }
 
-        public init(id videoID: String, position: Int, title: String, url: URL, duration: Double? = nil, isAvailable: Bool = true) {
+        public init(
+            id videoID: String, position: Int, title: String, url: URL, duration: Double? = nil, thumbnail: URL? = nil, isAvailable: Bool = true
+        ) {
             self.videoID = videoID
             self.position = position
             self.title = title
             self.url = url
             self.duration = duration
+            self.thumbnail = thumbnail
             self.isAvailable = isAvailable
         }
     }
@@ -254,8 +258,17 @@ public struct PlaylistListing: Equatable, Sendable {
     public var total: Int?
     public var isMusic: Bool
     public var isCut: Bool
+    public var channel: String?
+    public var thumbnail: URL?
+    public var updated: Date?
 
-    public init(title: String, url: URL, entries: [Entry], total: Int?, isMusic: Bool, isCut: Bool = false) {
+    public init(
+        title: String, url: URL, entries: [Entry], total: Int?, isMusic: Bool, isCut: Bool = false, channel: String? = nil, thumbnail: URL? = nil,
+        updated: Date? = nil
+    ) {
+        self.channel = channel
+        self.thumbnail = thumbnail
+        self.updated = updated
         self.title = title
         self.url = url
         self.entries = entries

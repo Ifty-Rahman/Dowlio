@@ -53,6 +53,36 @@ struct PlaylistDraftTests {
         #expect(video.playlistShowing == .audio)
     }
 
+    @Test func thePlaylistSaysWhoMadeItHowBigItIsAndWhenItChanged() {
+        var detailed = listing(available: 3, unavailable: 1, total: 43)
+        detailed.channel = "Rick Astley"
+        detailed.updated = DateComponents(calendar: .current, year: 2026, month: 10, day: 1).date
+        detailed.entries = detailed.entries.map { entry in
+            var timed = entry
+            timed.duration = 1200
+            return timed
+        }
+        var detailedDraft = draft(detailed)
+        let album = draft(listing(available: 2, isMusic: true))
+
+        #expect(detailedDraft.playlistByline == "Rick Astley · 43 videos · Updated \(Date.FormatStyle(date: .abbreviated, time: .omitted).format(detailed.updated!))")
+        #expect(detailedDraft.playlistLine == "3 of 3 videos · 1 hr")
+        detailedDraft.include(detailed.entries[0], false)
+        #expect(detailedDraft.playlistLine == "2 of 3 videos · 40 min")
+        #expect(album.playlistByline == "2 songs")
+        #expect(album.playlistLine == "2 of 2 songs")
+    }
+
+    @Test func aChosenResolutionSaysWhatHappensToVideosWithoutIt() {
+        var draft = draft(listing(available: 3))
+
+        #expect(draft.playlistResolutionNote == nil)
+        draft.choosePlaylist(.video, quality: .upTo(1080))
+        #expect(draft.playlistResolutionNote == "A video without 1080p downloads at the next best resolution it has.")
+        draft.choosePlaylist(.audio)
+        #expect(draft.playlistResolutionNote == nil)
+    }
+
     @Test func aCutPlaylistSaysSo() {
         let cut = draft(listing(available: 1000, total: 1203, isCut: true))
         let whole = draft(listing(available: 20, total: 43))

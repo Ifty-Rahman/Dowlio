@@ -188,6 +188,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public var type: String?
     public var entries: [Entry]
     public var playlistCount: Int?
+    public var channel: String?
+    public var modifiedDate: String?
 
     public struct Entry: Decodable, Equatable, Sendable {
         public var id: String?
@@ -195,8 +197,9 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         public var title: String?
         public var duration: Double?
         public var availability: String?
+        public var thumbnails: [Thumbnail]
 
-        enum CodingKeys: String, CodingKey { case id, url, title, duration, availability }
+        enum CodingKeys: String, CodingKey { case id, url, title, duration, availability, thumbnails }
 
         public init(from decoder: any Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -205,7 +208,10 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             title = try? values.decodeIfPresent(String.self, forKey: .title)
             duration = try? values.decodeIfPresent(Double.self, forKey: .duration)
             availability = try? values.decodeIfPresent(String.self, forKey: .availability)
+            thumbnails = ((try? values.decodeIfPresent([Lenient<Thumbnail>].self, forKey: .thumbnails)) ?? []).compactMap(\.value)
         }
+
+        public var thumbnail: URL? { MediaInfo.widest(thumbnails) }
 
         public var isAvailable: Bool {
             if ["private", "needs_auth", "subscriber_only", "premium_only"].contains(availability ?? "") { return false }
@@ -238,6 +244,12 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         return stills.first?.url
     }
 
+    public var playlistThumbnail: URL? { Self.widest(thumbnails) }
+
+    static func widest(_ thumbnails: [Thumbnail]) -> URL? {
+        thumbnails.filter { isStill($0.url) }.max { ($0.width ?? 0) < ($1.width ?? 0) }?.url
+    }
+
     private static func isStill(_ url: URL) -> Bool {
         ["jpg", "jpeg", "png"].contains(url.pathExtension.lowercased())
     }
@@ -258,6 +270,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         case title, thumbnail, duration, formats, subtitles, chapters, thumbnails, entries
         case type = "_type"
         case playlistCount = "playlist_count"
+        case channel, uploader
+        case modifiedDate = "modified_date"
         case liveStatus = "live_status"
         case webpageURL = "webpage_url"
         case automaticCaptions = "automatic_captions"
@@ -278,6 +292,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         type = try? values.decodeIfPresent(String.self, forKey: .type)
         entries = ((try? values.decodeIfPresent([Lenient<Entry>].self, forKey: .entries)) ?? []).compactMap(\.value)
         playlistCount = try? values.decodeIfPresent(Int.self, forKey: .playlistCount)
+        channel = (try? values.decodeIfPresent(String.self, forKey: .channel)) ?? (try? values.decodeIfPresent(String.self, forKey: .uploader))
+        modifiedDate = try? values.decodeIfPresent(String.self, forKey: .modifiedDate)
     }
 }
 
