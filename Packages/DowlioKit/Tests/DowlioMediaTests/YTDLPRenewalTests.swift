@@ -30,6 +30,18 @@ struct YTDLPRenewalTests {
         #expect(!standIn.arguments.contains { $0.hasPrefix("--cookies") })
     }
 
+    @Test func freshLinksKeepYouTubesRequestSizeLimitAndTheExtras() async throws {
+        let standIn = try await YTDLPStandIn.printing("video-1080p.json")
+        let runner = YTDLPRunner(installer: standIn.installer)
+        let chapters = [MediaExtras.Chapter(start: 0, end: 10, title: "Start")]
+        let old = try stale(["137", "140"]).with(extras: MediaExtras(chapters: chapters))
+
+        let fresh = try await runner.renew(old)
+
+        #expect(fresh.requestSizeLimit == 10_485_760)
+        #expect(fresh.extras?.chapters == chapters)
+    }
+
     @Test func withTheToolsRemovedRenewalSaysTheyAreMissing() async throws {
         let standIn = try await YTDLPStandIn.notInstalled()
         let runner = YTDLPRunner(installer: standIn.installer)

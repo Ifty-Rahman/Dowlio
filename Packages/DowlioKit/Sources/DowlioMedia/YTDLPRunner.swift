@@ -105,7 +105,8 @@ extension YTDLPRunner {
         guard tracks.count == renewal.formatIDs.count else { throw RenewalFailure.failed }
         return try MediaSource(
             tracks: tracks, keepsAudioOnly: media.keepsAudioOnly, container: media.container,
-            expiry: formats.compactMap(\.expiry).min(), renewal: renewal
+            expiry: formats.compactMap(\.expiry).min(), renewal: renewal, extras: media.extras,
+            requestSizeLimit: formats.compactMap(\.requestSizeLimit).min() ?? media.requestSizeLimit
         )
     }
 

@@ -277,7 +277,7 @@ extension DownloadRun {
         let (base, _) = FileNaming.split(plan.fileName)
         let fileName = fresh.fileExtension == plan.media.fileExtension ? plan.fileName : "\(base).\(fresh.fileExtension)"
         let next = MediaPlan(
-            fileName: fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit ?? fresh.requestSizeLimit,
+            fileName: fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit ?? fresh.requestSizeLimit ?? plan.media.requestSizeLimit,
             finished: keepsParts ? plan.finishedBytes : [:]
         )
         saveManifest(next)
