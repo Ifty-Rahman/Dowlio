@@ -64,13 +64,15 @@ extension YTDLPRunner {
         guard await isInstalled else { throw RenewalFailure.toolsMissing }
         let info: MediaInfo
         do {
-            info = try await infoUpdatingIfBroken(for: renewal.pageURL, cookies: [])
-        } catch let failure as YTDLPFailure where failure == .needsSignIn || failure == .private {
-            let cookies = await signIn(renewal.pageURL)
-            guard !cookies.isEmpty else { throw RenewalFailure.failed }
-            info = try await infoUpdatingIfBroken(for: renewal.pageURL, cookies: cookies)
+            info = try await infoRetryingWithSignIn(for: renewal.pageURL, signIn: signIn)
         } catch ToolInstaller.Failure.notInstalled {
             throw RenewalFailure.toolsMissing
+        } catch let failure as YTDLPFailure {
+            switch failure {
+            case .needsSignIn, .private: throw RenewalFailure.needsSignIn
+            case .network, .rateLimited: throw RenewalFailure.network
+            default: throw RenewalFailure.failed
+            }
         }
         let formats = renewal.formatIDs.compactMap { id in info.formats.first { $0.id == id } }
         let tracks = formats.compactMap { YTDLPVersions.track(of: $0) }
@@ -79,6 +81,16 @@ extension YTDLPRunner {
             tracks: tracks, keepsAudioOnly: media.keepsAudioOnly, container: media.container,
             expiry: formats.compactMap(\.expiry).min(), renewal: renewal
         )
+    }
+
+    private func infoRetryingWithSignIn(for page: URL, signIn: @Sendable (URL) async -> [Cookie]) async throws -> MediaInfo {
+        do {
+            return try await infoUpdatingIfBroken(for: page, cookies: [])
+        } catch let failure as YTDLPFailure where failure == .needsSignIn || failure == .private {
+            let cookies = await signIn(page)
+            guard !cookies.isEmpty else { throw failure }
+            return try await infoUpdatingIfBroken(for: page, cookies: cookies)
+        }
     }
 
     func infoUpdatingIfBroken(for url: URL, cookies: [Cookie]) async throws -> MediaInfo {

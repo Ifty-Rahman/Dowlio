@@ -149,11 +149,8 @@ struct LibraryWindow: View {
             .alert(model.actionFailure ?? "", isPresented: failureShown) {
                 Button("OK") {}
             }
-            .alert("Download yt-dlp and QuickJS-NG?", isPresented: toolsNeeded) {
-                Button("Download") { model.installToolsAndRetry() }
-                Button("Not Now", role: .cancel) { model.toolsNeededFor = nil }
-            } message: {
-                Text("This download needs fresh links from its page. Dowlio gets them with yt-dlp, a free open-source tool, and QuickJS-NG, which yt-dlp uses for YouTube. Dowlio downloads them from their GitHub pages.")
+            .sheet(isPresented: toolsNeeded) {
+                ToolsConsentSheet(tools: model.toolsModel, agree: { model.installToolsAndRetry() }, decline: { model.toolsNeededFor = nil })
             }
     }
 

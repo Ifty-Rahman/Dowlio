@@ -57,6 +57,7 @@ final class AppModel {
     let tools: ToolInstaller
     let toolsModel: ToolsModel
     var toolsNeededFor: DownloadID?
+    private var resumedMedia: Set<DownloadID> = []
     private let renewalSignIn = RenewalSignIn()
 
     init() {
@@ -487,7 +488,10 @@ final class AppModel {
     }
 
     func pause(_ row: DownloadRow) { perform { await $0.pause(row.id) } }
-    func resume(_ row: DownloadRow) { perform { await $0.resume(row.id) } }
+    func resume(_ row: DownloadRow) {
+        if row.isMedia { resumedMedia.insert(row.id) }
+        perform { await $0.resume(row.id) }
+    }
     func retry(_ row: DownloadRow) {
         if row.state == .failed(.needsTools) {
             toolsNeededFor = row.id
@@ -506,7 +510,7 @@ final class AppModel {
                 await toolsModel.refresh()
                 perform { await $0.retry(id) }
             } catch {
-                actionFailure = "Dowlio couldn't download yt-dlp and QuickJS-NG from GitHub. Check your connection and try again."
+                actionFailure = ToolsModel.sentence(for: error)
             }
         }
     }
@@ -571,6 +575,23 @@ final class AppModel {
         for await rows in await library.rows() {
             self.rows = rows
             notifier.update(rows)
+            askForToolsIfAResumeNeedsThem(rows)
+        }
+    }
+
+    private func askForToolsIfAResumeNeedsThem(_ rows: [DownloadRow]) {
+        guard !resumedMedia.isEmpty else { return }
+        for row in rows where resumedMedia.contains(row.id) {
+            switch row.state {
+            case .failed(.needsTools):
+                resumedMedia.remove(row.id)
+                toolsNeededFor = row.id
+                showLibraryWindow()
+            case .failed, .completed, .paused:
+                resumedMedia.remove(row.id)
+            default:
+                break
+            }
         }
     }
 }

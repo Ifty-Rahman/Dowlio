@@ -26,8 +26,11 @@ final class ToolsModel {
     }
 
     var sizeText: String {
-        guard let downloadSize else { return "From GitHub" }
-        return "About \(max(Int((Double(downloadSize) / 1_000_000).rounded()), 1)) MB from GitHub"
+        approximateSize.map { "\($0) from GitHub" } ?? "From GitHub"
+    }
+
+    var approximateSize: String? {
+        downloadSize.map { "About \(max(Int((Double($0) / 1_000_000).rounded()), 1)) MB" }
     }
 
     func install() {
@@ -71,7 +74,7 @@ final class ToolsModel {
         }
     }
 
-    private static func sentence(for error: Error) -> String {
+    static func sentence(for error: Error) -> String {
         switch error as? ToolInstaller.Failure {
         case .hashMismatch(let tool)?: "\(tool.name) didn't match the hash GitHub published, so Dowlio didn't install it."
         case .notStable(let tool)?: "The latest \(tool.name) release isn't a stable one, so Dowlio kept the one it has."
@@ -165,5 +168,46 @@ struct ToolsRows: View {
         } message: {
             Text("Partly downloaded videos stay. Dowlio asks before downloading the tools again.")
         }
+    }
+}
+
+struct ToolsConsentSheet: View {
+    let tools: ToolsModel
+    let agree: () -> Void
+    let decline: () -> Void
+    @AppStorage(SettingsKey.keepsYTDLPUpToDate) private var keepsUpToDate = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
+            HStack(spacing: DowlioDesign.Spacing.xs) {
+                Text("Download yt-dlp and QuickJS-NG?").font(DowlioDesign.TypeRole.title)
+                InfoButton(topic: ToolsText.title, text: ToolsText.info)
+            }
+            Text("This download needs fresh links from its page. Dowlio gets them with yt-dlp, a free open-source tool, and QuickJS-NG, which yt-dlp uses for YouTube. Dowlio downloads them from their GitHub pages." + (tools.approximateSize.map { " \($0)." } ?? ""))
+                .font(DowlioDesign.TypeRole.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: DowlioDesign.Spacing.md) {
+                ForEach(Tool.allCases, id: \.self) { tool in
+                    Link(destination: tool.project) {
+                        Label {
+                            Text(tool.name)
+                        } icon: {
+                            Image("GitHubMark").resizable().frame(width: 12, height: 12)
+                        }
+                    }
+                    .help(tool.project.absoluteString)
+                }
+            }
+            Toggle("Keep yt-dlp up to date", isOn: $keepsUpToDate).toggleStyle(.checkbox)
+            HStack {
+                Spacer()
+                Button("Not Now", action: decline).keyboardShortcut(.cancelAction)
+                Button("Download", action: agree).keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(DowlioDesign.Spacing.xl)
+        .frame(width: 420)
+        .task { await tools.refresh() }
     }
 }

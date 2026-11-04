@@ -7,27 +7,12 @@ extension DownloadRun {
         do {
             var plan = try await prepareMedia(media)
             current = plan
-            var renewed = false
             if canRenew(plan), Self.isExpiring(plan.media, at: configuration.now()) {
-                plan = try await renewing(plan)
+                plan = try await renewingBeforeStart(plan)
                 current = plan
-                renewed = true
             }
             saveManifest(plan)
-            while true {
-                let attempt = plan
-                do {
-                    try await reportingProgress(of: attempt) {
-                        try await receivePieces(of: attempt, resuming: resuming)
-                    }
-                    break
-                } catch let error as DownloadError where !renewed && canRenew(attempt) && Self.meansLinkGone(error) {
-                    renewed = true
-                    plan = try await renewing(attempt)
-                    current = plan
-                    saveManifest(plan)
-                }
-            }
+            plan = try await receivingWithOneRenewal(plan, resuming: resuming) { current = $0 }
             try await finish(plan)
         } catch where Task.isCancelled {
             if let current {
@@ -129,6 +114,32 @@ extension DownloadRun {
         error == .forbidden || error == .needsSignIn
     }
 
+    private func receivingWithOneRenewal(
+        _ start: MediaPlan, resuming: Bool, adopted: (MediaPlan) -> Void
+    ) async throws -> MediaPlan {
+        do {
+            try await reportingProgress(of: start) { try await receivePieces(of: start, resuming: resuming) }
+            return start
+        } catch let error as DownloadError where !Task.isCancelled && canRenew(start) && Self.asksForFreshLinks(error) {
+            let renewed = try await renewing(start)
+            adopted(renewed)
+            try await reportingProgress(of: renewed) { try await receivePieces(of: renewed, resuming: resuming) }
+            return renewed
+        }
+    }
+
+    private func renewingBeforeStart(_ plan: MediaPlan) async throws -> MediaPlan {
+        do {
+            return try await renewing(plan)
+        } catch DownloadError.needsTools {
+            throw DownloadError.needsTools
+        } catch where Task.isCancelled {
+            throw CancellationError()
+        } catch {
+            return plan
+        }
+    }
+
     static let renewalMargin: TimeInterval = 5 * 60
 
     static func isExpiring(_ media: MediaSource, at now: Date) -> Bool {
@@ -136,7 +147,7 @@ extension DownloadRun {
         return expiry.timeIntervalSince(now) < renewalMargin
     }
 
-    private static func meansLinkGone(_ error: DownloadError) -> Bool {
+    private static func asksForFreshLinks(_ error: DownloadError) -> Bool {
         [.linkExpired, .forbidden, .notFound, .needsSignIn].contains(error)
     }
 
@@ -151,12 +162,22 @@ extension DownloadRun {
             fresh = try await renew(plan.media)
         } catch RenewalFailure.toolsMissing {
             throw DownloadError.needsTools
+        } catch RenewalFailure.needsSignIn {
+            throw DownloadError.needsSignIn
+        } catch RenewalFailure.network {
+            throw DownloadError.network(NetworkFailure(code: .notConnectedToInternet, message: "Couldn't reach the page for fresh links"))
         } catch where Task.isCancelled {
             throw CancellationError()
         } catch {
             throw DownloadError.linkExpired
         }
+        try Task.checkCancellation()
         let keepsParts = Self.sameLayout(plan.media, fresh)
+        let next = MediaPlan(
+            fileName: plan.fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit,
+            finished: keepsParts ? plan.finishedBytes : [:]
+        )
+        saveManifest(next)
         if !keepsParts {
             try? FileManager.default.removeItem(at: plan.partsFolder)
             do {
@@ -165,10 +186,6 @@ extension DownloadRun {
                 throw DownloadError.destinationNotWritable
             }
         }
-        let next = MediaPlan(
-            fileName: plan.fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit,
-            finished: keepsParts ? plan.finishedBytes : [:]
-        )
         adopt(next)
         let reading = next.reading
         await changeSnapshot {

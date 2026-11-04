@@ -91,6 +91,36 @@ struct YouTubeRenewalTests {
         #expect(renewals.count == 0)
     }
 
+    @Test func aLinkNearItsExpiryStillDownloadsWhenRenewalFails() async throws {
+        let clip = try await clip()
+        clip.serve(at: "current")
+        let fixture = try await LibraryFixture(renew: { _ in throw RenewalFailure.failed })
+
+        let media = try clip.media(at: "current", expiry: Date().addingTimeInterval(60))
+        let id = await fixture.library.add(.media(media), destination: .folder(fixture.folder), options: options())
+        let row = try await fixture.library.row(id) { $0.hasEnded }
+
+        #expect(row.state == .completed)
+    }
+
+    @Test func aLinkThatDiesAfterAnUpFrontRenewalIsRenewedAgain() async throws {
+        let clip = try await clip()
+        clip.serve(at: "first", video: TestServer.File(data: clip.video, forbiddenAfterRequests: 2))
+        clip.serve(at: "second")
+        let renewals = Counter()
+        let fixture = try await LibraryFixture(renew: { _ in
+            renewals.add()
+            return try clip.media(at: renewals.count == 1 ? "first" : "second", expiry: Date().addingTimeInterval(6 * 60 * 60))
+        })
+
+        let stale = try clip.media(at: "stale", expiry: Date().addingTimeInterval(-60))
+        let id = await fixture.library.add(.media(stale), destination: .folder(fixture.folder), options: options())
+        let row = try await fixture.library.row(id) { $0.hasEnded }
+
+        #expect(row.state == .completed)
+        #expect(renewals.count == 2)
+    }
+
     @Test func a403MidDownloadRenewsAndKeepsThePiecesItHasWhenTheSizeMatches() async throws {
         let clip = try await clip()
         clip.serve(at: "stale", video: TestServer.File(data: clip.video, forbiddenAfterRequests: 3))

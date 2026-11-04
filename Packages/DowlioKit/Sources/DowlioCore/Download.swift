@@ -75,6 +75,8 @@ public enum DownloadError: Error, Equatable, Sendable {
 
 public enum RenewalFailure: Error, Equatable, Sendable {
     case toolsMissing
+    case needsSignIn
+    case network
     case failed
 }
 
