@@ -156,6 +156,8 @@ enum YTDLPVersions {
             isEstimatedSize: !exact,
             height: height,
             codecs: MediaCodecs.names(formats.compactMap { $0.videoCodec } + formats.compactMap { $0.audioCodec }),
+            referrer: formats.lazy.compactMap { $0.headers["Referer"].flatMap(URL.init(string:)) }.first,
+            origin: formats.lazy.compactMap { $0.headers["Origin"] }.first,
             userAgent: formats.lazy.compactMap { $0.headers["User-Agent"] }.first,
             requestSizeLimit: formats.compactMap(\.requestSizeLimit).min()
         )

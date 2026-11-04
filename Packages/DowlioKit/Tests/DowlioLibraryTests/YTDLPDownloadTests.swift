@@ -22,13 +22,14 @@ struct YTDLPDownloadTests {
         part="$final.part"
         if [ ! -f "$part" ]; then
           printf 'first-half-' > "$part"
-          echo "dowlio-progress 1000 4000 NA 2000 1.5"
-          echo "dowlio-progress 2000 4000 NA 2000 1.0"
+          echo "dowlio-progress 400+140 1000 4000 NA 2000 1.5"
+          echo "dowlio-progress 400+140 2000 4000 NA 2000 1.0"
           \(pauseAfterFirstHalf ? "sleep 30" : "")
         fi
+        printf 'leftover' > "$(dirname "$final")/media.f400.mp4"
         printf 'second-half' >> "$part"
-        echo "dowlio-progress 3000 4000 NA 2000 0.5"
-        echo "dowlio-progress 4000 4000 NA 2000 0"
+        echo "dowlio-progress 400+140 3000 4000 NA 2000 0.5"
+        echo "dowlio-progress 400+140 4000 4000 NA 2000 0"
         mv "$part" "$final"
         """
     }
@@ -82,6 +83,21 @@ struct YTDLPDownloadTests {
 
         #expect(row.bytesPerSecond == 2000)
         #expect(row.timeRemaining == 1.0)
+        await fixture.library.cancel(id)
+    }
+
+    @Test func progressAcrossTwoFormatsAddsUpBothParts() async throws {
+        let standIn = try await YTDLPStandIn.install(script: """
+            echo "dowlio-progress 400 4000 4000 NA 2000 3"
+            echo "dowlio-progress 140 1000 2000 NA 2000 1"
+            sleep 30
+            """)
+        let fixture = try await fixture(standIn)
+
+        let id = await fixture.library.add(.media(try fallback()), destination: .folder(fixture.folder), options: options())
+        let row = try await fixture.library.row(id) { $0.receivedBytes == 5000 }
+
+        #expect(row.totalBytes == 6000)
         await fixture.library.cancel(id)
     }
 

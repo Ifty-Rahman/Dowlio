@@ -234,6 +234,8 @@ public struct PageAnalyzer: Sendable {
                 guard let url = format.url else { continue }
                 var options = mediaOptions(page, for: url)
                 if let agent = format.headers["User-Agent"] { options.userAgent = agent }
+                if let referrer = format.headers["Referer"].flatMap(URL.init(string:)) { options.referrer = referrer }
+                if let origin = format.headers["Origin"] { options.origin = origin }
                 group.addTask {
                     guard case .media(let playlist) = await self.playlist(at: url, options: options, refusals: refusals),
                           HLSVersions.restriction(of: playlist) == nil, !playlist.fragments.isEmpty else { return nil }

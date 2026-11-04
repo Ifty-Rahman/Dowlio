@@ -96,8 +96,10 @@ private final class RunState: @unchecked Sendable {
     func addOutput(_ data: Data) {
         guard !data.isEmpty else { return }
         let lines: [String] = lock.withLock {
-            output.append(data)
-            guard onOutputLine != nil else { return [] }
+            guard onOutputLine != nil else {
+                output.append(data)
+                return []
+            }
             pendingLine.append(data)
             let parts = pendingLine.split(separator: 0x0A, omittingEmptySubsequences: false)
             pendingLine = Data(parts.last ?? Data())

@@ -135,7 +135,7 @@ extension YTDLPRunner {
             "-f", formats.joined(separator: "+"),
             "--newline", "--no-colors", "--continue",
             "--progress-template",
-            "download:\(Self.progressPrefix) %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s",
+            "download:\(Self.progressPrefix) %(info.format_id)s %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s",
             "-o", request.folder.appending(path: "\(Self.outputName).%(ext)s").path,
         ]
         if formats.count > 1 { arguments += ["--merge-output-format", container.rawValue] }
@@ -144,50 +144,54 @@ extension YTDLPRunner {
         defer { jar?.remove() }
         if let jar { arguments += ["--cookies", jar.file.path] }
         arguments += ["--", page.absoluteString]
-        let meter = ProgressMeter(parts: formats.count, report: request.progress)
+        let meter = ProgressMeter(formats: formats, report: request.progress)
         let result = try await ChildProcess.run(tools.ytdlp, arguments, timeout: Self.downloadTimeout) { line in meter.read(line) }
-        guard result.status == 0, !result.timedOut else { throw YTDLPFailure.classify(result.errorText).downloadError }
+        if result.timedOut { throw DownloadError.network(NetworkFailure(code: .timedOut, message: "yt-dlp ran past its time limit")) }
+        guard result.status == 0 else { throw YTDLPFailure.classify(result.errorText).downloadError }
         let finished = try FileManager.default.contentsOfDirectory(at: request.folder, includingPropertiesForKeys: nil)
-            .filter { $0.lastPathComponent.hasPrefix(Self.outputName + ".") && !["part", "ytdl", "temp"].contains($0.pathExtension) }
+            .filter { file in
+                let parts = file.lastPathComponent.split(separator: ".")
+                return parts.count == 2 && parts[0] == Self.outputName && !["part", "ytdl", "temp"].contains(String(parts[1]))
+            }
         guard let file = finished.first(where: { $0.pathExtension == container.rawValue }) ?? finished.first else {
-            throw YTDLPFailure.extractorBroken
+            throw DownloadError.mediaUnplayable
         }
         return file
     }
 }
 
 final class ProgressMeter: @unchecked Sendable {
-    private let lock = NSLock()
-    private let parts: Int
-    private let report: @Sendable (YTDLPProgress) -> Void
-    private var finishedBytes: Int64 = 0
-    private var finishedParts = 0
-    private var lastReceived: Int64 = 0
-    private var lastTotal: Int64?
+    private struct Part {
+        var received: Int64 = 0
+        var total: Int64?
+    }
 
-    init(parts: Int, report: @escaping @Sendable (YTDLPProgress) -> Void) {
-        self.parts = max(parts, 1)
+    private let lock = NSLock()
+    private let formats: [String]
+    private let report: @Sendable (YTDLPProgress) -> Void
+    private var parts: [String: Part] = [:]
+
+    init(formats: [String], report: @escaping @Sendable (YTDLPProgress) -> Void) {
+        self.formats = formats
         self.report = report
     }
 
     func read(_ line: String) {
         let fields = line.split(separator: " ").map(String.init)
-        guard fields.count == 6, fields[0] == YTDLPRunner.progressPrefix else { return }
-        func number(_ text: String) -> Double? { Double(text) }
-        guard let received = number(fields[1]).map({ Int64($0) }) else { return }
-        let total = (number(fields[2]) ?? number(fields[3])).map { Int64($0) }
+        guard fields.count == 7, fields[0] == YTDLPRunner.progressPrefix else { return }
+        guard let received = Double(fields[2]).map({ Int64($0) }) else { return }
+        let total = (Double(fields[3]) ?? Double(fields[4])).map { Int64($0) }
+        let format = formats.contains(fields[1]) ? fields[1] : formats.joined(separator: "+")
         let progress: YTDLPProgress = lock.withLock {
-            if received < lastReceived, finishedParts < parts - 1 {
-                finishedBytes += lastTotal ?? lastReceived
-                finishedParts += 1
-            }
-            lastReceived = received
-            lastTotal = total
-            let sum = finishedBytes + received
-            let whole = total.map { finishedBytes + $0 }
+            parts[format] = Part(received: received, total: total)
+            let known = Array(parts.values)
+            let sum = known.reduce(0) { $0 + $1.received }
+            let totals = known.compactMap(\.total)
+            let coversAll = parts[formats.joined(separator: "+")] != nil || formats.allSatisfy { parts[$0] != nil }
+            let whole = coversAll && totals.count == known.count ? totals.reduce(0, +) : nil
             return YTDLPProgress(
-                receivedBytes: sum, totalBytes: finishedParts == parts - 1 ? whole : nil,
-                bytesPerSecond: number(fields[4]).map { Int64($0) } ?? 0, secondsLeft: number(fields[5])
+                receivedBytes: sum, totalBytes: whole,
+                bytesPerSecond: Double(fields[5]).map { Int64($0) } ?? 0, secondsLeft: Double(fields[6])
             )
         }
         report(progress)
