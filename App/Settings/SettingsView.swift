@@ -167,7 +167,7 @@ private struct DownloadsSettings: View {
                 }
             }
             Toggle("Prefer H.264 MP4", isOn: $prefersH264)
-                .help("H.264 MP4 plays everywhere, including QuickTime, even when a higher resolution is offered in VP9 or AV1.")
+                .help("H.264 MP4 plays in every media player, even when a higher resolution is offered in VP9 or AV1.")
             LabeledContent("History") {
                 Button("Clear History…") { confirmingClear = true }
             }

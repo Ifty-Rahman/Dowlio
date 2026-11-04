@@ -12,7 +12,7 @@ struct SubtitlesSection: View {
                     Text("Download subtitles")
                     InfoButton(
                         topic: "Subtitles",
-                        text: "For videos read with yt-dlp, Dowlio puts subtitles in your languages inside the file, so QuickTime and IINA list them in their subtitle menu. It takes the uploader's subtitles first, then automatic ones, and an automatic translation into your first language only when nothing else exists. Audio downloads never get subtitles."
+                        text: "For videos read with yt-dlp, Dowlio puts subtitles in your languages inside the file, so your media player lists them in its subtitle menu. It takes the uploader's subtitles first, then automatic ones, and an automatic translation into your first language only when nothing else exists. Audio downloads never get subtitles."
                     )
                 }
             }
