@@ -41,7 +41,7 @@ struct PlaylistBody: View {
             ChipFlow(spacing: DowlioDesign.Spacing.xs) {
                 chip("Best", .video(.best))
                 ForEach(media.draft.playlistHeights, id: \.self) { height in
-                    chip("\(height)p", .video(.upTo(height)))
+                    chip(media.draft.resolutionName(of: height), .video(.upTo(height)))
                 }
                 chip("Audio only", .audio)
             }

@@ -48,6 +48,17 @@ struct YouTubeHighResolutionTests {
         #expect(try row(1080, in: video).outputContainer == .mp4)
     }
 
+    @Test func aSixtyFrameVersionIsChosenOverAThirtyFrameOneAtTheSameHeightAndSaysSo() async throws {
+        let video = try await candidate("derived-video-30fps-heavier.json", decodesAV1: true)
+
+        let smooth = try row(720, in: video)
+        #expect(smooth.renewal?.formatIDs == ["298", "140"])
+        #expect(smooth.frameRate == 60)
+        #expect(smooth.resolution == "720p60")
+        #expect(try row(1080, in: video).resolution == "1080p60")
+        #expect(try row(480, in: video).resolution == "480p")
+    }
+
     @Test func sdrIsUsedWheneverItExistsAndAnHDROnlyHeightIsMarkedHDR() async throws {
         let video = try await candidate("derived-video-hdr-only-2160.json", decodesAV1: true)
 

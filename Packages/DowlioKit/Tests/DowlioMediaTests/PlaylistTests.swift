@@ -63,6 +63,7 @@ struct PlaylistTests {
         #expect(listings.count == 2)
         #expect(listings.first?.heights == nil)
         #expect(listings.last?.heights == [1080, 720, 480, 360, 240, 144])
+        #expect(listings.last?.frameRates[1080] == 24)
         #expect(standIn.arguments.contains("https://www.youtube.com/watch?v=LLFhKaqnWwk"))
     }
 

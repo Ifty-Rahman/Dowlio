@@ -4,6 +4,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public struct Format: Decodable, Equatable, Sendable {
         public var id: String
         public var height: Int?
+        public var frameRate: Double?
         public var videoCodec: String?
         public var audioCodec: String?
         public var fileExtension: String?
@@ -26,6 +27,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         enum CodingKeys: String, CodingKey {
             case id = "format_id"
             case height
+            case frameRate = "fps"
             case videoCodec = "vcodec"
             case audioCodec = "acodec"
             case fileExtension = "ext"
@@ -63,6 +65,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             id = try values.decode(String.self, forKey: .id)
             url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
             height = try? values.decodeIfPresent(Int.self, forKey: .height)
+            frameRate = try? values.decodeIfPresent(Double.self, forKey: .frameRate)
             let video = try? values.decodeIfPresent(String.self, forKey: .videoCodec)
             let audio = try? values.decodeIfPresent(String.self, forKey: .audioCodec)
             videoCodec = Self.codec(video)

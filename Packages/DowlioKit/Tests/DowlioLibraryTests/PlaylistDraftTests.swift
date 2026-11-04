@@ -92,10 +92,13 @@ struct PlaylistDraftTests {
         draft.include(plain.entries[0], false)
         var checked = plain
         checked.heights = [1080, 720, 360]
+        checked.frameRates = [1080: 60, 720: 30]
         _ = draft.update(.playlist(checked))
 
         #expect(!draft.isCheckingResolutions)
         #expect(draft.playlistHeights == [1080, 720, 360])
+        #expect(draft.resolutionName(of: 1080) == "1080p60")
+        #expect(draft.resolutionName(of: 720) == "720p")
         #expect(draft.playlistQuality == .upTo(1080))
         #expect(draft.includedEntries.count == 2)
     }

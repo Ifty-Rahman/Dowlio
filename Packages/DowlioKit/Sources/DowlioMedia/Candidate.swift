@@ -156,6 +156,7 @@ public struct Version: Equatable, Sendable {
     public var totalBytes: Int64?
     public var isEstimatedSize: Bool
     public var height: Int?
+    public var frameRate: Int?
     public var codecs: String?
     public var language: String?
     public var referrer: URL?
@@ -176,8 +177,10 @@ public struct Version: Equatable, Sendable {
         origin: String? = nil,
         userAgent: String? = nil,
         isHDR: Bool = false,
-        requestSizeLimit: Int64? = nil
+        requestSizeLimit: Int64? = nil,
+        frameRate: Int? = nil
     ) {
+        self.frameRate = frameRate
         self.source = source
         self.contentType = contentType
         self.totalBytes = totalBytes
@@ -197,6 +200,12 @@ public struct Version: Equatable, Sendable {
     }
 
     public var outputContainer: MediaContainer? { mediaSource?.container }
+
+    public var resolution: String? {
+        guard let height else { return nil }
+        guard let frameRate, frameRate > 30 else { return "\(height)p" }
+        return "\(height)p\(frameRate)"
+    }
 
     public var expiry: Date? { mediaSource?.expiry }
 
@@ -262,6 +271,7 @@ public struct PlaylistListing: Equatable, Sendable {
     public var thumbnail: URL?
     public var updated: Date?
     public var heights: [Int]?
+    public var frameRates: [Int: Int] = [:]
 
     public init(
         title: String, url: URL, entries: [Entry], total: Int?, isMusic: Bool, isCut: Bool = false, channel: String? = nil, thumbnail: URL? = nil,

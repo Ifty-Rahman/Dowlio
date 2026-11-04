@@ -225,9 +225,10 @@ struct VersionRows: View {
     }
 
     private func list(_ versions: [Version]) -> some View {
-        VStack(spacing: Self.spacing) {
+        let labelWidth: CGFloat = versions.contains { ($0.frameRate ?? 0) > 30 } ? 78 : 58
+        return VStack(spacing: Self.spacing) {
             ForEach(Array(versions.enumerated()), id: \.offset) { index, version in
-                VersionRow(version: version, isChosen: version == media.draft.chosenVersion) {
+                VersionRow(version: version, isChosen: version == media.draft.chosenVersion, labelWidth: labelWidth) {
                     media.pick(version)
                     focused = true
                 }
@@ -254,6 +255,7 @@ struct VersionRows: View {
 private struct VersionRow: View {
     let version: Version
     let isChosen: Bool
+    let labelWidth: CGFloat
     let choose: () -> Void
 
     var body: some View {
@@ -264,7 +266,7 @@ private struct VersionRow: View {
                     .foregroundStyle(isChosen ? Color.accentColor : Color.secondary)
                 Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
-                    .frame(width: 58, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                 Text(MediaText.detail(of: version))
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)

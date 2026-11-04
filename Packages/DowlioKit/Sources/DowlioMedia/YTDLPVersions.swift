@@ -147,8 +147,10 @@ enum YTDLPVersions {
         let playlists: [String: MediaPlaylist]
 
         func best(_ formats: [MediaInfo.Format]) -> MediaInfo.Format? {
+            let fastest = formats.compactMap(\.frameRate).max()
+            let smoothest = fastest.map { top in formats.filter { ($0.frameRate ?? 0) >= top - 1 } } ?? formats
             for path in [Path.engine, .hls, .dash, .ytdlp] {
-                if let found = YTDLPVersions.best(formats.filter { YTDLPVersions.path(of: $0, playlists: playlists) == path }) { return found }
+                if let found = YTDLPVersions.best(smoothest.filter { YTDLPVersions.path(of: $0, playlists: playlists) == path }) { return found }
             }
             return nil
         }
@@ -196,7 +198,8 @@ enum YTDLPVersions {
             referrer: formats.lazy.compactMap { $0.headers["Referer"].flatMap(URL.init(string:)) }.first,
             origin: formats.lazy.compactMap { $0.headers["Origin"] }.first,
             userAgent: formats.lazy.compactMap { $0.headers["User-Agent"] }.first,
-            requestSizeLimit: formats.compactMap(\.requestSizeLimit).min()
+            requestSizeLimit: formats.compactMap(\.requestSizeLimit).min(),
+            frameRate: formats.compactMap(\.frameRate).max().map { Int($0.rounded()) }
         )
     }
 

@@ -275,6 +275,11 @@ public struct SentPageDraft: Equatable, Sendable {
         return heights
     }
 
+    public func resolutionName(of height: Int) -> String {
+        guard let rate = playlist?.frameRates[height], rate > 30 else { return "\(height)p" }
+        return "\(height)p\(rate)"
+    }
+
     public var isCheckingResolutions: Bool {
         guard let playlist else { return false }
         return playlist.heights == nil && !playlist.isMusic
@@ -477,7 +482,7 @@ public enum MediaText {
 
     public static func title(of version: Version) -> String {
         if isAudio(version) { return "Audio" }
-        if let height = version.height { return "\(height)p" }
+        if let resolution = version.resolution { return resolution }
         return container(of: version)
     }
 
