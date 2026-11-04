@@ -113,7 +113,25 @@ struct YTDLPErrorTests {
         #expect(try String(contentsOf: log.appending(path: "cookie-mode"), encoding: .utf8).hasPrefix("-rw-------"))
         let contents = try String(contentsOf: log.appending(path: "cookie-contents"), encoding: .utf8)
         #expect(contents.hasPrefix("# Netscape HTTP Cookie File"))
-        #expect(contents.contains(".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tsecret-session"))
+        let cookie = try #require(contents.split(separator: "\n").first { $0.contains("SID") }).split(separator: "\t").map(String.init)
+        #expect(cookie.count == 7)
+        #expect(Array(cookie[1...3]) == ["TRUE", "/", "TRUE"])
+        #expect(cookie[0].hasSuffix(".youtube.com"))
+        #expect((Int(cookie[4]) ?? 0) > Int(Date().timeIntervalSince1970))
+        #expect(Array(cookie[5...6]) == ["SID", "secret-session"])
+    }
+
+    @Test func aCookieValueCantBreakTheCookieFileIntoMoreLines() async throws {
+        let log = try TestFiles.makeFolder()
+        let standIn = try await signInStandIn(log: log)
+        let sneaky = [Cookie(name: "SID", value: "a\rb\u{2028}c\nd", domain: ".youtube.com"), Cookie(name: "nodomain", value: "x")]
+
+        _ = try await analyze(SentPage(url: watch, cookies: sneaky), with: standIn)
+
+        let contents = try String(contentsOf: log.appending(path: "cookie-contents"), encoding: .utf8)
+        #expect(contents.split(whereSeparator: \.isNewline).count == 2)
+        #expect(contents.contains("SID\tabcd"))
+        #expect(!contents.contains("nodomain"))
     }
 
     @Test func theFirstRunNeverPassesCookies() async throws {

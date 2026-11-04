@@ -23,13 +23,13 @@ public enum YTDLPFailure: Error, Equatable, Hashable, Sendable {
         if has("not available in your country", "not made this video available in your country", "geo restriction", "geo-restricted") {
             return .geoBlocked
         }
-        if has("http error 429", "too many requests", "try again later", "not a bot", "rate-limited", "rate limited") { return .rateLimited }
-        if has("sign in", "login required", "log in", "logged-in", "members-only", "join this channel", "authentication") { return .needsSignIn }
+        if has("http error 429", "too many requests", "content isn't available, try again later", "not a bot", "rate-limited", "rate limited") { return .rateLimited }
+        if has("sign in", "login required", "logged-in", "members-only", "join this channel", "authentication") { return .needsSignIn }
         if has("unsupported url") { return .unsupportedSite }
         if has("video unavailable", "video is unavailable", "has been removed", "no longer available", "does not exist") { return .unavailable }
         if has(
             "unable to connect", "failed to resolve", "nodename nor servname", "timed out", "connection refused", "connection reset",
-            "network is unreachable", "temporary failure in name resolution", "no route to host", "ssl"
+            "network is unreachable", "temporary failure in name resolution", "no route to host", "ssl:", "certificate verify failed"
         ) || all.contains("transporterror") {
             return .network
         }

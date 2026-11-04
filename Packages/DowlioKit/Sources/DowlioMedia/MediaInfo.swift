@@ -107,6 +107,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public var webpageURL: URL?
     public var formats: [Format]
 
+    public var isLiveNow: Bool { liveStatus == "is_live" || liveStatus == "is_upcoming" }
+
     enum CodingKeys: String, CodingKey {
         case title, thumbnail, duration, formats
         case liveStatus = "live_status"

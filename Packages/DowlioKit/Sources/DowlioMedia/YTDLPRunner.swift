@@ -49,7 +49,7 @@ public struct YTDLPRunner: Sendable {
             throw YTDLPFailure.classify(reason)
         }
         guard let info = try? JSONDecoder().decode(MediaInfo.self, from: result.output) else { throw YTDLPFailure.extractorBroken }
-        if info.liveStatus == "is_live" || info.liveStatus == "is_upcoming" { throw YTDLPFailure.live }
+        if info.isLiveNow { throw YTDLPFailure.live }
         return info
     }
 }
@@ -64,7 +64,8 @@ struct CookieJar {
         folder = parent.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try manager.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         file = folder.appending(path: "cookies.txt")
-        let lines = cookies.map(Self.line)
+        let expiry = Int(Date().timeIntervalSince1970) + 24 * 60 * 60
+        let lines = cookies.compactMap { Self.line($0, expiring: expiry) }
         let text = (["# Netscape HTTP Cookie File"] + lines).joined(separator: "\n") + "\n"
         guard manager.createFile(atPath: file.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) else {
             try? manager.removeItem(at: folder)
@@ -76,8 +77,8 @@ struct CookieJar {
         try? FileManager.default.removeItem(at: folder)
     }
 
-    private static func line(_ cookie: Cookie) -> String {
-        let domain = cookie.domain ?? ""
+    private static func line(_ cookie: Cookie, expiring expiry: Int) -> String? {
+        guard let domain = cookie.domain, !domain.isEmpty else { return nil }
         let bare = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
         let shared = !cookie.hostOnly
         let written = shared ? "." + bare : bare
@@ -86,10 +87,14 @@ struct CookieJar {
             shared ? "TRUE" : "FALSE",
             cookie.path ?? "/",
             cookie.secure ? "TRUE" : "FALSE",
-            "0",
+            String(expiry),
             cookie.name,
             cookie.value,
         ]
-        return fields.map { $0.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ") }.joined(separator: "\t")
+        return fields.map(clean).joined(separator: "\t")
+    }
+
+    private static func clean(_ field: String) -> String {
+        String(field.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) && !CharacterSet.newlines.contains($0) })
     }
 }

@@ -200,13 +200,15 @@ public struct PageAnalyzer: Sendable {
         guard await ytdlp.isInstalled else { return .needsTools }
         let label = page.title ?? Self.site(of: page.url)
         do {
-            let info = try await Self.info(for: page, from: ytdlp)
+            let info = try await Self.infoRetryingWithSignIn(for: page, from: ytdlp)
             let versions = YTDLPVersions.versions(of: info, page: page.url)
             return .found([Candidate(
                 label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
             )])
-        } catch ToolInstaller.Failure.changed {
+        } catch ToolInstaller.Failure.changed, is ChildProcess.CouldNotStart {
             return .toolsChanged
+        } catch is CancellationError {
+            return .found([])
         } catch let failure as YTDLPFailure {
             switch failure {
             case .needsSignIn: return .needsSignIn
@@ -218,7 +220,7 @@ public struct PageAnalyzer: Sendable {
         }
     }
 
-    private static func info(for page: SentPage, from ytdlp: YTDLPRunner) async throws -> MediaInfo {
+    private static func infoRetryingWithSignIn(for page: SentPage, from ytdlp: YTDLPRunner) async throws -> MediaInfo {
         do {
             return try await ytdlp.info(for: page.url)
         } catch let failure as YTDLPFailure where (failure == .needsSignIn || failure == .private) && !page.cookies.isEmpty {
