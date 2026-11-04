@@ -137,7 +137,7 @@ struct NewDownloadSheet: View {
         case .blocked:
             MediaHeader(media: media)
             BlockedBody(media: media)
-        case let phase where phase.isAboutTools:
+        default:
             MediaHeader(media: media)
             ToolsBody(media: media)
         }
