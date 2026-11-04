@@ -36,11 +36,13 @@ public actor DownloadEngine {
     public init(
         hostLimits: any HostLimitStore = InMemoryHostLimitStore(),
         remux: (@Sendable (RemuxRequest) async throws -> Void)? = nil,
+        renew: (@Sendable (MediaSource) async throws -> MediaSource)? = nil,
         identity: @escaping @Sendable () -> BrowserIdentity = { BrowserIdentity(userAgent: nil) }
     ) {
         var configuration = EngineConfiguration()
         configuration.hostLimits = hostLimits
         configuration.remux = remux
+        configuration.renew = renew
         configuration.identity = identity
         self.init(configuration: configuration)
     }

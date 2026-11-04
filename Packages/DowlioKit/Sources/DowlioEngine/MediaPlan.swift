@@ -66,6 +66,10 @@ final class MediaPlan: @unchecked Sendable {
         lock.withLock { pieces.filter { finished[$0.position] == nil } }
     }
 
+    var finishedBytes: [FragmentPosition: Int64] {
+        lock.withLock { finished }
+    }
+
     var finishedPositions: [FragmentPosition] {
         lock.withLock { finished.keys.sorted { ($0.track, $0.fragment) < ($1.track, $1.fragment) } }
     }

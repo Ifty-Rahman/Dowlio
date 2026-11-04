@@ -103,7 +103,7 @@ enum YTDLPVersions {
         )
     }
 
-    private static func track(of format: MediaInfo.Format) -> MediaTrack? {
+    static func track(of format: MediaInfo.Format) -> MediaTrack? {
         guard let url = format.url else { return nil }
         let kind: MediaTrack.Kind = format.hasVideo ? (format.hasAudio ? .combined : .video) : .audio
         let bytes = format.size.flatMap { $0 > 0 ? 0...($0 - 1) : nil }

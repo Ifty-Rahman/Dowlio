@@ -70,6 +70,12 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// of mixing versions.
     case serverChangedFile
     case mediaUnplayable
+    case needsTools
+}
+
+public enum RenewalFailure: Error, Equatable, Sendable {
+    case toolsMissing
+    case failed
 }
 
 /// What went wrong with the network: the URL loading system's error code and its description.
@@ -289,6 +295,7 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// The original link's host, lowercased, for showing where the download comes from. It stays
     /// the same when redirects lead elsewhere. `nil` for a link without a host.
     public var displayHost: String?
+    public var renewedMedia: MediaSource?
 
     public init(
         id: DownloadID,

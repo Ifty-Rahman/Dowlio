@@ -56,6 +56,8 @@ final class AppModel {
     private var connectServer: ConnectServer?
     let tools: ToolInstaller
     let toolsModel: ToolsModel
+    var toolsNeededFor: DownloadID?
+    private let renewalSignIn = RenewalSignIn()
 
     init() {
         UserDefaults.standard.removeRetiredSettings()
@@ -71,9 +73,11 @@ final class AppModel {
         do {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let library = Library(engine: DownloadEngine(remux: MediaRemuxer.remux, identity: { BrowserIdentity.standard }), store: store)
+            let renew = Self.renewal(tools: tools, signIn: renewalSignIn)
+            let library = Library(engine: DownloadEngine(remux: MediaRemuxer.remux, renew: renew, identity: { BrowserIdentity.standard }), store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
+            renewalSignIn.set { [weak self] url in await self?.browserCookies(for: url) ?? [] }
         } catch {
             library = nil
             problem = "Dowlio can't open its history: \(error.localizedDescription)"
@@ -484,7 +488,39 @@ final class AppModel {
 
     func pause(_ row: DownloadRow) { perform { await $0.pause(row.id) } }
     func resume(_ row: DownloadRow) { perform { await $0.resume(row.id) } }
-    func retry(_ row: DownloadRow) { perform { await $0.retry(row.id) } }
+    func retry(_ row: DownloadRow) {
+        if row.state == .failed(.needsTools) {
+            toolsNeededFor = row.id
+            showLibraryWindow()
+            return
+        }
+        perform { await $0.retry(row.id) }
+    }
+
+    func installToolsAndRetry() {
+        guard let id = toolsNeededFor else { return }
+        toolsNeededFor = nil
+        Task {
+            do {
+                try await tools.install()
+                await toolsModel.refresh()
+                perform { await $0.retry(id) }
+            } catch {
+                actionFailure = "Dowlio couldn't download yt-dlp and QuickJS-NG from GitHub. Check your connection and try again."
+            }
+        }
+    }
+
+    private func browserCookies(for url: URL) async -> [Cookie] {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.usesBrowserSignIn) else { return [] }
+        return await connectServer?.signIn(for: url, frontBrowser: FrontBrowser.frontApp?.name)?.cookies ?? []
+    }
+
+    nonisolated private static func renewal(
+        tools: ToolInstaller, signIn: RenewalSignIn
+    ) -> @Sendable (MediaSource) async throws -> MediaSource {
+        { media in try await YTDLPRunner(installer: tools).renew(media) { url in await signIn.cookies(for: url) } }
+    }
     func cancel(_ row: DownloadRow) { perform { await $0.cancel(row.id) } }
     func removeFromList(_ row: DownloadRow) { perform { await $0.removeFromList(row.id) } }
     func clearCompleted() { perform { await $0.clearCompleted() } }
@@ -536,5 +572,19 @@ final class AppModel {
             self.rows = rows
             notifier.update(rows)
         }
+    }
+}
+
+final class RenewalSignIn: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lookup: (@Sendable (URL) async -> [Cookie])?
+
+    func set(_ lookup: @escaping @Sendable (URL) async -> [Cookie]) {
+        lock.withLock { self.lookup = lookup }
+    }
+
+    func cookies(for url: URL) async -> [Cookie] {
+        guard let lookup = lock.withLock({ lookup }) else { return [] }
+        return await lookup(url)
     }
 }

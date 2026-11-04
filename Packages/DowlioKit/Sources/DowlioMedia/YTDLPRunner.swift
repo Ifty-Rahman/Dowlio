@@ -58,6 +58,39 @@ public struct YTDLPRunner: Sendable {
     }
 }
 
+extension YTDLPRunner {
+    public func renew(_ media: MediaSource, signIn: @Sendable (URL) async -> [Cookie] = { _ in [] }) async throws -> MediaSource {
+        guard let renewal = media.renewal else { throw RenewalFailure.failed }
+        guard await isInstalled else { throw RenewalFailure.toolsMissing }
+        let info: MediaInfo
+        do {
+            info = try await infoUpdatingIfBroken(for: renewal.pageURL, cookies: [])
+        } catch let failure as YTDLPFailure where failure == .needsSignIn || failure == .private {
+            let cookies = await signIn(renewal.pageURL)
+            guard !cookies.isEmpty else { throw RenewalFailure.failed }
+            info = try await infoUpdatingIfBroken(for: renewal.pageURL, cookies: cookies)
+        } catch ToolInstaller.Failure.notInstalled {
+            throw RenewalFailure.toolsMissing
+        }
+        let formats = renewal.formatIDs.compactMap { id in info.formats.first { $0.id == id } }
+        let tracks = formats.compactMap { YTDLPVersions.track(of: $0) }
+        guard tracks.count == renewal.formatIDs.count else { throw RenewalFailure.failed }
+        return try MediaSource(
+            tracks: tracks, keepsAudioOnly: media.keepsAudioOnly, container: media.container,
+            expiry: formats.compactMap(\.expiry).min(), renewal: renewal
+        )
+    }
+
+    func infoUpdatingIfBroken(for url: URL, cookies: [Cookie]) async throws -> MediaInfo {
+        do {
+            return try await info(for: url, cookies: cookies)
+        } catch YTDLPFailure.extractorBroken {
+            guard await updateTools() else { throw YTDLPFailure.extractorBroken }
+            return try await info(for: url, cookies: cookies)
+        }
+    }
+}
+
 struct CookieJar {
     let folder: URL
     let file: URL

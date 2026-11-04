@@ -338,6 +338,11 @@ public actor Library {
             && (snapshot.plannedSegments.isEmpty
                 ? !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
                 : snapshot.plannedSegments != record.plannedSegments)
+        if let renewed = snapshot.renewedMedia, record.mediaSource != renewed {
+            record.mediaSource = renewed
+            records[id] = record
+            save(record)
+        }
         if changed || layoutStarted {
             if layoutStarted {
                 record.plannedSegments = snapshot.plannedSegments.isEmpty ? SegmentLayout.bounds(of: snapshot.segments) : snapshot.plannedSegments

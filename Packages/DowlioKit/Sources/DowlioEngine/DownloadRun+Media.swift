@@ -5,11 +5,28 @@ extension DownloadRun {
     func runMedia(_ media: MediaSource, resuming: Bool) async {
         var current: MediaPlan?
         do {
-            let plan = try await prepareMedia(media)
+            var plan = try await prepareMedia(media)
             current = plan
+            var renewed = false
+            if canRenew(plan), Self.isExpiring(plan.media, at: configuration.now()) {
+                plan = try await renewing(plan)
+                current = plan
+                renewed = true
+            }
             saveManifest(plan)
-            try await reportingProgress(of: plan) {
-                try await receivePieces(of: plan, resuming: resuming)
+            while true {
+                let attempt = plan
+                do {
+                    try await reportingProgress(of: attempt) {
+                        try await receivePieces(of: attempt, resuming: resuming)
+                    }
+                    break
+                } catch let error as DownloadError where !renewed && canRenew(attempt) && Self.meansLinkGone(error) {
+                    renewed = true
+                    plan = try await renewing(attempt)
+                    current = plan
+                    saveManifest(plan)
+                }
             }
             try await finish(plan)
         } catch where Task.isCancelled {
@@ -110,6 +127,63 @@ extension DownloadRun {
 
     private static func meansMediaLinkGone(_ error: DownloadError) -> Bool {
         error == .forbidden || error == .needsSignIn
+    }
+
+    static let renewalMargin: TimeInterval = 5 * 60
+
+    static func isExpiring(_ media: MediaSource, at now: Date) -> Bool {
+        guard let expiry = media.expiry else { return false }
+        return expiry.timeIntervalSince(now) < renewalMargin
+    }
+
+    private static func meansLinkGone(_ error: DownloadError) -> Bool {
+        [.linkExpired, .forbidden, .notFound, .needsSignIn].contains(error)
+    }
+
+    private func canRenew(_ plan: MediaPlan) -> Bool {
+        configuration.renew != nil && plan.media.renewal != nil
+    }
+
+    private func renewing(_ plan: MediaPlan) async throws -> MediaPlan {
+        guard let renew = configuration.renew else { return plan }
+        let fresh: MediaSource
+        do {
+            fresh = try await renew(plan.media)
+        } catch RenewalFailure.toolsMissing {
+            throw DownloadError.needsTools
+        } catch where Task.isCancelled {
+            throw CancellationError()
+        } catch {
+            throw DownloadError.linkExpired
+        }
+        let keepsParts = Self.sameLayout(plan.media, fresh)
+        if !keepsParts {
+            try? FileManager.default.removeItem(at: plan.partsFolder)
+            do {
+                try FileManager.default.createDirectory(at: plan.partsFolder, withIntermediateDirectories: true)
+            } catch {
+                throw DownloadError.destinationNotWritable
+            }
+        }
+        let next = MediaPlan(
+            fileName: plan.fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit,
+            finished: keepsParts ? plan.finishedBytes : [:]
+        )
+        adopt(next)
+        let reading = next.reading
+        await changeSnapshot {
+            $0.renewedMedia = fresh
+            $0.apply(reading)
+        }
+        return next
+    }
+
+    private static func sameLayout(_ old: MediaSource, _ new: MediaSource) -> Bool {
+        func layout(_ media: MediaSource) -> [[ClosedRange<Int64>?]] {
+            media.tracks.map { track in ((track.initialization.map { [$0] } ?? []) + track.fragments).map(\.bytes) }
+        }
+        let before = layout(old)
+        return before == layout(new) && !before.joined().contains(nil)
     }
 
     private func receive(_ piece: MediaPlan.Piece, of plan: MediaPlan) async throws {
