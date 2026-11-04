@@ -185,6 +185,33 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public var automaticCaptions: [String: [TextTrack]]
     public var chapters: [Chapter]
     public var thumbnails: [Thumbnail]
+    public var type: String?
+    public var entries: [Entry]
+    public var playlistCount: Int?
+
+    public struct Entry: Decodable, Equatable, Sendable {
+        public var id: String?
+        public var url: URL?
+        public var title: String?
+        public var duration: Double?
+        public var availability: String?
+
+        enum CodingKeys: String, CodingKey { case id, url, title, duration, availability }
+
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            id = try? values.decodeIfPresent(String.self, forKey: .id)
+            url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
+            title = try? values.decodeIfPresent(String.self, forKey: .title)
+            duration = try? values.decodeIfPresent(Double.self, forKey: .duration)
+            availability = try? values.decodeIfPresent(String.self, forKey: .availability)
+        }
+
+        public var isAvailable: Bool {
+            if ["private", "needs_auth", "subscriber_only", "premium_only"].contains(availability ?? "") { return false }
+            return !["[Private video]", "[Deleted video]"].contains(title ?? "")
+        }
+    }
 
     public struct Thumbnail: Decodable, Equatable, Sendable {
         public var url: URL
@@ -228,7 +255,9 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public var isLiveNow: Bool { liveStatus == "is_live" || liveStatus == "is_upcoming" }
 
     enum CodingKeys: String, CodingKey {
-        case title, thumbnail, duration, formats, subtitles, chapters, thumbnails
+        case title, thumbnail, duration, formats, subtitles, chapters, thumbnails, entries
+        case type = "_type"
+        case playlistCount = "playlist_count"
         case liveStatus = "live_status"
         case webpageURL = "webpage_url"
         case automaticCaptions = "automatic_captions"
@@ -246,6 +275,9 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         automaticCaptions = (try? values.decodeIfPresent([String: [TextTrack]].self, forKey: .automaticCaptions)) ?? [:]
         chapters = ((try? values.decodeIfPresent([Lenient<Chapter>].self, forKey: .chapters)) ?? []).compactMap(\.value)
         thumbnails = ((try? values.decodeIfPresent([Lenient<Thumbnail>].self, forKey: .thumbnails)) ?? []).compactMap(\.value)
+        type = try? values.decodeIfPresent(String.self, forKey: .type)
+        entries = ((try? values.decodeIfPresent([Lenient<Entry>].self, forKey: .entries)) ?? []).compactMap(\.value)
+        playlistCount = try? values.decodeIfPresent(Int.self, forKey: .playlistCount)
     }
 }
 

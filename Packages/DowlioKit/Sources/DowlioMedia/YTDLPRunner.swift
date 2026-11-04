@@ -40,10 +40,13 @@ public struct YTDLPRunner: Sendable {
         (try? await installer.update(unlessCheckedWithin: 60)) == true
     }
 
-    public func info(for url: URL, cookies: [Cookie] = []) async throws -> MediaInfo {
+    public static let longestPlaylist = 1000
+
+    public func info(for url: URL, cookies: [Cookie] = [], flatPlaylist: Bool = false) async throws -> MediaInfo {
         let tools = try await installer.verifiedTools()
-        var arguments = [
-            "--ignore-config", "--no-cache-dir", "--no-playlist",
+        var arguments = ["--ignore-config", "--no-cache-dir"]
+        arguments += flatPlaylist ? ["--flat-playlist", "--playlist-end", String(Self.longestPlaylist + 1)] : ["--no-playlist"]
+        arguments += [
             "--js-runtimes", "quickjs:\(tools.quickJS.path)",
             "--dump-single-json",
         ]
@@ -102,12 +105,12 @@ extension YTDLPRunner {
         }
     }
 
-    func infoUpdatingIfBroken(for url: URL, cookies: [Cookie]) async throws -> MediaInfo {
+    func infoUpdatingIfBroken(for url: URL, cookies: [Cookie], flatPlaylist: Bool = false) async throws -> MediaInfo {
         do {
-            return try await info(for: url, cookies: cookies)
+            return try await info(for: url, cookies: cookies, flatPlaylist: flatPlaylist)
         } catch YTDLPFailure.extractorBroken {
             guard await updateTools() else { throw YTDLPFailure.extractorBroken }
-            return try await info(for: url, cookies: cookies)
+            return try await info(for: url, cookies: cookies, flatPlaylist: flatPlaylist)
         }
     }
 }

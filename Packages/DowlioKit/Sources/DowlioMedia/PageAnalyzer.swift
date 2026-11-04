@@ -159,7 +159,16 @@ public struct PageAnalyzer: Sendable {
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
         if let link = YouTubeLink(page.url) {
-            return report(await withYTDLP(page, opensAsAudio: link.isMusic))
+            switch link.kind {
+            case .video:
+                return report(await withYTDLP(page, opensAsAudio: link.isMusic))
+            case .playlist:
+                return report(await playlist(page, isMusic: link.isMusic))
+            case .videoInPlaylist(let list):
+                return report(await video(page, inPlaylist: list, isMusic: link.isMusic))
+            case .channel:
+                return report(.ytdlpFailed(.channel))
+            }
         }
         let start = ContinuousClock.now
         if DASHVersions.isStream(page.url) {
@@ -278,6 +287,49 @@ public struct PageAnalyzer: Sendable {
     }
 
     static let mostEmbedsRead = 3
+
+    private func playlist(_ page: SentPage, isMusic: Bool) async -> PageAnalysis {
+        guard let ytdlp else { return .found([]) }
+        guard await ytdlp.isInstalled else { return .needsTools }
+        do {
+            let info = try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: [], flatPlaylist: true)
+            return .playlist(Self.playlist(from: info, page: page, isMusic: isMusic))
+        } catch ToolInstaller.Failure.changed, is ChildProcess.CouldNotStart {
+            return .toolsChanged
+        } catch is CancellationError {
+            return .found([])
+        } catch let failure as YTDLPFailure {
+            return failure == .needsSignIn ? .needsSignIn : .ytdlpFailed(failure)
+        } catch {
+            return .ytdlpFailed(.extractorBroken)
+        }
+    }
+
+    private static func playlist(from info: MediaInfo, page: SentPage, isMusic: Bool) -> PlaylistListing {
+        let listed = info.entries.prefix(YTDLPRunner.longestPlaylist).enumerated().compactMap { index, entry -> PlaylistListing.Entry? in
+            guard let id = entry.id ?? entry.url?.absoluteString else { return nil }
+            let url = entry.url ?? URL(string: "https://www.youtube.com/watch?v=\(id)")!
+            return PlaylistListing.Entry(
+                id: id, position: index + 1, title: entry.title ?? id, url: url, duration: entry.duration, isAvailable: entry.isAvailable
+            )
+        }
+        return PlaylistListing(
+            title: info.title ?? page.title ?? "Playlist", url: page.url, entries: Array(listed),
+            total: max(info.playlistCount ?? info.entries.count, info.entries.count, listed.count), isMusic: isMusic,
+            isCut: info.entries.count > YTDLPRunner.longestPlaylist
+        )
+    }
+
+    private func video(_ page: SentPage, inPlaylist list: String, isMusic: Bool) async -> PageAnalysis {
+        let whole = YouTubeLink.playlistURL(list: list)
+        async let listing = playlist(SentPage(url: whole), isMusic: isMusic)
+        let single = await withYTDLP(page, opensAsAudio: isMusic)
+        guard case .found(var candidates) = single, !candidates.isEmpty else { return single }
+        if case .playlist(let playlist) = await listing, playlist.available.count > 1 {
+            candidates[0].playlistOffer = PlaylistOffer(url: whole, count: playlist.available.count)
+        }
+        return .found(candidates)
+    }
 
     private static func withExtras(_ versions: [Version], video: MediaExtras, audio: MediaExtras) -> [Version] {
         versions.map { version in
@@ -1064,7 +1116,7 @@ private extension PageAnalysis {
         case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
         case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
         case .checkingForMore(let candidates): return .checkingForMore(candidates.map { $0.requested(by: agent) })
-        case .playing, .needsSignIn, .blocked, .plainFile, .needsTools, .toolsChanged, .ytdlpFailed: return self
+        case .playing, .needsSignIn, .blocked, .plainFile, .needsTools, .toolsChanged, .ytdlpFailed, .playlist: return self
         }
     }
 }

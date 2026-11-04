@@ -17,6 +17,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case couldntInstallTools
         case toolsChanged
         case ytdlpFailed(YTDLPFailure)
+        case playlist
 
         public var isAboutTools: Bool {
             [.needsTools, .installingTools, .declinedTools, .couldntInstallTools, .toolsChanged].contains(self)
@@ -41,6 +42,10 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var isCheckingForMore = false
     public private(set) var toolsSize: Int64?
     public private(set) var offersYTDLP = false
+    public private(set) var playlist: PlaylistListing?
+    private var skippedEntries: Set<String> = []
+    public private(set) var playlistShowing: Showing = .video
+    public private(set) var playlistQuality: VideoQuality = .best
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
@@ -107,6 +112,14 @@ public struct SentPageDraft: Equatable, Sendable {
         case .ytdlpFailed(let failure):
             candidates = []
             phase = .ytdlpFailed(failure)
+            return nil
+        case .playlist(let listing):
+            candidates = []
+            playlist = listing
+            skippedEntries = []
+            playlistShowing = listing.isMusic ? .audio : .video
+            playlistQuality = preference.quality
+            phase = .playlist
             return nil
         case .found(let found):
             show(found)
@@ -211,7 +224,44 @@ public struct SentPageDraft: Equatable, Sendable {
         case .network: ProblemText(sentence: "Dowlio couldn't reach the site.", action: .tryAgain)
         case .live: ProblemText(sentence: "This video is live. Download it after the stream ends.", action: nil)
         case .unavailable: ProblemText(sentence: "This video isn't available any more.", action: nil)
+        case .channel: ProblemText(sentence: "Channels aren't supported. Send a video or a playlist instead.", action: nil)
         }
+    }
+
+    public func isIncluded(_ entry: PlaylistListing.Entry) -> Bool {
+        entry.isAvailable && !skippedEntries.contains(entry.id)
+    }
+
+    public mutating func include(_ entry: PlaylistListing.Entry, _ included: Bool) {
+        guard entry.isAvailable else { return }
+        if included { skippedEntries.remove(entry.id) } else { skippedEntries.insert(entry.id) }
+    }
+
+    public mutating func choosePlaylist(_ showing: Showing, quality: VideoQuality? = nil) {
+        playlistShowing = showing
+        if let quality { playlistQuality = quality }
+    }
+
+    public var includedEntries: [PlaylistListing.Entry] {
+        playlist?.entries.filter(isIncluded) ?? []
+    }
+
+    public var playlistLine: String? {
+        guard let playlist else { return nil }
+        let count = playlist.available.count
+        return "\(includedEntries.count) of \(count) \(count == 1 ? "video" : "videos")"
+    }
+
+    public var playlistNote: String? {
+        guard let playlist, playlist.isCut else { return nil }
+        let number = NumberFormatter.localizedString(from: NSNumber(value: playlist.total), number: .decimal)
+        let shown = NumberFormatter.localizedString(from: NSNumber(value: playlist.entries.count), number: .decimal)
+        return "This playlist has \(number) videos. Dowlio lists the first \(shown)."
+    }
+
+    public var wholePlaylistLine: String? {
+        guard let offer = selectedCandidate?.playlistOffer else { return nil }
+        return "Whole playlist (\(offer.count) videos)"
     }
 
     public var subtitlesLine: String? {

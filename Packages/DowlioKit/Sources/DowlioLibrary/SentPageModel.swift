@@ -87,6 +87,17 @@ public final class SentPageModel {
         listen(to: analyzePage(draft.page))
     }
 
+    public func showWholePlaylist() {
+        guard let offer = draft.selectedCandidate?.playlistOffer else { return }
+        draft.startLookingAgain()
+        var whole = draft.page
+        whole.url = offer.url
+        listen(to: analyzePage(whole))
+    }
+
+    public func include(_ entry: PlaylistListing.Entry, _ included: Bool) { draft.include(entry, included) }
+    public func choosePlaylist(_ showing: SentPageDraft.Showing, quality: VideoQuality? = nil) { draft.choosePlaylist(showing, quality: quality) }
+
     public func tryWithYTDLP() {
         guard tools != nil, draft.phase == .nothingFound else { return }
         draft.askForTools()

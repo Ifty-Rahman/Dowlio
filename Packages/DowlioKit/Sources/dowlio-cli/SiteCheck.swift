@@ -32,7 +32,7 @@ enum SiteCheck {
             case .needsSignIn: .needsSignIn
             case .blocked: .blocked
             case .plainFile: .plainFile
-            case .found, .looking, .checkingForMore, .playing, .needsTools, .toolsChanged, .ytdlpFailed: error == nil ? .nothingFound : .failed
+            case .found, .looking, .checkingForMore, .playing, .needsTools, .toolsChanged, .ytdlpFailed, .playlist: error == nil ? .nothingFound : .failed
             }
         }
 

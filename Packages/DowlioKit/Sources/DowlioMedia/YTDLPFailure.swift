@@ -12,6 +12,7 @@ public enum YTDLPFailure: Error, Equatable, Hashable, Sendable {
     case network
     case live
     case unavailable
+    case channel
 
     static func classify(_ errorText: String) -> YTDLPFailure {
         let lines = errorText.split(whereSeparator: \.isNewline).map(String.init)
@@ -43,7 +44,7 @@ public enum YTDLPFailure: Error, Equatable, Hashable, Sendable {
         case .needsSignIn, .private: .needsSignIn
         case .network, .rateLimited: .network(NetworkFailure(code: .notConnectedToInternet, message: "yt-dlp couldn't reach the site"))
         case .protected, .geoBlocked: .forbidden
-        case .unavailable, .unsupportedSite: .notFound
+        case .unavailable, .unsupportedSite, .channel: .notFound
         case .live, .extractorBroken: .mediaUnplayable
         }
     }

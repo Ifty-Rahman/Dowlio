@@ -128,6 +128,7 @@ public struct Candidate: Equatable, Sendable {
     public var isOther: Bool
     public var unprobed: [WatchedRequest]
     public var opensAsAudio: Bool
+    public var playlistOffer: PlaylistOffer?
 
     public init(
         label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version], restriction: Restriction? = nil,
@@ -213,4 +214,52 @@ public enum PageAnalysis: Equatable, Sendable {
     case needsTools
     case toolsChanged
     case ytdlpFailed(YTDLPFailure)
+    case playlist(PlaylistListing)
+}
+
+public struct PlaylistOffer: Equatable, Sendable {
+    public var url: URL
+    public var count: Int
+
+    public init(url: URL, count: Int) {
+        self.url = url
+        self.count = count
+    }
+}
+
+public struct PlaylistListing: Equatable, Sendable {
+    public struct Entry: Equatable, Sendable, Identifiable {
+        public var id: String
+        public var position: Int
+        public var title: String
+        public var url: URL
+        public var duration: Double?
+        public var isAvailable: Bool
+
+        public init(id: String, position: Int, title: String, url: URL, duration: Double? = nil, isAvailable: Bool = true) {
+            self.id = id
+            self.position = position
+            self.title = title
+            self.url = url
+            self.duration = duration
+            self.isAvailable = isAvailable
+        }
+    }
+
+    public var title: String
+    public var url: URL
+    public var entries: [Entry]
+    public var total: Int
+    public var isMusic: Bool
+    public var isCut: Bool
+
+    public init(title: String, url: URL, entries: [Entry], total: Int, isMusic: Bool, isCut: Bool = false) {
+        self.title = title
+        self.url = url
+        self.entries = entries
+        self.total = total
+        self.isMusic = isMusic
+        self.isCut = isCut
+    }
+    public var available: [Entry] { entries.filter(\.isAvailable) }
 }

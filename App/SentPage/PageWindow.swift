@@ -185,7 +185,7 @@ final class PageWindowModel: NSObject {
             reading = .needsSignIn
         case .blocked:
             reading = .blocked
-        case .looking, .checkingForMore, .playing, .plainFile, .needsTools, .toolsChanged, .ytdlpFailed:
+        case .looking, .checkingForMore, .playing, .plainFile, .needsTools, .toolsChanged, .ytdlpFailed, .playlist:
             break
         }
     }

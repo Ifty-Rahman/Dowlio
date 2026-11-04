@@ -116,6 +116,8 @@ enum SentPageRecord {
             record["toolsChanged"] = true
         case .ytdlpFailed(let failure):
             record["ytdlpFailed"] = String(describing: failure)
+        case .playlist(let listing):
+            record["playlist"] = ["title": listing.title, "entries": listing.entries.count, "total": listing.total] as [String: Any]
         case .looking, .checkingForMore, .playing, nil:
             record["unfinished"] = true
         }

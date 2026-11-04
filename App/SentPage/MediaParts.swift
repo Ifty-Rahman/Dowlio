@@ -138,6 +138,11 @@ struct MediaChoices: View {
                 .foregroundStyle(.secondary)
         } else {
             choices
+            if let whole = media.draft.wholePlaylistLine {
+                Button(whole, systemImage: "list.bullet") { media.showWholePlaylist() }
+                    .buttonStyle(.link)
+                    .font(DowlioDesign.TypeRole.detail)
+            }
             if let subtitles = media.draft.subtitlesLine {
                 Label(subtitles, systemImage: "captions.bubble")
                     .font(DowlioDesign.TypeRole.detail)

@@ -1,7 +1,7 @@
 import DowlioMedia
 import Foundation
 
-public enum VideoQuality: Equatable, Sendable {
+public enum VideoQuality: Hashable, Sendable {
     case best
     case upTo(Int)
 
