@@ -58,6 +58,11 @@ public struct YTDLPStandIn: Sendable {
         ((try? String(contentsOf: log.appending(path: "arguments"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
     }
 
+    public var argumentsOfEachRun: [[String]] {
+        let text = (try? String(contentsOf: log.appending(path: "all-arguments"), encoding: .utf8)) ?? ""
+        return text.components(separatedBy: "--run--\n").dropFirst().map { $0.split(separator: "\n").map(String.init) }
+    }
+
     public var environment: [String: String] {
         let text = (try? String(contentsOf: log.appending(path: "environment"), encoding: .utf8)) ?? ""
         return Dictionary(text.split(separator: "\n").compactMap { line in

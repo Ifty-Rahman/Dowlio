@@ -163,7 +163,10 @@ public struct PageAnalyzer: Sendable {
             case .video:
                 return report(await withYTDLP(page, opensAsAudio: link.isMusic))
             case .playlist:
-                return report(await playlist(page, isMusic: link.isMusic))
+                let listed = await playlist(page, isMusic: link.isMusic)
+                report(listed)
+                guard case .playlist(let listing) = listed, !listing.isMusic else { return }
+                return report(.playlist(await withHeights(listing)))
             case .videoInPlaylist(let list):
                 return report(await video(page, inPlaylist: list, isMusic: link.isMusic))
             case .channel:
@@ -305,6 +308,16 @@ public struct PageAnalyzer: Sendable {
         } catch {
             return .ytdlpFailed(.extractorBroken)
         }
+    }
+
+    private func withHeights(_ listing: PlaylistListing) async -> PlaylistListing {
+        var checked = listing
+        guard let ytdlp, let first = listing.available.first, let info = try? await ytdlp.info(for: first.url) else {
+            checked.heights = []
+            return checked
+        }
+        checked.heights = Set(info.formats.filter(\.hasVideo).compactMap(\.height)).sorted(by: >)
+        return checked
     }
 
     private static func playlist(from info: MediaInfo, page: SentPage, isMusic: Bool) -> PlaylistListing {

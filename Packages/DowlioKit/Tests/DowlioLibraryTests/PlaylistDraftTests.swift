@@ -83,6 +83,32 @@ struct PlaylistDraftTests {
         #expect(draft.playlistResolutionNote == nil)
     }
 
+    @Test func theResolutionsComeFromThePlaylistAndKeepWhatTheUserChose() {
+        let plain = listing(available: 3)
+        var draft = draft(plain, quality: .upTo(1440))
+
+        #expect(draft.isCheckingResolutions)
+        #expect(draft.playlistHeights == VideoQuality.caps)
+        draft.include(plain.entries[0], false)
+        var checked = plain
+        checked.heights = [1080, 720, 360]
+        _ = draft.update(.playlist(checked))
+
+        #expect(!draft.isCheckingResolutions)
+        #expect(draft.playlistHeights == [1080, 720, 360])
+        #expect(draft.playlistQuality == .upTo(1080))
+        #expect(draft.includedEntries.count == 2)
+    }
+
+    @Test func aPlaylistWhoseResolutionsCantBeReadOffersTheUsualList() {
+        var plain = listing(available: 2)
+        plain.heights = []
+        let draft = draft(plain)
+
+        #expect(!draft.isCheckingResolutions)
+        #expect(draft.playlistHeights == VideoQuality.caps)
+    }
+
     @Test func aCutPlaylistSaysSo() {
         let cut = draft(listing(available: 1000, total: 1203, isCut: true))
         let whole = draft(listing(available: 20, total: 43))

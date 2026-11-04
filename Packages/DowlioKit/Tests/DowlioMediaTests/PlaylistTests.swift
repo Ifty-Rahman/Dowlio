@@ -31,8 +31,8 @@ struct PlaylistTests {
         #expect(playlist.thumbnail?.path() == "/vi/LLFhKaqnWwk/hqdefault.jpg")
         #expect(playlist.updated == DateComponents(calendar: .current, year: 2026, month: 10, day: 1).date)
         #expect(playlist.entries.first?.thumbnail?.path() == "/vi/LLFhKaqnWwk/hqdefault.jpg")
-        #expect(standIn.arguments.contains("--flat-playlist"))
-        #expect(!standIn.arguments.contains("--no-playlist"))
+        #expect(standIn.argumentsOfEachRun.first?.contains("--flat-playlist") == true)
+        #expect(standIn.argumentsOfEachRun.first?.contains("--no-playlist") == false)
     }
 
     @Test(arguments: ["https://music.youtube.com/browse/MPREb_tQfaWH32ovE", "https://music.youtube.com/playlist?list=OLAK5uy_lqcFZTOPHGwcnP0nYMzNuY0IES0fl7Fe4"])
@@ -46,6 +46,26 @@ struct PlaylistTests {
         #expect(playlist.entries.count == 40)
     }
 
+    @Test func aPlaylistShowsAtOnceThenOffersTheResolutionsItsFirstVideoHas() async throws {
+        let standIn = try await YTDLPStandIn.install(script: """
+            case "$*" in
+              *--flat-playlist*) cat '\(YTDLPStandIn.fixture("playlist.json").path)' ;;
+              *) cat '\(YTDLPStandIn.fixture("video-1080p.json").path)' ;;
+            esac
+            """)
+        let analyzer = PageAnalyzer(readers: [], ytdlp: YTDLPRunner(installer: standIn.installer)) { _, _ in throw URLError(.cannotConnectToHost) }
+
+        var listings: [PlaylistListing] = []
+        for await update in analyzer.analyze(SentPage(url: URL(string: "https://www.youtube.com/playlist?list=PLlaN88a7y2_plecYoJxvRFTLHVbIVAOoc")!)) {
+            if case .playlist(let listing) = update { listings.append(listing) }
+        }
+
+        #expect(listings.count == 2)
+        #expect(listings.first?.heights == nil)
+        #expect(listings.last?.heights == [1080, 720, 480, 360, 240, 144])
+        #expect(standIn.arguments.contains("https://www.youtube.com/watch?v=LLFhKaqnWwk"))
+    }
+
     @Test func aPlaylistLongerThanAThousandVideosListsTheFirstThousand() async throws {
         let standIn = try await YTDLPStandIn.printing("derived-playlist-1203.json")
 
@@ -55,7 +75,7 @@ struct PlaylistTests {
         #expect(playlist.entries.count == 1000)
         #expect(playlist.total == 1203)
         #expect(playlist.isCut)
-        #expect(standIn.arguments.contains("1001"))
+        #expect(standIn.argumentsOfEachRun.first?.contains("1001") == true)
     }
 
     @Test func aWatchLinkInsideAPlaylistShowsThatVideoAndOffersTheWholePlaylist() async throws {

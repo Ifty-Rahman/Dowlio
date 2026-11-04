@@ -261,11 +261,13 @@ public struct PlaylistListing: Equatable, Sendable {
     public var channel: String?
     public var thumbnail: URL?
     public var updated: Date?
+    public var heights: [Int]?
 
     public init(
         title: String, url: URL, entries: [Entry], total: Int?, isMusic: Bool, isCut: Bool = false, channel: String? = nil, thumbnail: URL? = nil,
-        updated: Date? = nil
+        updated: Date? = nil, heights: [Int]? = nil
     ) {
+        self.heights = heights
         self.channel = channel
         self.thumbnail = thumbnail
         self.updated = updated

@@ -115,11 +115,15 @@ public struct SentPageDraft: Equatable, Sendable {
             return nil
         case .playlist(let listing):
             candidates = []
+            let isSamePlaylist = phase == .playlist && playlist?.url == listing.url
             playlist = listing
-            skippedEntries = []
-            playlistShowing = listing.isMusic ? .audio : .video
-            playlistQuality = preference.quality
-            phase = .playlist
+            if !isSamePlaylist {
+                skippedEntries = []
+                playlistShowing = listing.isMusic ? .audio : .video
+                playlistQuality = preference.quality
+                phase = .playlist
+            }
+            playlistQuality = Self.fitting(playlistQuality, in: playlistHeights)
             return nil
         case .found(let found):
             show(found)
@@ -264,6 +268,21 @@ public struct SentPageDraft: Equatable, Sendable {
         let size = "\(NumberFormatter.localizedString(from: NSNumber(value: count), number: .decimal)) \(playlist.noun(count))"
         let updated = playlist.updated.map { "Updated " + $0.formatted(date: .abbreviated, time: .omitted) }
         return [playlist.channel, size, updated].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    public var playlistHeights: [Int] {
+        guard let heights = playlist?.heights, !heights.isEmpty else { return VideoQuality.caps }
+        return heights
+    }
+
+    public var isCheckingResolutions: Bool {
+        guard let playlist else { return false }
+        return playlist.heights == nil && !playlist.isMusic
+    }
+
+    private static func fitting(_ quality: VideoQuality, in heights: [Int]) -> VideoQuality {
+        guard case .upTo(let height) = quality, !heights.contains(height), let lowest = heights.last else { return quality }
+        return .upTo(heights.first { $0 <= height } ?? lowest)
     }
 
     public var playlistResolutionNote: String? {
