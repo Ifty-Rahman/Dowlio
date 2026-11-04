@@ -121,6 +121,26 @@ struct YouTubeRenewalTests {
         #expect(renewals.count == 2)
     }
 
+    @Test func linksRefusedAgainAfterARenewalAreRenewedUpToThreeTimes() async throws {
+        let clip = try await clip()
+        for folder in ["stale", "first", "second"] {
+            clip.serve(at: folder, video: TestServer.File(data: clip.video, forbiddenAfterRequests: 2))
+        }
+        clip.serve(at: "third")
+        let renewals = Counter()
+        let fixture = try await LibraryFixture(renew: { _ in
+            renewals.add()
+            return try clip.media(at: ["first", "second", "third"][min(renewals.count, 3) - 1], expiry: Date().addingTimeInterval(6 * 60 * 60))
+        })
+
+        let media = try clip.media(at: "stale", expiry: Date().addingTimeInterval(6 * 60 * 60))
+        let id = await fixture.library.add(.media(media), destination: .folder(fixture.folder), options: options())
+        let row = try await fixture.library.row(id) { $0.hasEnded }
+
+        #expect(row.state == .completed)
+        #expect(renewals.count == 3)
+    }
+
     @Test func a403MidDownloadRenewsAndKeepsThePiecesItHasWhenTheSizeMatches() async throws {
         let clip = try await clip()
         clip.serve(at: "stale", video: TestServer.File(data: clip.video, forbiddenAfterRequests: 3))

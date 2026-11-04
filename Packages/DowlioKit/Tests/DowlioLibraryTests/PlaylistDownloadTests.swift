@@ -86,6 +86,25 @@ struct PlaylistDownloadTests {
         for id in ids { _ = try await fixture.library.row(id) { $0.state == .completed } }
     }
 
+    @Test func downloadingRowsStayAboveRowsThatAreWaiting() async throws {
+        let clip = Clip(server: try await TestServer())
+        try clip.serve(holding: true)
+        let fixture = try await LibraryFixture(renew: { try clip.listed($0) })
+        await fixture.library.setMaximumActive(1)
+
+        let older = await add(entries(1), to: fixture)[0]
+        var later = RequestOptions()
+        later.fileName = "Later.mp4"
+        let newer = await fixture.library.add(
+            .media(PlaylistNaming.media(for: entries(2)[1], showing: .video, quality: .best, subtitles: [])), destination: .folder(fixture.folder), options: later
+        )
+        let rows = try await fixture.library.firstRows { rows in rows.count == 2 && rows.contains { $0.state == .downloading } }
+
+        #expect(rows.map(\.id) == [older, newer])
+        clip.server.releaseHeldResponses()
+        for id in [older, newer] { _ = try await fixture.library.row(id) { $0.state == .completed } }
+    }
+
     @Test func aVideoThatFailsBecomesFailedWithItsReasonAndTheRestCarryOn() async throws {
         let clip = Clip(server: try await TestServer())
         try clip.serve(holding: false)

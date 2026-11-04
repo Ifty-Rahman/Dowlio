@@ -21,7 +21,7 @@ extension DownloadRun {
                 current = plan
             }
             saveManifest(plan)
-            plan = try await receivingWithOneRenewal(plan, resuming: resuming) { current = $0 }
+            plan = try await receivingWithRenewals(plan, resuming: resuming) { current = $0 }
             try await finish(plan)
         } catch where Task.isCancelled {
             if let current {
@@ -128,17 +128,25 @@ extension DownloadRun {
         error == .forbidden || error == .needsSignIn
     }
 
-    private func receivingWithOneRenewal(
+    static let mostRenewals = 3
+
+    private func receivingWithRenewals(
         _ start: MediaPlan, resuming: Bool, adopted: (MediaPlan) -> Void
     ) async throws -> MediaPlan {
-        do {
-            try await reportingProgress(of: start) { try await receivePieces(of: start, resuming: resuming) }
-            return start
-        } catch let error as DownloadError where !Task.isCancelled && canRenew(start) && Self.asksForFreshLinks(error) {
-            let renewed = try await renewing(start)
-            adopted(renewed)
-            try await reportingProgress(of: renewed) { try await receivePieces(of: renewed, resuming: resuming) }
-            return renewed
+        var plan = start
+        var renewals = 0
+        while true {
+            do {
+                try await reportingProgress(of: plan) { try await receivePieces(of: plan, resuming: resuming) }
+                return plan
+            } catch let error as DownloadError where !Task.isCancelled && canRenew(plan) && Self.asksForFreshLinks(error) && renewals < Self.mostRenewals {
+                if renewals > 0 {
+                    try await Task.sleep(for: configuration.retry.delay(afterFailure: renewals, retryAfter: nil, random: configuration.random))
+                }
+                renewals += 1
+                plan = try await renewing(plan)
+                adopted(plan)
+            }
         }
     }
 

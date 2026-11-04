@@ -413,6 +413,8 @@ public actor Library {
         }
         return records.values
             .sorted { a, b in
+                let (isActive, otherIsActive) = (a.state == .downloading, b.state == .downloading)
+                if isActive != otherIsActive { return isActive }
                 let (first, second) = (placed(a), placed(b))
                 if first != second { return first > second }
                 if let group = a.playlistGroup, group == b.playlistGroup, a.addedAt != b.addedAt { return a.addedAt < b.addedAt }
