@@ -88,15 +88,12 @@ public actor ToolInstaller {
     public let folder: URL
     private let source: GitHubSource
     private let session: URLSession
+    private var installing: Task<Void, Error>?
 
     public init(folder: URL, source: GitHubSource = .official, session: URLSession = PageAnalyzer.makeSession()) {
         self.folder = folder
         self.source = source
         self.session = session
-    }
-
-    public static var defaultFolder: URL {
-        URL.applicationSupportDirectory.appending(path: "Dowlio/Tools", directoryHint: .isDirectory)
     }
 
     private var recordsURL: URL { folder.appending(path: "tools.json") }
@@ -157,19 +154,33 @@ public actor ToolInstaller {
     }
 
     public func install() async throws {
+        if let installing { return try await installing.value }
+        let run = Task { try await installBoth() }
+        installing = run
+        defer { installing = nil }
+        try await run.value
+    }
+
+    private struct Staged {
+        var tool: Tool
+        var item: URL
+        var record: Record
+    }
+
+    private func installBoth() async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        var staged: [(Tool, URL, Record)] = []
-        defer { staged.forEach { try? FileManager.default.removeItem(at: $0.1) } }
+        var staged: [Staged] = []
+        defer { staged.forEach { try? FileManager.default.removeItem(at: $0.item) } }
         for tool in Tool.allCases {
             let release = try await latestRelease(of: tool)
             staged.append(try await stage(tool, from: release))
         }
         var known = records()
-        for (tool, item, record) in staged {
-            try replace(installedItem(of: tool), with: item)
-            known[tool] = record
+        for each in staged {
+            try replace(installedItem(of: each.tool), with: each.item)
+            known[each.tool] = each.record
+            try save(known)
         }
-        try save(known)
         Self.logger.info("Installed yt-dlp \(known[.ytdlp]?.version ?? "?", privacy: .public) and QuickJS-NG \(known[.quickJS]?.version ?? "?", privacy: .public)")
     }
 
@@ -243,13 +254,23 @@ public actor ToolInstaller {
         return kept
     }
 
-    private func stage(_ tool: Tool, from release: Release) async throws -> (Tool, URL, Record) {
+    private func stage(_ tool: Tool, from release: Release) async throws -> Staged {
         guard let asset = release.assets.first(where: { $0.name == tool.assetName }) else { throw Failure.missingAsset(tool) }
         let expected = try await expectedHash(of: tool, asset: asset, in: release)
         let downloaded = try await download(asset.browserDownloadURL)
         defer { try? FileManager.default.removeItem(at: downloaded) }
         guard try Self.fileHash(downloaded) == expected else { throw Failure.hashMismatch(tool) }
         let item = folder.appending(path: ".staged-\(tool.rawValue)-\(UUID().uuidString)")
+        do {
+            try await unpack(downloaded, as: tool, into: item)
+            return Staged(tool: tool, item: item, record: Record(version: release.tagName, sha256: try Self.hash(of: item)))
+        } catch {
+            try? FileManager.default.removeItem(at: item)
+            throw error
+        }
+    }
+
+    private func unpack(_ downloaded: URL, as tool: Tool, into item: URL) async throws {
         switch tool {
         case .ytdlp:
             try await unzip(downloaded, into: item)
@@ -261,7 +282,6 @@ public actor ToolInstaller {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: item.path)
         }
         Self.removeQuarantine(under: item)
-        return (tool, item, Record(version: release.tagName, sha256: try Self.hash(of: item)))
     }
 
     private func expectedHash(of tool: Tool, asset: Release.Asset, in release: Release) async throws -> String {
@@ -304,6 +324,11 @@ public actor ToolInstaller {
         }
     }
 
+    private static func mode(of file: URL) -> String {
+        let permissions = (try? FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int) ?? 0
+        return ":" + String(permissions, radix: 8)
+    }
+
     static func fileHash(_ file: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
@@ -317,7 +342,7 @@ public actor ToolInstaller {
     static func hash(of item: URL) throws -> String {
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isFolder) else { throw Failure.notInstalled }
-        guard isFolder.boolValue else { return try fileHash(item) }
+        guard isFolder.boolValue else { return try fileHash(item) + mode(of: item) }
         let base = item.standardizedFileURL.path
         var entries: [(String, String)] = []
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
@@ -328,7 +353,7 @@ public actor ToolInstaller {
             if values.isSymbolicLink == true {
                 entries.append((relative, "link:" + ((try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) ?? "")))
             } else if values.isRegularFile == true {
-                entries.append((relative, try fileHash(url)))
+                entries.append((relative, try fileHash(url) + mode(of: url)))
             }
         }
         var hasher = SHA256()

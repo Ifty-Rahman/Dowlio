@@ -154,8 +154,7 @@ public final class LinkList {
             switch model.draft.phase {
             case .found, .restricted:
                 return model.draft.candidates.indices.map { LinkItem(id: .init(entry: entry.id, candidate: $0), kind: .video(model, $0)) }
-            case .looking, .playing, .nothingFound, .needsSignIn, .blocked, .needsTools, .installingTools, .declinedTools,
-                 .couldntInstallTools, .toolsChanged:
+            default:
                 return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .page(model))]
             }
         }

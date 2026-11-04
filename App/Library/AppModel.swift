@@ -60,14 +60,12 @@ final class AppModel {
         UserDefaults.standard.removeRetiredSettings()
         URLCache.shared = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 0)
         Task.detached(priority: .background) { Self.removeSavedWebData() }
-        let supportFolder = DebugLaunch.supportFolder ?? URL.applicationSupportDirectory.appending(
+        let support = DebugLaunch.supportFolder ?? URL.applicationSupportDirectory.appending(
             path: AppIdentity.supportFolderName, directoryHint: .isDirectory
         )
-        tools = ToolInstaller(folder: supportFolder.appending(path: "Tools", directoryHint: .isDirectory))
+        tools = ToolInstaller(folder: support.appending(path: "Tools", directoryHint: .isDirectory))
         do {
-            let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-            ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
             let library = Library(engine: DownloadEngine(remux: MediaRemuxer.remux, identity: { BrowserIdentity.standard }), store: store)
             self.library = library

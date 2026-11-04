@@ -112,6 +112,29 @@ struct ToolInstallerTests {
         await #expect(throws: ToolInstaller.Failure.changed(.quickJS)) { try await installer.verifiedTools() }
     }
 
+    @Test func aFileWhoseModeChangedIsRefused() async throws {
+        let github = try await published()
+        let (installer, folder) = try installer(github)
+        try await installer.install()
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: folder.appending(path: "qjs").path)
+
+        await #expect(throws: ToolInstaller.Failure.changed(.quickJS)) { try await installer.verifiedTools() }
+    }
+
+    @Test func installingTwiceAtOnceInstallsOnce() async throws {
+        let github = try await published()
+        let (installer, _) = try installer(github)
+
+        async let first: Void = installer.install()
+        async let second: Void = installer.install()
+        _ = try await (first, second)
+
+        #expect(await installer.isInstalled)
+        let apiCalls = github.server.requests.filter { $0.path == "/repos/yt-dlp/yt-dlp/releases/latest" }
+        #expect(apiCalls.count == 1)
+    }
+
     @Test func toolsThatArentInstalledAreReportedSo() async throws {
         let github = try await published()
         let (installer, _) = try installer(github)

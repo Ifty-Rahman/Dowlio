@@ -77,7 +77,7 @@ public final class SentPageModel {
         sizing = Task { [weak self] in
             let size = await tools.size()
             guard let self, !Task.isCancelled else { return }
-            draft.toolsSize = size
+            draft.setToolsSize(size)
         }
     }
 

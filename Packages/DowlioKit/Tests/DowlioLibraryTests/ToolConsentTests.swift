@@ -14,7 +14,7 @@ struct ToolConsentTests {
         var draft = SentPageDraft(page: page)
 
         _ = draft.update(.needsTools)
-        draft.toolsSize = 55_700_000
+        draft.setToolsSize(55_700_000)
 
         #expect(draft.phase == .needsTools)
         let consent = draft.toolConsent

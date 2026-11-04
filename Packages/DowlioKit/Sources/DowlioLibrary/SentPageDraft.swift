@@ -16,6 +16,10 @@ public struct SentPageDraft: Equatable, Sendable {
         case declinedTools
         case couldntInstallTools
         case toolsChanged
+
+        public var isAboutTools: Bool {
+            [.needsTools, .installingTools, .declinedTools, .couldntInstallTools, .toolsChanged].contains(self)
+        }
     }
 
     public enum Showing: Equatable, Sendable {
@@ -34,7 +38,7 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
     public private(set) var isCheckingForMore = false
-    public var toolsSize: Int64?
+    public private(set) var toolsSize: Int64?
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
@@ -132,6 +136,10 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public var checkingLine: String { "Checking for more versions" }
+
+    public mutating func setToolsSize(_ size: Int64?) {
+        toolsSize = size
+    }
 
     public mutating func startInstallingTools() {
         phase = .installingTools

@@ -62,7 +62,7 @@ struct LinkItemBody: View {
                 NeedsSignInBody(media: page)
             case .blocked:
                 BlockedBody(media: page)
-            case .needsTools, .installingTools, .declinedTools, .couldntInstallTools, .toolsChanged:
+            case let phase where phase.isAboutTools:
                 ToolsBody(media: page)
             case .nothingFound:
                 NothingFoundBody(media: page)
