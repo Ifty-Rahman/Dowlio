@@ -114,6 +114,8 @@ enum SentPageRecord {
             record["needsTools"] = true
         case .toolsChanged:
             record["toolsChanged"] = true
+        case .ytdlpFailed(let failure):
+            record["ytdlpFailed"] = String(describing: failure)
         case .looking, .checkingForMore, .playing, nil:
             record["unfinished"] = true
         }

@@ -60,6 +60,7 @@ final class AppModel {
         UserDefaults.standard.removeRetiredSettings()
         URLCache.shared = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 0)
         Task.detached(priority: .background) { Self.removeSavedWebData() }
+        YTDLPRunner.removeLeftoverCookies()
         let support = DebugLaunch.supportFolder ?? URL.applicationSupportDirectory.appending(
             path: AppIdentity.supportFolderName, directoryHint: .isDirectory
         )

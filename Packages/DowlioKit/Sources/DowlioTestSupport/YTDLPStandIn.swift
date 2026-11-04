@@ -28,6 +28,8 @@ public struct YTDLPStandIn: Sendable {
             printf '%s\\n' "$@" > '\(log.path)/arguments'
             env > '\(log.path)/environment'
             echo run >> '\(log.path)/runs'
+            echo --run-- >> '\(log.path)/all-arguments'
+            printf '%s\n' "$@" >> '\(log.path)/all-arguments'
             \(script)
             """
         let github = try await FakeGitHub()

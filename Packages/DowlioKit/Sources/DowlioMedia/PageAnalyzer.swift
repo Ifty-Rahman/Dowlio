@@ -198,17 +198,31 @@ public struct PageAnalyzer: Sendable {
     private func withYTDLP(_ page: SentPage, opensAsAudio: Bool) async -> PageAnalysis {
         guard let ytdlp else { return .found([]) }
         guard await ytdlp.isInstalled else { return .needsTools }
+        let label = page.title ?? Self.site(of: page.url)
         do {
-            let info = try await ytdlp.info(for: page.url)
-            let label = info.title ?? page.title ?? Self.site(of: page.url)
+            let info = try await Self.info(for: page, from: ytdlp)
             let versions = YTDLPVersions.versions(of: info, page: page.url)
             return .found([Candidate(
-                label: label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
+                label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
             )])
         } catch ToolInstaller.Failure.changed {
             return .toolsChanged
+        } catch let failure as YTDLPFailure {
+            switch failure {
+            case .needsSignIn: return .needsSignIn
+            case .protected: return .found([Candidate(label: label, versions: [], restriction: .protected)])
+            default: return .ytdlpFailed(failure)
+            }
         } catch {
-            return .found([])
+            return .ytdlpFailed(.extractorBroken)
+        }
+    }
+
+    private static func info(for page: SentPage, from ytdlp: YTDLPRunner) async throws -> MediaInfo {
+        do {
+            return try await ytdlp.info(for: page.url)
+        } catch let failure as YTDLPFailure where (failure == .needsSignIn || failure == .private) && !page.cookies.isEmpty {
+            return try await ytdlp.info(for: page.url, cookies: page.cookies)
         }
     }
 
@@ -943,7 +957,7 @@ private extension PageAnalysis {
         case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
         case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
         case .checkingForMore(let candidates): return .checkingForMore(candidates.map { $0.requested(by: agent) })
-        case .playing, .needsSignIn, .blocked, .plainFile, .needsTools, .toolsChanged: return self
+        case .playing, .needsSignIn, .blocked, .plainFile, .needsTools, .toolsChanged, .ytdlpFailed: return self
         }
     }
 }

@@ -212,4 +212,5 @@ public enum PageAnalysis: Equatable, Sendable {
     case found([Candidate])
     case needsTools
     case toolsChanged
+    case ytdlpFailed(YTDLPFailure)
 }

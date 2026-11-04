@@ -16,6 +16,7 @@ public struct SentPageDraft: Equatable, Sendable {
         case declinedTools
         case couldntInstallTools
         case toolsChanged
+        case ytdlpFailed(YTDLPFailure)
 
         public var isAboutTools: Bool {
             [.needsTools, .installingTools, .declinedTools, .couldntInstallTools, .toolsChanged].contains(self)
@@ -101,6 +102,10 @@ public struct SentPageDraft: Equatable, Sendable {
             candidates = []
             phase = .toolsChanged
             return nil
+        case .ytdlpFailed(let failure):
+            candidates = []
+            phase = .ytdlpFailed(failure)
+            return nil
         case .found(let found):
             show(found)
             return nil
@@ -174,6 +179,28 @@ public struct SentPageDraft: Equatable, Sendable {
             agree: "Download",
             decline: "Not Now"
         )
+    }
+
+    public mutating func startLookingAgain() {
+        candidates = []
+        phase = .looking
+    }
+
+    public var problem: ProblemText? {
+        guard case .ytdlpFailed(let failure) = phase else { return nil }
+        let site = YouTubeLink(page.url) != nil || host.hasSuffix("youtube.com") ? "YouTube" : "The site"
+        return switch failure {
+        case .unsupportedSite: ProblemText(sentence: "yt-dlp doesn't support this site.", action: .lookAgain)
+        case .needsSignIn: ProblemText(sentence: "This video needs you to sign in.", action: nil)
+        case .private: ProblemText(sentence: "This video is private.", action: nil)
+        case .geoBlocked: ProblemText(sentence: "This video isn't available in your country.", action: nil)
+        case .protected: ProblemText(sentence: "This video is protected.", action: nil)
+        case .rateLimited: ProblemText(sentence: "\(site) is limiting requests. Try again in a few minutes.", action: .tryAgain)
+        case .extractorBroken: ProblemText(sentence: "yt-dlp can't read this site right now. An update may fix it.", action: .checkForUpdate)
+        case .network: ProblemText(sentence: "Dowlio couldn't reach the site.", action: .tryAgain)
+        case .live: ProblemText(sentence: "This video is live. Download it after the stream ends.", action: nil)
+        case .unavailable: ProblemText(sentence: "This video isn't available any more.", action: nil)
+        }
     }
 
     public var installingLine: String { "Downloading yt-dlp and QuickJS-NG" }
@@ -390,4 +417,28 @@ public struct ToolConsentText: Equatable, Sendable {
     public var keepsUpToDate: Bool
     public var agree: String
     public var decline: String
+}
+
+public struct ProblemText: Equatable, Sendable {
+    public enum Action: Equatable, Sendable {
+        case lookAgain
+        case tryAgain
+        case checkForUpdate
+
+        public var title: String {
+            switch self {
+            case .lookAgain: "Look Again"
+            case .tryAgain: "Try Again"
+            case .checkForUpdate: "Check for Update"
+            }
+        }
+    }
+
+    public var sentence: String
+    public var action: Action?
+
+    public init(sentence: String, action: Action?) {
+        self.sentence = sentence
+        self.action = action
+    }
 }

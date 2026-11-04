@@ -64,6 +64,15 @@ public final class SentPageModel {
         }
     }
 
+    public func checkForToolUpdate() {
+        tryAgain()
+    }
+
+    public func tryAgain() {
+        draft.startLookingAgain()
+        listen(to: analyzePage(draft.page))
+    }
+
     public func declineTools() {
         draft.declineTools()
     }

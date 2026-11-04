@@ -137,6 +137,9 @@ struct NewDownloadSheet: View {
         case .blocked:
             MediaHeader(media: media)
             BlockedBody(media: media)
+        case .ytdlpFailed:
+            MediaHeader(media: media)
+            ProblemBody(media: media)
         default:
             MediaHeader(media: media)
             ToolsBody(media: media)
