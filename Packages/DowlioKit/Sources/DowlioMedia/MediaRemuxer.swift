@@ -2,6 +2,10 @@ import DowlioCore
 import Foundation
 
 public struct MediaRemuxer: Sendable {
+    public enum Error: Swift.Error, Equatable {
+        case noHelper
+    }
+
     enum Choice: Equatable {
         case avFoundation
         case ffmpeg
@@ -29,7 +33,7 @@ public struct MediaRemuxer: Sendable {
         case .avFoundation:
             do {
                 try await AVRemuxer.remux(request.tracks, to: request.output)
-            } catch where ffmpeg != nil && Self.hasUnknownCodecs(request.mediaSource) {
+            } catch where ffmpeg != nil && !Task.isCancelled && Self.hasUnknownCodecs(request.mediaSource) {
                 try await ffmpegRemuxer().remux(request)
             }
         case .ffmpeg:
@@ -38,7 +42,7 @@ public struct MediaRemuxer: Sendable {
     }
 
     private func ffmpegRemuxer() throws -> FFmpegRemuxer {
-        guard let ffmpeg else { throw AVRemuxer.Error.unreadable }
+        guard let ffmpeg else { throw Error.noHelper }
         return FFmpegRemuxer(executable: ffmpeg)
     }
 

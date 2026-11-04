@@ -105,6 +105,8 @@ check_config() {
 for arch in arm64 x86_64; do
   config="$WORK/build-$arch/config.h"
   components="$WORK/build-$arch/config_components.h"
+  [ -s "$config" ] && [ -s "$components" ] || die "configure left no config headers for $arch"
+  grep -q '^#define CONFIG_MOVTEXT_ENCODER 1$' "$components" || die "the codec check can't read $components"
   check_config "$config" '^#define CONFIG_(GPL|NONFREE|VERSION3) '
   allowed='^#define CONFIG_(MOVTEXT|SRT|SUBRIP|WEBVTT)_(EN|DE)CODER '
   enabled_codecs="$(grep -E '^#define CONFIG_[A-Z0-9_]+_(EN|DE)CODER 1$' "$components" | grep -Ev "$allowed" || true)"

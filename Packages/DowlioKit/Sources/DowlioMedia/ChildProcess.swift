@@ -10,20 +10,16 @@ struct ChildProcess {
         var errorText: String { String(decoding: errorOutput, as: UTF8.self) }
     }
 
-    enum Failure: Error, Equatable {
-        case couldNotStart(String)
+    struct CouldNotStart: Error, Equatable {
+        var reason: String
     }
 
     static var environment: [String: String] {
         ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()]
     }
 
-    static func run(
-        _ executable: URL,
-        _ arguments: [String],
-        timeout: Duration,
-        onOutputLine: (@Sendable (String) -> Void)? = nil
-    ) async throws -> Result {
+    static func run(_ executable: URL, _ arguments: [String], timeout: Duration) async throws -> Result {
+        try Task.checkCancellation()
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
@@ -34,9 +30,16 @@ struct ChildProcess {
         process.standardOutput = output
         process.standardError = errors
         process.standardInput = FileHandle.nullDevice
-        let collected = Collected(onOutputLine: onOutputLine)
-        output.fileHandleForReading.readabilityHandler = { handle in collected.addOutput(handle.availableData) }
-        errors.fileHandleForReading.readabilityHandler = { handle in collected.addErrors(handle.availableData) }
+        let run = RunState()
+        output.fileHandleForReading.readabilityHandler = { handle in run.addOutput(handle.availableData) }
+        errors.fileHandleForReading.readabilityHandler = { handle in run.addErrors(handle.availableData) }
+        let watchdog = Task.detached {
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            run.markTimedOut()
+            stop(process)
+        }
+        defer { watchdog.cancel() }
 
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
@@ -45,28 +48,21 @@ struct ChildProcess {
                     try process.run()
                 } catch {
                     process.terminationHandler = nil
-                    continuation.resume(throwing: Failure.couldNotStart(error.localizedDescription))
+                    continuation.resume(throwing: CouldNotStart(reason: error.localizedDescription))
                     return
                 }
-                let watchdog = Task.detached {
-                    try? await Task.sleep(for: timeout)
-                    guard process.isRunning else { return }
-                    collected.markTimedOut()
-                    stop(process)
-                }
-                collected.keep(watchdog)
+                if run.isCancelled { stop(process) }
             }
         } onCancel: {
+            run.markCancelled()
             stop(process)
         }
-        collected.cancelWatchdog()
         output.fileHandleForReading.readabilityHandler = nil
         errors.fileHandleForReading.readabilityHandler = nil
-        collected.addOutput(output.fileHandleForReading.readDataToEndOfFile())
-        collected.addErrors(errors.fileHandleForReading.readDataToEndOfFile())
-        collected.flushLine()
+        run.addOutput(output.fileHandleForReading.readDataToEndOfFile())
+        run.addErrors(errors.fileHandleForReading.readDataToEndOfFile())
         try Task.checkCancellation()
-        return collected.result(status: status)
+        return run.result(status: status)
     }
 
     private static func stop(_ process: Process) {
@@ -79,43 +75,18 @@ struct ChildProcess {
     }
 }
 
-private final class Collected: @unchecked Sendable {
+private final class RunState: @unchecked Sendable {
     private let lock = NSLock()
     private var output = Data()
     private var errors = Data()
-    private var pendingLine = Data()
     private var timedOut = false
-    private var watchdog: Task<Void, Never>?
-    private let onOutputLine: (@Sendable (String) -> Void)?
+    private var cancelled = false
 
-    init(onOutputLine: (@Sendable (String) -> Void)?) {
-        self.onOutputLine = onOutputLine
-    }
+    var isCancelled: Bool { lock.withLock { cancelled } }
 
     func addOutput(_ data: Data) {
         guard !data.isEmpty else { return }
-        let lines: [String] = lock.withLock {
-            output.append(data)
-            guard onOutputLine != nil else { return [] }
-            pendingLine.append(data)
-            var found: [String] = []
-            while let end = pendingLine.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
-                let line = pendingLine[pendingLine.startIndex..<end]
-                pendingLine = Data(pendingLine[pendingLine.index(after: end)...])
-                if !line.isEmpty { found.append(String(decoding: line, as: UTF8.self)) }
-            }
-            return found
-        }
-        lines.forEach { onOutputLine?($0) }
-    }
-
-    func flushLine() {
-        let line: String? = lock.withLock {
-            guard !pendingLine.isEmpty else { return nil }
-            defer { pendingLine = Data() }
-            return String(decoding: pendingLine, as: UTF8.self)
-        }
-        if let line { onOutputLine?(line) }
+        lock.withLock { output.append(data) }
     }
 
     func addErrors(_ data: Data) {
@@ -127,12 +98,8 @@ private final class Collected: @unchecked Sendable {
         lock.withLock { timedOut = true }
     }
 
-    func keep(_ task: Task<Void, Never>) {
-        lock.withLock { watchdog = task }
-    }
-
-    func cancelWatchdog() {
-        lock.withLock { watchdog }?.cancel()
+    func markCancelled() {
+        lock.withLock { cancelled = true }
     }
 
     func result(status: Int32) -> ChildProcess.Result {

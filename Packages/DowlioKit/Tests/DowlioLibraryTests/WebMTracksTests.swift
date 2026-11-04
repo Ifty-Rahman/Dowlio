@@ -41,9 +41,9 @@ struct WebMTracksTests {
         #expect(abs((file.duration ?? 0) - 3) < 0.3)
     }
 
-    @Test func h264WithAACStillJoinsWithoutTheHelper() async throws {
+    @Test func h264WithAACJoinsThroughAVFoundationEvenWithAHelper() async throws {
         let server = try await TestServer()
-        let fixture = try await LibraryFixture(remux: MediaRemuxer(ffmpeg: nil).remux)
+        let fixture = try await LibraryFixture(remux: MediaRemuxer(ffmpeg: URL(fileURLWithPath: "/usr/bin/false")).remux)
         let media = try MediaSource(tracks: [
             track(.video, "track-h264.mp4", codecs: ["avc1.64000c"], on: server),
             track(.audio, "track-aac.m4a", codecs: ["mp4a.40.2"], on: server),

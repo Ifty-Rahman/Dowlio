@@ -56,7 +56,7 @@ public struct MediaSource: Codable, Equatable, Sendable {
 
     public var fileExtension: String { outputContainer.rawValue }
 
-    public var contentType: String { isAudio && outputContainer == .webm ? "audio/webm" : outputContainer.contentType }
+    public var contentType: String { outputContainer.contentType(isAudio: isAudio) }
 
     public var extractsAudio: Bool {
         keepsAudioOnly && tracks.contains { $0.kind != .audio }
@@ -72,11 +72,19 @@ public enum MediaContainer: String, Codable, Sendable {
     case m4a
     case webm
 
-    public var contentType: String {
+    public var displayName: String {
+        switch self {
+        case .mp4: "MP4"
+        case .m4a: "M4A"
+        case .webm: "WebM"
+        }
+    }
+
+    public func contentType(isAudio: Bool) -> String {
         switch self {
         case .mp4: "video/mp4"
         case .m4a: "audio/mp4"
-        case .webm: "video/webm"
+        case .webm: isAudio ? "audio/webm" : "video/webm"
         }
     }
 }
