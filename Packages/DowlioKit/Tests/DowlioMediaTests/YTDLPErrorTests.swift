@@ -42,7 +42,39 @@ struct YTDLPErrorTests {
     func eachFailureMapsToItsState(fixture: String, expected: PageAnalysis) async throws {
         let standIn = try await YTDLPStandIn.failing(with: fixture)
 
-        #expect(try await analyze(SentPage(url: watch), with: standIn) == expected)
+        let found = try await analyze(SentPage(url: watch), with: standIn)
+        #expect(found == expected, "got \(found) from \(standIn.arguments)")
+    }
+
+    @Test func everythingYTDLPPrintsIsReadEvenWhenManyRunsEndAtOnce() async throws {
+        let json = YTDLPStandIn.fixture("video-4k.json").path
+        let error = YTDLPStandIn.errorText("unsupportedSite").path
+        let standIn = try await YTDLPStandIn.install(script: """
+            case "$*" in
+              *watch*) cat '\(json)' ;;
+              *) cat '\(error)' >&2; exit 1 ;;
+            esac
+            """)
+        let runner = YTDLPRunner(installer: standIn.installer, cookieFolder: cookieFolder)
+
+        let outcomes = await withTaskGroup(of: Bool.self) { group in
+            for index in 0..<40 {
+                group.addTask {
+                    if index.isMultiple(of: 2) {
+                        return (try? await runner.info(for: watch))?.formats.isEmpty == false
+                    }
+                    do {
+                        _ = try await runner.info(for: URL(string: "https://example.com/page")!)
+                        return false
+                    } catch {
+                        return error as? YTDLPFailure == .unsupportedSite
+                    }
+                }
+            }
+            return await group.reduce(into: [Bool]()) { $0.append($1) }
+        }
+
+        #expect(outcomes.filter { !$0 }.isEmpty)
     }
 
     @Test func aBrokenSiteChecksForAnUpdateFirstAndRunsTheNewYTDLPOnce() async throws {
