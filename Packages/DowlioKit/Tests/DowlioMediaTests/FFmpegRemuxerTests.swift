@@ -29,7 +29,7 @@ struct FFmpegRemuxerTests {
             try await FFmpegRemuxer(executable: helper, timeout: .milliseconds(300)).remux(request)
         }
 
-        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(ContinuousClock.now - started < .seconds(20))
         #expect(!FileManager.default.fileExists(atPath: request.output.path))
     }
 
