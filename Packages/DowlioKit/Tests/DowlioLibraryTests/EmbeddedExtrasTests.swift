@@ -90,4 +90,64 @@ struct EmbeddedExtrasTests {
         #expect(row.state == .completed)
         #expect(try TestFFmpeg.describe(file).streams == ["video:h264", "audio:aac"])
     }
+
+    private let chapters = [
+        MediaExtras.Chapter(start: 0, end: 1.5, title: "Hello; and = welcome"),
+        MediaExtras.Chapter(start: 1.5, end: 3, title: "Goodbye"),
+    ]
+
+    @Test func anMP4CarriesItsChaptersAndCoverArt() async throws {
+        let server = try await TestServer()
+        let media = try MediaSource(
+            tracks: [
+                MediaTrack(kind: .video, fragments: [MediaFragment(url: try serve("track-h264.mp4", on: server))], codecs: ["avc1.64000c"]),
+                MediaTrack(kind: .audio, fragments: [MediaFragment(url: try serve("track-aac.m4a", on: server))], codecs: ["mp4a.40.2"]),
+            ],
+            container: .mp4,
+            extras: MediaExtras(chapters: chapters, coverArt: try serve("cover.jpg", on: server))
+        )
+
+        let (row, file) = try await download(media, named: "Clip.mp4")
+
+        #expect(row.state == .completed)
+        let described = try TestFFmpeg.describe(file)
+        #expect(described.chapters == 2)
+        #expect(described.hasCoverArt)
+        #expect(described.streams == ["video:h264", "audio:aac", "video:mjpeg"])
+    }
+
+    @Test func anM4ACarriesItsCoverArt() async throws {
+        let server = try await TestServer()
+        let media = try MediaSource(
+            tracks: [MediaTrack(kind: .audio, fragments: [MediaFragment(url: try serve("track-aac.m4a", on: server))], codecs: ["mp4a.40.2"])],
+            container: .m4a,
+            extras: MediaExtras(coverArt: try serve("cover.jpg", on: server))
+        )
+
+        let (row, file) = try await download(media, named: "Song.m4a")
+
+        #expect(row.state == .completed)
+        let described = try TestFFmpeg.describe(file)
+        #expect(described.hasCoverArt)
+        #expect(described.streams == ["audio:aac", "video:mjpeg"])
+    }
+
+    @Test func aWebMCarriesItsChapters() async throws {
+        let server = try await TestServer()
+        let media = try MediaSource(
+            tracks: [
+                MediaTrack(kind: .video, fragments: [MediaFragment(url: try serve("track-vp9.webm", on: server))], codecs: ["vp9"]),
+                MediaTrack(kind: .audio, fragments: [MediaFragment(url: try serve("track-opus.webm", on: server))], codecs: ["opus"]),
+            ],
+            container: .webm,
+            extras: MediaExtras(chapters: chapters)
+        )
+
+        let (row, file) = try await download(media, named: "Clip.webm")
+
+        #expect(row.state == .completed)
+        let described = try TestFFmpeg.describe(file)
+        #expect(described.chapters == 2)
+        #expect(described.streams == ["video:vp9", "audio:opus"])
+    }
 }

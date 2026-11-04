@@ -184,11 +184,50 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public var subtitles: [String: [TextTrack]]
     public var automaticCaptions: [String: [TextTrack]]
     public var chapters: [Chapter]
+    public var thumbnails: [Thumbnail]
+
+    public struct Thumbnail: Decodable, Equatable, Sendable {
+        public var url: URL
+        public var preference: Int?
+        public var width: Int?
+
+        enum CodingKeys: String, CodingKey { case url, preference, width }
+
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            guard let url = URL(string: try values.decode(String.self, forKey: .url)) else {
+                throw DecodingError.dataCorruptedError(forKey: .url, in: values, debugDescription: "not a URL")
+            }
+            self.url = url
+            preference = try? values.decodeIfPresent(Int.self, forKey: .preference)
+            width = try? values.decodeIfPresent(Int.self, forKey: .width)
+        }
+    }
+
+    public var coverArt: URL? {
+        if let thumbnail, Self.isStill(thumbnail) { return thumbnail }
+        if let thumbnail, let jpeg = Self.youTubeJPEG(for: thumbnail) { return jpeg }
+        let stills = thumbnails.filter { Self.isStill($0.url) }.sorted { ($0.preference ?? 0, $0.width ?? 0) > ($1.preference ?? 0, $1.width ?? 0) }
+        return stills.first?.url
+    }
+
+    private static func isStill(_ url: URL) -> Bool {
+        ["jpg", "jpeg", "png"].contains(url.pathExtension.lowercased())
+    }
+
+    private static func youTubeJPEG(for url: URL) -> URL? {
+        guard url.host(percentEncoded: false)?.lowercased().hasSuffix("ytimg.com") == true, url.pathExtension.lowercased() == "webp",
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.path = components.path.replacingOccurrences(of: "/vi_webp/", with: "/vi/")
+        components.path = String(components.path.dropLast("webp".count)) + "jpg"
+        components.query = nil
+        return components.url
+    }
 
     public var isLiveNow: Bool { liveStatus == "is_live" || liveStatus == "is_upcoming" }
 
     enum CodingKeys: String, CodingKey {
-        case title, thumbnail, duration, formats, subtitles, chapters
+        case title, thumbnail, duration, formats, subtitles, chapters, thumbnails
         case liveStatus = "live_status"
         case webpageURL = "webpage_url"
         case automaticCaptions = "automatic_captions"
@@ -205,6 +244,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         subtitles = (try? values.decodeIfPresent([String: [TextTrack]].self, forKey: .subtitles)) ?? [:]
         automaticCaptions = (try? values.decodeIfPresent([String: [TextTrack]].self, forKey: .automaticCaptions)) ?? [:]
         chapters = ((try? values.decodeIfPresent([Lenient<Chapter>].self, forKey: .chapters)) ?? []).compactMap(\.value)
+        thumbnails = ((try? values.decodeIfPresent([Lenient<Thumbnail>].self, forKey: .thumbnails)) ?? []).compactMap(\.value)
     }
 }
 

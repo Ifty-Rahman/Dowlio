@@ -230,10 +230,11 @@ public struct PageAnalyzer: Sendable {
         do {
             let info = try await Self.infoRetryingWithSignIn(for: page, from: ytdlp)
             let playlists = await playlists(neededBy: info, on: page)
+            let chapters = info.chapters.map { MediaExtras.Chapter(start: $0.start, end: $0.end, title: $0.title) }
             let versions = Self.withExtras(
                 YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1, playlists: playlists),
-                video: MediaExtras(subtitles: SubtitleSelection.choose(info, for: subtitles())),
-                audio: MediaExtras()
+                video: MediaExtras(subtitles: SubtitleSelection.choose(info, for: subtitles()), chapters: chapters, coverArt: info.coverArt),
+                audio: MediaExtras(coverArt: info.coverArt)
             )
             return .found([Candidate(
                 label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
@@ -281,8 +282,10 @@ public struct PageAnalyzer: Sendable {
     private static func withExtras(_ versions: [Version], video: MediaExtras, audio: MediaExtras) -> [Version] {
         versions.map { version in
             guard case .media(let media) = version.source else { return version }
+            var extras = media.isAudio ? audio : video
+            if media.outputContainer == .webm { extras.coverArt = nil }
             var withExtras = version
-            withExtras.source = .media(media.with(extras: media.isAudio ? audio : video))
+            withExtras.source = .media(media.with(extras: extras))
             return withExtras
         }
     }

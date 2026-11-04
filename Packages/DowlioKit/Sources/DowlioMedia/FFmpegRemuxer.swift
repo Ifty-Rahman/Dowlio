@@ -1,5 +1,6 @@
 import DowlioCore
 import Foundation
+import ImageIO
 import os
 
 public struct FFmpegRemuxer: Sendable {
@@ -42,7 +43,7 @@ public struct FFmpegRemuxer: Sendable {
         let media = request.mediaSource
         let container = media.outputContainer
         let subtitles = media.isAudio ? [] : request.subtitles
-        let cover = container == .webm ? nil : request.coverArt
+        let cover = container == .webm ? nil : request.coverArt.flatMap { file in Self.imageSize(of: file).map { (file, $0) } }
         var arguments = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
         var inputs = 0
         for track in request.tracks {
@@ -55,8 +56,8 @@ public struct FFmpegRemuxer: Sendable {
             inputs += 1
         }
         let coverInput = cover.map { _ in inputs }
-        if let cover {
-            arguments += ["-i", cover.path]
+        if let (file, size) = cover {
+            arguments += ["-video_size", "\(size.width)x\(size.height)", "-i", file.path]
             inputs += 1
         }
         let chaptersInput = chapters.map { _ in inputs }
@@ -86,6 +87,15 @@ public struct FFmpegRemuxer: Sendable {
         arguments += ["-f", container.ffmpegFormat]
         arguments.append(request.output.path)
         return arguments
+    }
+
+    static func imageSize(of file: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let type = CGImageSourceGetType(source) as String?, ["public.jpeg", "public.png"].contains(type),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        return (width, height)
     }
 
     static func languageTag(_ code: String) -> String {
