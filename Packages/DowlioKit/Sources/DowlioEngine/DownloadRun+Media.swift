@@ -166,6 +166,7 @@ extension DownloadRun {
             $0.state = .finalizing
         }
         output = await addingExtras(to: output, of: plan)
+        try Task.checkCancellation()
         let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int64) ?? nil
         let finished = try plan.partial.finish(
             named: plan.fileName, in: plan.partial.packageURL.deletingLastPathComponent(),
@@ -187,13 +188,14 @@ extension DownloadRun {
     private func addingExtras(to output: URL, of plan: MediaPlan) async -> URL {
         guard plan.media.extras != nil, let remux = configuration.remux else { return output }
         let extras = await fetchExtras(of: plan)
-        let chapters = plan.media.extras?.chapters ?? []
-        guard !extras.subtitles.isEmpty || !chapters.isEmpty || extras.coverArt != nil else { return output }
         let joined = plan.partial.packageURL.appending(path: "with-extras.\(output.pathExtension)")
+        let request = RemuxRequest(
+            tracks: [output], output: joined, mediaSource: plan.media, subtitles: extras.subtitles,
+            chapters: plan.media.extras?.chapters ?? [], coverArt: extras.coverArt
+        )
+        guard request.hasExtras, !Task.isCancelled else { return output }
         do {
-            try await remux(RemuxRequest(
-                tracks: [output], output: joined, mediaSource: plan.media, subtitles: extras.subtitles, chapters: chapters, coverArt: extras.coverArt
-            ))
+            try await remux(request)
             return joined
         } catch {
             return output
@@ -405,11 +407,18 @@ extension DownloadRun {
         let output = plan.partial.packageURL.appending(path: "output.\(plan.media.fileExtension)")
         let extras = await fetchExtras(of: plan)
         try Task.checkCancellation()
+        let request = RemuxRequest(
+            tracks: joined, output: output, mediaSource: plan.media, subtitles: extras.subtitles,
+            chapters: plan.media.extras?.chapters ?? [], coverArt: extras.coverArt
+        )
         do {
-            try await remux(RemuxRequest(
-                tracks: joined, output: output, mediaSource: plan.media, subtitles: extras.subtitles,
-                chapters: plan.media.extras?.chapters ?? [], coverArt: extras.coverArt
-            ))
+            try await remux(request)
+        } catch where request.hasExtras && !Task.isCancelled {
+            do {
+                try await remux(RemuxRequest(tracks: joined, output: output, mediaSource: plan.media.with(extras: nil)))
+            } catch {
+                throw DownloadError.mediaUnplayable
+            }
         } catch {
             throw DownloadError.mediaUnplayable
         }

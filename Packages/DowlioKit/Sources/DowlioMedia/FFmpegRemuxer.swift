@@ -78,7 +78,7 @@ public struct FFmpegRemuxer: Sendable {
             arguments += ["-metadata:s:s:\(offset)", "language=\(languageTag(subtitle.language))", "-metadata:s:s:\(offset)", "title=\(subtitle.name)"]
         }
         if coverInput != nil {
-            let videoStreams = media.isAudio ? 0 : request.tracks.count
+            let videoStreams = media.isAudio ? 0 : media.tracks.prefix(request.tracks.count).filter { $0.kind != .audio }.count
             arguments += ["-disposition:v:\(videoStreams)", "attached_pic"]
         }
         if let chaptersInput { arguments += ["-map_chapters", String(chaptersInput)] }

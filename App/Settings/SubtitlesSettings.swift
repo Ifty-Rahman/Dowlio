@@ -18,11 +18,16 @@ struct SubtitlesSection: View {
             }
             ForEach(languages, id: \.self) { code in
                 LabeledContent(Self.name(of: code)) {
-                    Button("Remove", systemImage: "minus.circle") { remove(code) }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .disabled(languages.count == 1)
-                        .help("Remove \(Self.name(of: code))")
+                    HStack(spacing: DowlioDesign.Spacing.sm) {
+                        Button("Move Up", systemImage: "arrow.up") { moveUp(code) }
+                            .disabled(languages.first == code)
+                            .help("Prefer \(Self.name(of: code)) over the language above it")
+                        Button("Remove", systemImage: "minus.circle") { remove(code) }
+                            .disabled(languages.count == 1)
+                            .help("Remove \(Self.name(of: code))")
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
                 }
                 .disabled(!downloads)
             }
@@ -42,10 +47,17 @@ struct SubtitlesSection: View {
         } header: {
             Text("Subtitles")
         }
+        .onAppear { languages = UserDefaults.standard.subtitlePreference.languages }
+    }
+
+    private func moveUp(_ code: String) {
+        guard let index = languages.firstIndex(of: code), index > 0 else { return }
+        languages.swapAt(index, index - 1)
+        save()
     }
 
     private static let choices: [String] = {
-        let codes = Locale.LanguageCode.isoLanguageCodes.map(\.identifier).filter { $0.count == 2 }
+        let codes = Set(Locale.LanguageCode.isoLanguageCodes.map(\.identifier).filter { $0.count == 2 } + SubtitlePreference.macLanguages)
         return codes.sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }
     }()
 
