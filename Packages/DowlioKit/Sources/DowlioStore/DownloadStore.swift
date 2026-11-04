@@ -56,6 +56,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
     public var originKind: String?
     public var originBrowser: String?
     public var mediaSource: MediaSource?
+    public var requestSizeLimit: Int64?
 
     public var source: DownloadSource {
         mediaSource.map(DownloadSource.media) ?? .file(sourceURL)
@@ -116,6 +117,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         userAgent = options.userAgent
         requestOrigin = options.origin
         maximumFailures = options.maximumFailures
+        requestSizeLimit = options.requestSizeLimit
         usedCookies = options.cookies.isEmpty && options.browserRequest == nil ? nil : true
     }
 
@@ -135,6 +137,7 @@ public struct StoredDownload: Codable, Equatable, Sendable, FetchableRecord, Per
         options.maximumFailures = maximumFailures
         options.fileName = chosenName
         options.allowsWorkStealing = allowsWorkStealing ?? true
+        options.requestSizeLimit = requestSizeLimit
         return options
     }
 }
@@ -253,6 +256,11 @@ public final class DownloadStore: Sendable {
         migrator.registerMigration("request origin") { db in
             try db.alter(table: StoredDownload.databaseTableName) { table in
                 table.add(column: "requestOrigin", .text)
+            }
+        }
+        migrator.registerMigration("request size limit") { db in
+            try db.alter(table: StoredDownload.databaseTableName) { table in
+                table.add(column: "requestSizeLimit", .integer)
             }
         }
         return migrator

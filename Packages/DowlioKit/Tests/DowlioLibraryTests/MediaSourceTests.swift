@@ -1,5 +1,6 @@
 import DowlioCore
 import DowlioLibrary
+import DowlioStore
 import Foundation
 import Testing
 
@@ -24,6 +25,40 @@ struct MediaSourceTests {
         #expect(restored.state == .paused)
         #expect(restored.sourceURL == URL(string: "https://cdn.example/clip/video.mp4"))
         #expect(failed.host == "cdn.example")
+    }
+
+    @Test func historyKeepsAMediaDownloadsContainerExpiryRenewalAndRequestSizeLimit() async throws {
+        let expiry = Date(timeIntervalSince1970: 1_793_799_948)
+        let renewable = try MediaSource(
+            tracks: media.tracks, container: .webm, expiry: expiry,
+            renewal: MediaRenewal(pageURL: URL(string: "https://www.youtube.com/watch?v=aqz-KE-bpKQ")!, formatIDs: ["315", "251"])
+        )
+        var options = RequestOptions()
+        options.requestSizeLimit = 10_485_760
+        let fixture = try await LibraryFixture()
+        let id = await fixture.library.add(
+            .media(renewable), destination: .folder(fixture.folder), options: options, startImmediately: false
+        )
+        _ = try await fixture.library.row(id) { _ in true }
+
+        let stored = try DownloadStore(databaseAt: fixture.databaseURL).all().first { $0.id == id.rawValue }
+
+        #expect(stored?.source == .media(renewable))
+        #expect(stored?.mediaSource?.container == .webm)
+        #expect(stored?.mediaSource?.expiry == expiry)
+        #expect(stored?.mediaSource?.renewal?.formatIDs == ["315", "251"])
+        #expect(stored?.options.requestSizeLimit == 10_485_760)
+    }
+
+    @Test func aMediaSourceSavedBeforePhaseSixReadsWithNoContainerExpiryOrRenewal() throws {
+        let saved = Data(#"{"tracks":[{"kind":"video","fragments":[{"url":"https://cdn.example/v.mp4"}]}],"keepsAudioOnly":false}"#.utf8)
+
+        let read = try JSONDecoder().decode(MediaSource.self, from: saved)
+
+        #expect(read.container == nil)
+        #expect(read.expiry == nil)
+        #expect(read.renewal == nil)
+        #expect(read.fileExtension == "mp4")
     }
 
     @Test func retryingAFailedMediaDownloadDoesntHoldADownloadSlot() async throws {

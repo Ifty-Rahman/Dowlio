@@ -158,6 +158,10 @@ public struct Version: Equatable, Sendable {
     public var referrer: URL?
     public var origin: String?
     public var userAgent: String?
+    /// The Version only exists in HDR at its height.
+    public var isHDR: Bool
+    /// The most one request may ask for, which the download's options carry.
+    public var requestSizeLimit: Int64?
 
     public init(
         source: DownloadSource,
@@ -169,8 +173,12 @@ public struct Version: Equatable, Sendable {
         language: String? = nil,
         referrer: URL? = nil,
         origin: String? = nil,
-        userAgent: String? = nil
+        userAgent: String? = nil,
+        isHDR: Bool = false,
+        requestSizeLimit: Int64? = nil
     ) {
+        self.isHDR = isHDR
+        self.requestSizeLimit = requestSizeLimit
         self.source = source
         self.contentType = contentType
         self.totalBytes = totalBytes
@@ -182,6 +190,17 @@ public struct Version: Equatable, Sendable {
         self.origin = origin
         self.userAgent = userAgent
     }
+
+    private var media: MediaSource? {
+        if case .media(let media) = source { media } else { nil }
+    }
+
+    /// The finished file's container, for Versions whose tracks Dowlio joins.
+    public var outputContainer: MediaContainer? { media?.outputContainer }
+
+    public var expiry: Date? { media?.expiry }
+
+    public var renewal: MediaRenewal? { media?.renewal }
 }
 
 public enum PageAnalysis: Equatable, Sendable {

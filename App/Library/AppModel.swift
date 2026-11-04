@@ -64,7 +64,7 @@ final class AppModel {
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let library = Library(engine: DownloadEngine(remux: AVRemuxer.remux, identity: { BrowserIdentity.standard }), store: store)
+            let library = Library(engine: DownloadEngine(remux: MediaRemuxer.remux, identity: { BrowserIdentity.standard }), store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
         } catch {
@@ -408,6 +408,7 @@ final class AppModel {
                 var options = settings.options(connections: chosen.connections)
                 options.referrer = chosen.referrer ?? version.referrer ?? page.url
                 options.origin = version.origin
+                options.requestSizeLimit = version.requestSizeLimit
                 options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
                 options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: version.source.url, from: page.url)
                 options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)

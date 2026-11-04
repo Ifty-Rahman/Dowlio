@@ -226,7 +226,7 @@ extension DownloadRun {
         let joined = try join(plan)
         let output = plan.partial.packageURL.appending(path: "output.\(plan.media.fileExtension)")
         do {
-            try await remux(joined, output)
+            try await remux(RemuxRequest(tracks: joined, output: output, media: plan.media))
         } catch {
             throw DownloadError.mediaUnplayable
         }
@@ -294,7 +294,8 @@ extension DownloadRun {
             layout: nil,
             nameConflictPolicy: options.nameConflictPolicy,
             mediaSource: plan.media,
-            finishedFragments: plan.finishedPositions
+            finishedFragments: plan.finishedPositions,
+            requestSizeLimit: options.requestSizeLimit
         )
         try? plan.partial.saveManifest(manifest)
     }

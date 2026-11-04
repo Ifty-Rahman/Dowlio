@@ -5,6 +5,7 @@ import Foundation
 /// partial file is self-contained (architecture.md, files on disk). It never holds cookies.
 struct PartialFileManifest: Codable, Equatable, Sendable {
     /// Format 2 added `layout`, format 3 `nameConflictPolicy`, format 4 `mediaSource` and `finishedFragments`.
+    /// `requestSizeLimit` is optional and older versions ignore it, so it didn't need a new format.
     static let currentFormatVersion = 4
     /// The oldest format this version still reads.
     static let oldestReadableFormatVersion = 1
@@ -38,6 +39,7 @@ struct PartialFileManifest: Codable, Equatable, Sendable {
     var nameConflictPolicy: NameConflictPolicy?
     var mediaSource: MediaSource?
     var finishedFragments: [FragmentPosition]?
+    var requestSizeLimit: Int64?
 
     /// Whether every segment lies inside the file, after the one before it, and holds no more
     /// bytes than its own length. A manifest without a size has no segments.
