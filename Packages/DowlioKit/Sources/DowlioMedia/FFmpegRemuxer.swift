@@ -112,9 +112,14 @@ public struct FFmpegRemuxer: Sendable {
             }
             return out
         }
+        let usable = request.chapters.filter { $0.end > $0.start && $0.start >= 0 }
+        guard !usable.isEmpty else { return nil }
         var text = ";FFMETADATA1\n"
-        for chapter in request.chapters {
-            text += "[CHAPTER]\nTIMEBASE=1/1000\nSTART=\(Int(chapter.start * 1000))\nEND=\(Int(chapter.end * 1000))\ntitle=\(escaped(chapter.title))\n"
+        for (index, chapter) in usable.enumerated() {
+            let title = chapter.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let start = Int((chapter.start * 1000).rounded())
+            let end = Int((chapter.end * 1000).rounded())
+            text += "[CHAPTER]\nTIMEBASE=1/1000\nSTART=\(start)\nEND=\(end)\ntitle=\(escaped(title.isEmpty ? "Chapter \(index + 1)" : title))\n"
         }
         let file = request.output.deletingLastPathComponent().appending(path: "chapters-\(UUID().uuidString).txt")
         try text.write(to: file, atomically: true, encoding: .utf8)

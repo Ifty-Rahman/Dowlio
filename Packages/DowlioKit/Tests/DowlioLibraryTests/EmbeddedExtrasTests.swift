@@ -3,6 +3,8 @@ import DowlioLibrary
 import DowlioMedia
 import DowlioTestSupport
 import Foundation
+import ImageIO
+import CoreGraphics
 import Testing
 
 @Suite(.timeLimit(.minutes(1)), .enabled(if: TestFFmpeg.isAvailable))
@@ -149,5 +151,31 @@ struct EmbeddedExtrasTests {
         let described = try TestFFmpeg.describe(file)
         #expect(described.chapters == 2)
         #expect(described.streams == ["video:vp9", "audio:opus"])
+    }
+
+    @Test func aPNGCoverAndChaptersWithoutTitlesStillGoIn() async throws {
+        let server = try await TestServer()
+        let png = FileManager.default.temporaryDirectory.appending(path: "cover-\(UUID().uuidString).png")
+        let image = CGImage(
+            width: 4, height: 4, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 16, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: Data(repeating: 200, count: 64) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )!
+        let destination = CGImageDestinationCreateWithURL(png as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+        server.serve(TestServer.File(data: try Data(contentsOf: png)), at: "/cover.png")
+        let media = try MediaSource(
+            tracks: [MediaTrack(kind: .audio, fragments: [MediaFragment(url: try serve("track-aac.m4a", on: server))], codecs: ["mp4a.40.2"])],
+            container: .m4a,
+            extras: MediaExtras(chapters: [MediaExtras.Chapter(start: 0, end: 1.25, title: " "), MediaExtras.Chapter(start: 2, end: 1, title: "Broken")], coverArt: server.url(for: "/cover.png"))
+        )
+
+        let (row, file) = try await download(media, named: "Song.m4a")
+
+        #expect(row.state == .completed)
+        let described = try TestFFmpeg.describe(file)
+        #expect(described.streams == ["audio:aac", "video:png"])
+        #expect(described.hasCoverArt)
     }
 }

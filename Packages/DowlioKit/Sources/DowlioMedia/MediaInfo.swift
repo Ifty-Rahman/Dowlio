@@ -216,7 +216,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     }
 
     private static func youTubeJPEG(for url: URL) -> URL? {
-        guard url.host(percentEncoded: false)?.lowercased().hasSuffix("ytimg.com") == true, url.pathExtension.lowercased() == "webp",
+        guard let host = url.host(percentEncoded: false)?.lowercased(), host == "ytimg.com" || host.hasSuffix(".ytimg.com"),
+              url.pathExtension.lowercased() == "webp",
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         components.path = components.path.replacingOccurrences(of: "/vi_webp/", with: "/vi/")
         components.path = String(components.path.dropLast("webp".count)) + "jpg"

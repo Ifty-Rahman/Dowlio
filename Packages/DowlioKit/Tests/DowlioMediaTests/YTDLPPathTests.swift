@@ -95,4 +95,20 @@ struct YTDLPPathTests {
             return !source.downloadsWithYTDLP && source.tracks.allSatisfy { $0.fragments.count == 1 }
         })
     }
+
+    @Test func anAudioOnlyVersionYTDLPDownloadsItselfStaysAudio() async throws {
+        let json = """
+            {"title": "Song", "formats": [
+              {"format_id": "140", "vcodec": "none", "acodec": "mp4a.40.2", "protocol": "sabr"}
+            ]}
+            """
+
+        let video = try await candidate(printing: json)
+
+        let audio = try #require(video.versions.first)
+        let source = try media(audio)
+        #expect(source.downloadsWithYTDLP)
+        #expect(source.isAudio)
+        #expect(audio.outputContainer == .m4a)
+    }
 }

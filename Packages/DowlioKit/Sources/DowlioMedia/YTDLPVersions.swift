@@ -157,7 +157,8 @@ enum YTDLPVersions {
                   let built = try? MediaSource(tracks: tracks, container: container, expiry: expiry, renewal: renewal) else { return nil }
             source = built
         } else {
-            let placeholder = MediaTrack(kind: .combined, fragments: [MediaFragment(url: page)], codecs: formats.flatMap { [$0.videoCodec, $0.audioCodec].compactMap { $0 } })
+            let kind: MediaTrack.Kind = formats.contains(where: \.hasVideo) ? .combined : .audio
+            let placeholder = MediaTrack(kind: kind, fragments: [MediaFragment(url: page)], codecs: formats.flatMap { [$0.videoCodec, $0.audioCodec].compactMap { $0 } })
             guard let built = try? MediaSource(tracks: [placeholder], container: container, renewal: renewal, downloadsWithYTDLP: true) else { return nil }
             source = built
         }
