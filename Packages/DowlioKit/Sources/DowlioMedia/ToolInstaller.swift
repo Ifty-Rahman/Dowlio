@@ -101,6 +101,19 @@ public actor ToolInstaller {
 
     public static let updateInterval: TimeInterval = 7 * 24 * 60 * 60
 
+    static func isNewer(_ tag: String, than installed: String?) -> Bool {
+        guard let installed else { return true }
+        func numbers(_ version: String) -> [Int] {
+            version.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        }
+        let (new, old) = (numbers(tag), numbers(installed))
+        for index in 0..<max(new.count, old.count) {
+            let (a, b) = (index < new.count ? new[index] : 0, index < old.count ? old[index] : 0)
+            if a != b { return a > b }
+        }
+        return false
+    }
+
     public static func isUpdateCheckDue(lastCheck: Date?, now: Date, keepsUpToDate: Bool) -> Bool {
         guard keepsUpToDate else { return false }
         guard let lastCheck else { return true }
@@ -174,8 +187,20 @@ public actor ToolInstaller {
         try await newerReleases().map(\.0)
     }
 
-    public func update() async throws -> Bool {
-        try await exclusively { try await self.installNewer() }
+    public func update(unlessCheckedWithin recent: TimeInterval = 0) async throws -> Bool {
+        if let last = lastUpdateCheck, Date().timeIntervalSince(last) < recent { return false }
+        return try await exclusively { try await self.installNewer() }
+    }
+
+    private var checkedURL: URL { folder.appending(path: "last-update-check") }
+
+    public var lastUpdateCheck: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: checkedURL.path))?[.modificationDate] as? Date
+    }
+
+    private func noteUpdateCheck() {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? Data().write(to: checkedURL)
     }
 
     public func remove() async throws {
@@ -199,7 +224,9 @@ public actor ToolInstaller {
     }
 
     private func installNewer() async throws -> Bool {
+        guard isInstalled else { return false }
         let newer = try await newerReleases()
+        noteUpdateCheck()
         guard !newer.isEmpty else { return false }
         try await install(newer)
         return true
@@ -212,6 +239,7 @@ public actor ToolInstaller {
             if manager.fileExists(atPath: item.path) { try manager.removeItem(at: item) }
         }
         if manager.fileExists(atPath: recordsURL.path) { try manager.removeItem(at: recordsURL) }
+        try? manager.removeItem(at: checkedURL)
         Self.logger.info("Removed yt-dlp and QuickJS-NG")
     }
 
@@ -220,7 +248,7 @@ public actor ToolInstaller {
         var newer: [(Tool, Release)] = []
         for tool in Tool.allCases {
             let release = try await latestRelease(of: tool)
-            if known[tool]?.version != release.tagName { newer.append((tool, release)) }
+            if Self.isNewer(release.tagName, than: known[tool]?.version) { newer.append((tool, release)) }
         }
         return newer
     }

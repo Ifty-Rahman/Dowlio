@@ -81,4 +81,30 @@ struct ToolUpdateTests {
         #expect(!ToolInstaller.isUpdateCheckDue(lastCheck: nil, now: now, keepsUpToDate: false))
         #expect(!ToolInstaller.isUpdateCheckDue(lastCheck: now - 30 * day, now: now, keepsUpToDate: false))
     }
+
+    @Test func anOlderOrSameReleaseIsNeverAnUpdateAndAMissingToolIsNeverInstalledByAnUpdate() async throws {
+        let (github, installer, _) = try await installed()
+        github.publishYTDLP(version: "2026.09.01", zip: try FakeGitHub.standInYTDLP(script: "echo older"))
+
+        #expect(try await installer.update() == false)
+        #expect(await installer.installedVersions()[.ytdlp] == "2026.10.26")
+
+        try await installer.remove()
+        github.publishYTDLP(version: "2026.12.01", zip: try FakeGitHub.standInYTDLP(script: "echo newer"))
+        #expect(try await installer.update() == false)
+        #expect(await installer.isInstalled == false)
+    }
+
+    @Test func everySuccessfulCheckIsRecordedAndARecentCheckIsntRepeated() async throws {
+        let (github, installer, _) = try await installed()
+        #expect(await installer.lastUpdateCheck == nil)
+
+        #expect(try await installer.update() == false)
+        let checked = try #require(await installer.lastUpdateCheck)
+        github.publishYTDLP(version: "2026.11.03", zip: try FakeGitHub.standInYTDLP(script: "echo new"))
+
+        #expect(try await installer.update(unlessCheckedWithin: 60) == false)
+        #expect(try await installer.update() == true)
+        #expect(try #require(await installer.lastUpdateCheck) >= checked)
+    }
 }

@@ -25,7 +25,6 @@ enum SettingsKey {
     static let neverCatchSites = "neverCatchSites"
     static let usesBrowserSignIn = "usesBrowserSignIn"
     static let keepsYTDLPUpToDate = "keepsYTDLPUpToDate"
-    static let lastYTDLPUpdateCheck = "lastYTDLPUpdateCheck"
     static let retiredKeys = ["sharesSignIn", "noSignInSites", "signInLog"]
 }
 

@@ -27,6 +27,10 @@ public struct YTDLPRunner: Sendable {
         get async { await installer.isInstalled }
     }
 
+    public func updateTools() async -> Bool {
+        (try? await installer.update(unlessCheckedWithin: 60)) == true
+    }
+
     public func info(for url: URL, cookies: [Cookie] = []) async throws -> MediaInfo {
         let tools = try await installer.verifiedTools()
         var arguments = [

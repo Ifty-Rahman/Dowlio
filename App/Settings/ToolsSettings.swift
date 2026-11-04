@@ -47,10 +47,20 @@ final class ToolsModel {
             do {
                 status = try await work(installer)
             } catch {
-                status = "Dowlio couldn't reach GitHub. Try again later."
+                status = Self.sentence(for: error)
             }
             await refresh()
             isBusy = false
+        }
+    }
+
+    private static func sentence(for error: Error) -> String {
+        switch error as? ToolInstaller.Failure {
+        case .hashMismatch(let tool)?: "\(tool.name) didn't match the hash GitHub published, so Dowlio didn't install it."
+        case .notStable(let tool)?: "The latest \(tool.name) release isn't a stable one, so Dowlio kept the one it has."
+        case .offGitHub?: "A download tried to leave GitHub, so Dowlio stopped it."
+        case .network?, .missingAsset?: "Dowlio couldn't reach GitHub. Try again later."
+        default: "Dowlio couldn't change the tools on this Mac. Try again."
         }
     }
 
@@ -59,14 +69,11 @@ final class ToolsModel {
         let installer = installer
         weekly = Task {
             while !Task.isCancelled {
-                let defaults = UserDefaults.standard
-                let last = defaults.object(forKey: SettingsKey.lastYTDLPUpdateCheck) as? Date
-                let keeps = defaults.object(forKey: SettingsKey.keepsYTDLPUpToDate) as? Bool ?? true
+                let keeps = UserDefaults.standard.object(forKey: SettingsKey.keepsYTDLPUpToDate) as? Bool ?? true
+                let last = await installer.lastUpdateCheck
                 if await installer.isInstalled, ToolInstaller.isUpdateCheckDue(lastCheck: last, now: Date(), keepsUpToDate: keeps) {
-                    if (try? await installer.update()) != nil {
-                        defaults.set(Date(), forKey: SettingsKey.lastYTDLPUpdateCheck)
-                        await refresh()
-                    }
+                    _ = try? await installer.update()
+                    await refresh()
                 }
                 try? await Task.sleep(for: .seconds(6 * 60 * 60))
             }

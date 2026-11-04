@@ -330,7 +330,6 @@ final class AppModel {
         return ToolConsent(size: { try? await tools.downloadSize() }, install: { keeps in
             try await tools.install()
             if let keeps { UserDefaults.standard.set(keeps, forKey: SettingsKey.keepsYTDLPUpToDate) }
-            UserDefaults.standard.set(Date(), forKey: SettingsKey.lastYTDLPUpdateCheck)
             await toolsModel.refresh()
         }, update: {
             let updated = try await tools.update()
