@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.4.0"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "0.4.1"
+    CURRENT_PROJECT_VERSION: "5"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Manual
 packages:

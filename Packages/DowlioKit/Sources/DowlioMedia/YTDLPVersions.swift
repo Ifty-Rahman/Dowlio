@@ -59,7 +59,7 @@ enum YTDLPVersions {
         let videos = usable.filter(\.hasVideo)
         var unsized = 0
         let rows = Dictionary(grouping: videos, by: { format -> Int in
-            if let height = format.height { return height }
+            if let height = format.standardHeight { return height }
             unsized -= 1
             return unsized
         })

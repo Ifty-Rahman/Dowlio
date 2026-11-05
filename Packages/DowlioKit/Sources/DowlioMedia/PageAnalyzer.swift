@@ -317,9 +317,9 @@ public struct PageAnalyzer: Sendable {
             return checked
         }
         let videos = info.formats.filter(\.hasVideo)
-        checked.heights = Set(videos.compactMap(\.height)).sorted(by: >)
+        checked.heights = Set(videos.compactMap(\.standardHeight)).sorted(by: >)
         for format in videos {
-            guard let height = format.height, let rate = format.frameRate.map({ Int($0.rounded()) }) else { continue }
+            guard let height = format.standardHeight, let rate = format.frameRate.map({ Int($0.rounded()) }) else { continue }
             checked.frameRates[height] = max(checked.frameRates[height] ?? 0, rate)
         }
         return checked
