@@ -32,12 +32,14 @@ struct SubtitlesSection: View {
                                     .frame(minWidth: 14, alignment: .trailing)
                                 Text(Self.name(of: code))
                             }
+                            .background(AlwaysVisibleScroller())
                             .tag(code)
                         }
                         .onMove(perform: move)
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
+                    .scrollIndicators(.visible)
                     .frame(height: Self.listHeight)
                     Divider()
                     HStack(spacing: 0) {
@@ -111,5 +113,22 @@ struct SubtitlesSection: View {
 
     private func save() {
         UserDefaults.standard.set(languages, forKey: SettingsKey.subtitleLanguages)
+    }
+}
+
+private struct AlwaysVisibleScroller: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ScrollerFinder() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class ScrollerFinder: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let scrollView = self?.enclosingScrollView else { return }
+                scrollView.scrollerStyle = .legacy
+                scrollView.hasVerticalScroller = true
+                scrollView.autohidesScrollers = true
+            }
+        }
     }
 }
