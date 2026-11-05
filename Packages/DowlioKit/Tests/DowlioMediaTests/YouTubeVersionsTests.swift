@@ -32,6 +32,12 @@ struct YouTubeVersionsTests {
         #expect(MediaInfo.Format.standardHeight(width: 1920, height: 1036) == 1080)
         #expect(MediaInfo.Format.standardHeight(width: 2160, height: 1162) == 1080)
         #expect(MediaInfo.Format.standardHeight(width: nil, height: 1162) == 1162)
+        #expect(MediaInfo.Format.standardHeight(width: 1918, height: 1078) == 1080)
+        #expect(MediaInfo.Format.standardHeight(width: 3840, height: 1600) == 2160)
+        #expect(MediaInfo.Format.standardHeight(width: 1440, height: 1080) == 1080)
+        #expect(MediaInfo.Format.standardHeight(width: 7680, height: 4320) == 4320)
+        #expect(MediaInfo.Format.standardHeight(width: 1280, height: 720) == 720)
+        #expect(MediaInfo.Format.standardHeight(width: 1200, height: 674) == 480)
     }
 
     @Test func eachHeightUpTo1080pIsOneH264VersionPairedWithTheAACTrack() async throws {

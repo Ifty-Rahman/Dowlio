@@ -127,8 +127,8 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
 
         public static func standardHeight(width: Int?, height: Int) -> Int {
             guard let width else { return height }
-            let byShortSide = standardHeights.last { $0 <= min(width, height) }
-            let byLongSide = standardHeights.last { $0 * 16 / 9 <= max(width, height) }
+            let byShortSide = standardHeights.last { Double($0) * 0.97 <= Double(min(width, height)) }
+            let byLongSide = standardHeights.last { Double($0) * 16 / 9 * 0.97 <= Double(max(width, height)) }
             return [byShortSide, byLongSide].compactMap { $0 }.max() ?? height
         }
 
