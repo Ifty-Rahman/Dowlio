@@ -21,6 +21,7 @@ enum SettingsKey {
     static let notifiesWhenFinished = "notifiesWhenFinished"
     static let notifiesOnProblems = "notifiesOnProblems"
     static let thenAction = "thenAction"
+    static let notificationClick = "notificationClick"
     static let hasSeenWelcome = "hasSeenWelcome"
     static let catchesDownloads = "catchesDownloads"
     static let neverCatchSites = "neverCatchSites"

@@ -32,6 +32,7 @@ private struct GeneralSettings: View {
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
     @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
+    @AppStorage(SettingsKey.notificationClick) private var click = NotificationClick.openDowlio
     @State private var permission = NotificationPermission()
 
     var body: some View {
@@ -42,6 +43,10 @@ private struct GeneralSettings: View {
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
                 if notifies && permission.needsAttention { NotificationPermissionRow(permission: permission) }
+                Picker("Clicking the notification", selection: $click) {
+                    ForEach(NotificationClick.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .disabled(!notifies)
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }

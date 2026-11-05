@@ -33,6 +33,25 @@ struct MenuBarPopover: View {
                 }
                 moreMenu
             }
+            if let version = model.updater.waitingVersion {
+                Button {
+                    close()
+                    model.updater.showUpdate()
+                } label: {
+                    HStack(spacing: DowlioDesign.Spacing.sm) {
+                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(.tint)
+                        Text(UpdateNotice(version: version).menuBarLine)
+                        Spacer()
+                        Text("Update…").foregroundStyle(.tint)
+                    }
+                    .padding(.horizontal, DowlioDesign.Spacing.md)
+                    .padding(.vertical, DowlioDesign.Spacing.sm)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(UpdateNotice(version: version).menuBarLine + ", Update")
+            }
             if !summary.active.isEmpty {
                 VStack(spacing: DowlioDesign.Spacing.sm) {
                     ForEach(summary.active) { row in
