@@ -33,6 +33,8 @@ struct ChildProcess {
         process.standardError = errors
         process.standardInput = FileHandle.nullDevice
         let run = RunState(onOutputLine: onOutputLine)
+        output.fileHandleForReading.readabilityHandler = { handle in run.addOutput(handle.availableData) }
+        errors.fileHandleForReading.readabilityHandler = { handle in run.addErrors(handle.availableData) }
         let watchdog = Task.detached {
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
@@ -41,13 +43,11 @@ struct ChildProcess {
         }
         defer { watchdog.cancel() }
 
-        var readers: [Task<Void, Never>] = []
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
                 process.terminationHandler = { finished in continuation.resume(returning: finished.terminationStatus) }
                 do {
                     try process.run()
-                    readers = [drain(output.fileHandleForReading, into: run.addOutput), drain(errors.fileHandleForReading, into: run.addErrors)]
                 } catch {
                     process.terminationHandler = nil
                     continuation.resume(throwing: CouldNotStart(reason: error.localizedDescription))
@@ -59,21 +59,13 @@ struct ChildProcess {
             run.markCancelled()
             stop(process)
         }
-        for reader in readers { await reader.value }
+        output.fileHandleForReading.readabilityHandler = nil
+        errors.fileHandleForReading.readabilityHandler = nil
+        run.addOutput(output.fileHandleForReading.readDataToEndOfFile())
+        run.addErrors(errors.fileHandleForReading.readDataToEndOfFile())
         run.finishLine()
         try Task.checkCancellation()
         return run.result(status: status)
-    }
-
-    private static func drain(_ handle: FileHandle, into add: @escaping @Sendable (Data) -> Void) -> Task<Void, Never> {
-        Task.detached {
-            await withCheckedContinuation { (finished: CheckedContinuation<Void, Never>) in
-                DispatchQueue.global(qos: .utility).async {
-                    while case let data = handle.availableData, !data.isEmpty { add(data) }
-                    finished.resume()
-                }
-            }
-        }
     }
 
     private static func stop(_ process: Process) {

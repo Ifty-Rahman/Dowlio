@@ -82,8 +82,7 @@ public final class FakeGitHub: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         process.arguments = ["-c", "-k", folder.path, zip.path]
-        try process.run()
-        process.waitUntilExit()
+        try process.runUntilExit()
         return try Data(contentsOf: zip)
     }
 

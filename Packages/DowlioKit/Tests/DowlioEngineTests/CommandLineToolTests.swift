@@ -224,6 +224,8 @@ private func runTool(_ arguments: [String], onLine: (String, Process) -> Void = 
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = pipe
+    let exited = AsyncStream<Void>.makeStream()
+    process.terminationHandler = { _ in exited.continuation.finish() }
     try process.run()
 
     var output = ""
@@ -231,6 +233,6 @@ private func runTool(_ arguments: [String], onLine: (String, Process) -> Void = 
         output += line + "\n"
         onLine(line, process)
     }
-    process.waitUntilExit()
+    for await _ in exited.stream {}
     return ToolResult(status: process.terminationStatus, reason: process.terminationReason, output: output)
 }
