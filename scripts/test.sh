@@ -27,5 +27,6 @@ xcodebuild build \
   -configuration Debug \
   -destination "platform=macOS" \
   -derivedDataPath "$BUILD_DIR/DerivedData" \
+  COMPILER_INDEX_STORE_ENABLE=NO \
   -quiet
 log "Tests and build passed"

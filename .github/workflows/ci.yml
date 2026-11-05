@@ -11,6 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install XcodeGen
@@ -21,7 +22,16 @@ jobs:
         with:
           node-version: 22
       - name: Restore the ffmpeg helper
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: ffmpeg-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build the ffmpeg helper
+        run: ./scripts/build-ffmpeg.sh
+      - name: Save the ffmpeg helper
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: build/ffmpeg
           key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh') }}
