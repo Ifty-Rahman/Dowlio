@@ -192,6 +192,13 @@ struct LibraryWindow: View {
             Button("Inspector", systemImage: "sidebar.right") { togglePanel($showsInspector) }
                 .help(showsInspector ? "Hide Inspector" : "Show Inspector")
         }
+        if #available(macOS 26, *) {
+            ToolbarSpacer(.fixed)
+        }
+        ToolbarItem {
+            Button("Settings", systemImage: "gearshape") { openSettings() }
+                .help("Settings (⌘,)")
+        }
     }
 
     @ViewBuilder private var detail: some View {
@@ -224,7 +231,7 @@ struct LibraryWindow: View {
 
     /// The toolbar spans the whole window and never changes with the panels, so this one width
     /// keeps every button out of the overflow menu.
-    private static let toolbarMinimumWidth: CGFloat = 700
+    private static let toolbarMinimumWidth: CGFloat = 752
     static let firstSize = NSSize(width: 870, height: 472)
     private static let listMinimumWidth: CGFloat = 360
     private static let sidebarWidth: CGFloat = 230
