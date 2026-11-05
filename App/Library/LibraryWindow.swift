@@ -41,7 +41,7 @@ struct LibraryWindow: View {
     private var panels: some View {
         HStack(spacing: 0) {
             if showsSidebar {
-                LibrarySidebar(view: view, selection: $selectionInSidebar, freeSpace: model.freeSpace)
+                LibrarySidebar(view: view, selection: $selectionInSidebar, freeSpace: model.freeSpace, updater: model.updater)
                     .frame(width: Self.sidebarWidth)
                     .transition(.move(edge: .leading))
                 Divider()
@@ -294,6 +294,7 @@ private struct LibrarySidebar: View {
     let view: LibraryView
     @Binding var selection: LibrarySelection
     let freeSpace: Int64?
+    let updater: AppUpdater
 
     var body: some View {
         ScrollView {
@@ -312,14 +313,30 @@ private struct LibrarySidebar: View {
         .scrollIndicators(.never)
         .modifier(NoScrollEdgeEffect())
         .safeAreaInset(edge: .bottom) {
-            if let freeSpace {
-                Label(FreeSpaceText.string(freeSpace), systemImage: "internaldrive")
-                    .font(DowlioDesign.TypeRole.detailMetric)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(DowlioDesign.Spacing.sm)
-                    .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
-                    .padding(DowlioDesign.Spacing.sm)
+            VStack(spacing: 0) {
+                if let version = updater.waitingVersion {
+                    Button { updater.showUpdate() } label: {
+                        Label(UpdateNotice(version: version).menuBarLine, systemImage: "arrow.down.circle.fill")
+                            .font(DowlioDesign.TypeRole.detail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(DowlioDesign.Spacing.sm)
+                            .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .help("See what's new and install it")
+                    .padding([.horizontal, .top], DowlioDesign.Spacing.sm)
+                }
+                if let freeSpace {
+                    Label(FreeSpaceText.string(freeSpace), systemImage: "internaldrive")
+                        .font(DowlioDesign.TypeRole.detailMetric)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(DowlioDesign.Spacing.sm)
+                        .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+                        .padding(DowlioDesign.Spacing.sm)
+                }
             }
         }
     }

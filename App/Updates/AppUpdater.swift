@@ -52,6 +52,7 @@ final class AppUpdater {
 
     private func found(_ version: String, remindsUser: Bool) {
         waitingVersion = version
+        NSApp.dockTile.badgeLabel = UpdateNotice(version: version).dockBadge
         guard remindsUser else { return }
         let notice = UpdateNotice(version: version)
         let content = UNMutableNotificationContent()
@@ -63,6 +64,7 @@ final class AppUpdater {
 
     private func seen() {
         waitingVersion = nil
+        NSApp.dockTile.badgeLabel = nil
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.noticeIdentifier])
     }
 }

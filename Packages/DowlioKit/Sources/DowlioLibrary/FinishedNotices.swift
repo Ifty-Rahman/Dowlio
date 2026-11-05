@@ -169,6 +169,8 @@ public struct UpdateNotice: Equatable, Sendable {
     public var title: String { "A new version of Dowlio is available" }
     public var body: String { "Dowlio \(version) is ready to install. Click to see what's new." }
     public var menuBarLine: String { "Dowlio \(version) is available" }
+    public var menuTitle: String { "Update to Dowlio \(version)…" }
+    public var dockBadge: String { "1" }
 }
 
 public enum FileNames {

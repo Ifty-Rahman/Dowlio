@@ -129,6 +129,8 @@ struct FinishedNoticeTests {
         #expect(notice.title == "A new version of Dowlio is available")
         #expect(notice.body == "Dowlio 0.4.2 is ready to install. Click to see what's new.")
         #expect(notice.menuBarLine == "Dowlio 0.4.2 is available")
+        #expect(notice.menuTitle == "Update to Dowlio 0.4.2…")
+        #expect(notice.dockBadge == "1")
     }
 
     @Test func onlyASingleFinishHasAFileForItsActions() {

@@ -70,6 +70,14 @@ private struct UpdateSettings: View {
 
     var body: some View {
         Section("Updates") {
+            if let version = updater.waitingVersion {
+                LabeledContent {
+                    Button("Install Update…") { updater.showUpdate() }
+                        .buttonStyle(.borderedProminent)
+                } label: {
+                    Label(UpdateNotice(version: version).menuBarLine, systemImage: "arrow.down.circle.fill")
+                }
+            }
             LabeledContent {
                 Button("Check Now") { updater.checkNow() }
                     .disabled(!updater.canCheck)
