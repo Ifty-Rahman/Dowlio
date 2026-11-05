@@ -134,8 +134,7 @@ private struct DiskImage {
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
+        try process.runUntilExit()
         guard process.terminationStatus == 0 else {
             throw CocoaError(.executableLoad, userInfo: [NSLocalizedDescriptionKey: "hdiutil \(arguments.first ?? "") failed"])
         }

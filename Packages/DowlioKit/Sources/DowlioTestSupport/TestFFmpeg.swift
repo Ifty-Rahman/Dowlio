@@ -26,9 +26,9 @@ public enum TestFFmpeg {
         let errors = Pipe()
         process.standardError = errors
         process.standardOutput = FileHandle.nullDevice
-        try process.run()
+        let exited = try process.runWatchingExit()
         let text = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        process.waitUntilExit()
+        exited.wait()
         let lines = text.components(separatedBy: "\n")
         let streamLines = lines.filter { $0.contains("Stream #0:") }
         let streams = streamLines.compactMap { line -> String? in
