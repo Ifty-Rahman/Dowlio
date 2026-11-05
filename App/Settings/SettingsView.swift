@@ -56,6 +56,14 @@ private struct GeneralSettings: View {
                 Toggle("Show a notification", isOn: $notifiesOnProblems)
             }
             UpdateSettings(updater: model.updater)
+            Section("Help") {
+                LabeledContent {
+                    Button("Report a Problem…") { model.reportProblem() }
+                } label: {
+                    Text("Something not working?")
+                    Text("Opens a new issue on GitHub with your Dowlio and macOS versions filled in. Nothing about your downloads is included.")
+                }
+            }
         }
         .settingsForm()
         .task { await permission.refresh() }
