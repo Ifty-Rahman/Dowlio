@@ -126,6 +126,53 @@ public enum ThenAction: String, CaseIterable, Sendable {
     }
 }
 
+public enum NotificationClick: String, CaseIterable, Sendable {
+    case openDowlio
+    case showInFinder
+    case openFile
+
+    public enum Target: Equatable, Sendable {
+        case dowlio
+        case showInFinder(URL)
+        case open(URL)
+    }
+
+    public init(saved: String) {
+        self = NotificationClick(rawValue: saved) ?? .openDowlio
+    }
+
+    public var title: String {
+        switch self {
+        case .openDowlio: "Open Dowlio"
+        case .showInFinder: "Show in Finder"
+        case .openFile: "Open the file"
+        }
+    }
+
+    public func target(for file: URL?) -> Target {
+        guard let file else { return .dowlio }
+        switch self {
+        case .openDowlio: return .dowlio
+        case .showInFinder: return .showInFinder(file)
+        case .openFile: return .open(file)
+        }
+    }
+}
+
+public struct UpdateNotice: Equatable, Sendable {
+    public var version: String
+
+    public init(version: String) {
+        self.version = version
+    }
+
+    public var title: String { "A new version of Dowlio is available" }
+    public var body: String { "Dowlio \(version) is ready to install. Click to see what's new." }
+    public var menuBarLine: String { "Dowlio \(version) is available" }
+    public var menuTitle: String { "Update to Dowlio \(version)…" }
+    public var dockBadge: String { "1" }
+}
+
 public enum FileNames {
     public static func sentence(_ names: [String]) -> String {
         switch names.count {

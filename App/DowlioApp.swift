@@ -45,8 +45,12 @@ struct UpdateCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .appInfo) {
-            Button("Check for Updates…") { updater.checkNow() }
-                .disabled(!updater.canCheck)
+            if let version = updater.waitingVersion {
+                Button(UpdateNotice(version: version).menuTitle) { updater.showUpdate() }
+            } else {
+                Button("Check for Updates…") { updater.checkNow() }
+                    .disabled(!updater.canCheck)
+            }
         }
     }
 }

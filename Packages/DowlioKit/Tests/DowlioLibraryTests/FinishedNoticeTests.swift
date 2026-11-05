@@ -107,6 +107,32 @@ struct FinishedNoticeTests {
         #expect(!notice.runsThenAction)
     }
 
+    @Test func clickingAFinishNoticeOpensDowlioUnlessTheUserChoseOtherwise() {
+        #expect(NotificationClick(saved: "") == .openDowlio)
+        #expect(NotificationClick(saved: "something old") == .openDowlio)
+        #expect(NotificationClick(saved: "openFile") == .openFile)
+        #expect(NotificationClick.allCases.map(\.title) == ["Open Dowlio", "Show in Finder", "Open the file"])
+    }
+
+    @Test func clickingANoticeForSeveralFilesAlwaysOpensDowlio() {
+        let one = FinishNotice(rows: [row("a.zip", .completed)])
+        let several = FinishNotice(rows: [row("a.zip", .completed), row("b.zip", .completed)])
+
+        #expect(NotificationClick.showInFinder.target(for: one.singleFile) == .showInFinder(one.singleFile!))
+        #expect(NotificationClick.openFile.target(for: one.singleFile) == .open(one.singleFile!))
+        #expect(NotificationClick.openFile.target(for: several.singleFile) == .dowlio)
+        #expect(NotificationClick.openDowlio.target(for: one.singleFile) == .dowlio)
+    }
+
+    @Test func anUpdateNoticeSaysANewVersionIsAvailable() {
+        let notice = UpdateNotice(version: "0.4.2")
+        #expect(notice.title == "A new version of Dowlio is available")
+        #expect(notice.body == "Dowlio 0.4.2 is ready to install. Click to see what's new.")
+        #expect(notice.menuBarLine == "Dowlio 0.4.2 is available")
+        #expect(notice.menuTitle == "Update to Dowlio 0.4.2…")
+        #expect(notice.dockBadge == "1")
+    }
+
     @Test func onlyASingleFinishHasAFileForItsActions() {
         #expect(FinishNotice(rows: [row("a.zip", .completed)]).singleFile?.lastPathComponent == "a.zip")
         #expect(FinishNotice(rows: [row("a.zip", .completed), row("b.zip", .completed)]).singleFile == nil)

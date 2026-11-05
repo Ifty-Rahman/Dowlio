@@ -32,6 +32,7 @@ private struct GeneralSettings: View {
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
     @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
+    @AppStorage(SettingsKey.notificationClick) private var click = NotificationClick.openDowlio
     @State private var permission = NotificationPermission()
 
     var body: some View {
@@ -42,6 +43,10 @@ private struct GeneralSettings: View {
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
                 if notifies && permission.needsAttention { NotificationPermissionRow(permission: permission) }
+                Picker("Clicking the notification", selection: $click) {
+                    ForEach(NotificationClick.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .disabled(!notifies)
                 Picker("Then", selection: $thenAction) {
                     ForEach(ThenAction.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -51,6 +56,14 @@ private struct GeneralSettings: View {
                 Toggle("Show a notification", isOn: $notifiesOnProblems)
             }
             UpdateSettings(updater: model.updater)
+            Section("Help") {
+                LabeledContent {
+                    Button("Report a Problem…") { model.reportProblem() }
+                } label: {
+                    Text("Something not working?")
+                    Text("Opens a new issue on GitHub with your Dowlio and macOS versions filled in. Nothing about your downloads is included.")
+                }
+            }
         }
         .settingsForm()
         .task { await permission.refresh() }
@@ -65,6 +78,14 @@ private struct UpdateSettings: View {
 
     var body: some View {
         Section("Updates") {
+            if let version = updater.waitingVersion {
+                LabeledContent {
+                    Button("Install Update…") { updater.showUpdate() }
+                        .buttonStyle(.borderedProminent)
+                } label: {
+                    Label(UpdateNotice(version: version).menuBarLine, systemImage: "arrow.down.circle.fill")
+                }
+            }
             LabeledContent {
                 Button("Check Now") { updater.checkNow() }
                     .disabled(!updater.canCheck)

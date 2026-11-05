@@ -23,7 +23,7 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
         super.init()
         UserDefaults.standard.register(defaults: [SettingsKey.notifiesWhenFinished: true, SettingsKey.notifiesOnProblems: true])
         center.delegate = self
-        center.setNotificationCategories(CatchNotifier.categories.union([UNNotificationCategory(
+        center.setNotificationCategories(CatchNotifier.categories.union([UNNotificationCategory(identifier: AppUpdater.noticeCategory, actions: [], intentIdentifiers: []), UNNotificationCategory(
             identifier: Self.category,
             actions: [
                 UNNotificationAction(identifier: ThenAction.showInFinder.rawValue, title: "Show in Finder"),
@@ -118,6 +118,10 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             }
             return
         }
+        if response.notification.request.content.categoryIdentifier == AppUpdater.noticeCategory {
+            await MainActor.run { AppDelegate.model?.updater.showUpdate() }
+            return
+        }
         if response.notification.request.content.categoryIdentifier == Self.problemCategory {
             let retry = (response.notification.request.content.userInfo["retry"] as? String).flatMap(UUID.init(uuidString:))
             let retries = response.actionIdentifier == Self.retryAction
@@ -138,7 +142,12 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
             } else if let path, let action = ThenAction(rawValue: identifier) {
                 Self.perform(action, on: URL(filePath: path))
             } else {
-                AppDelegate.model?.showLibraryWindow()
+                let click = NotificationClick(saved: UserDefaults.standard.string(forKey: SettingsKey.notificationClick) ?? "")
+                switch click.target(for: path.map { URL(filePath: $0) }) {
+                case .dowlio: AppDelegate.model?.showLibraryWindow()
+                case .showInFinder(let file): NSWorkspace.shared.activateFileViewerSelecting([file])
+                case .open(let file): NSWorkspace.shared.open(file)
+                }
             }
         }
     }

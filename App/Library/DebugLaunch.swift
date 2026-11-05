@@ -112,6 +112,14 @@ enum DebugLaunch {
         #endif
     }
 
+    static var updateReminder: String? {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["DOWLIO_DEBUG_UPDATE_REMINDER"]
+        #else
+        nil
+        #endif
+    }
+
     static var checksForUpdates: Bool {
         #if DEBUG
         updateFeed != nil

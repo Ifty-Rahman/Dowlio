@@ -15,7 +15,7 @@ final class MenuBarController: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel = MenuBarPanel()
     private var menuWindow: MenuBarWindow?
-    private var drawnIcon: (fraction: Double?, needsAttention: Bool)?
+    private var drawnIcon: (fraction: Double?, needsAttention: Bool, hasUpdate: Bool)?
     private var returnTo: NSRunningApplication?
     private var openedAt = Date()
     private lazy var dismissal = PopoverDismissal(hooks: .init(
@@ -145,19 +145,19 @@ final class MenuBarController: NSObject {
 
     private func follow() {
         withObservationTracking {
-            redraw(MenuBarSummary(rows: model.rows))
+            redraw(MenuBarSummary(rows: model.rows), hasUpdate: model.updater.waitingVersion != nil)
         } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }
     }
 
-    private func redraw(_ summary: MenuBarSummary) {
+    private func redraw(_ summary: MenuBarSummary, hasUpdate: Bool) {
         let steps = Double(StatusIcon.progressSteps)
         let fraction = summary.progressFraction.map { ($0 * steps).rounded(.down) / steps }
-        item.button?.setAccessibilityLabel("Dowlio, \(summary.status)")
-        if let drawnIcon, drawnIcon.fraction == fraction, drawnIcon.needsAttention == summary.needsAttention { return }
-        drawnIcon = (fraction, summary.needsAttention)
-        item.button?.image = StatusIcon.image(progress: fraction, needsAttention: summary.needsAttention)
+        item.button?.setAccessibilityLabel("Dowlio, \(summary.status)" + (hasUpdate ? ", update available" : ""))
+        if let drawnIcon, drawnIcon.fraction == fraction, drawnIcon.needsAttention == summary.needsAttention, drawnIcon.hasUpdate == hasUpdate { return }
+        drawnIcon = (fraction, summary.needsAttention, hasUpdate)
+        item.button?.image = StatusIcon.image(progress: fraction, needsAttention: summary.needsAttention, hasUpdate: hasUpdate)
     }
 }
 
@@ -190,17 +190,19 @@ enum StatusIcon {
     private static let side: CGFloat = 18
     private static let bar = CGRect(x: 1, y: 14.25, width: 16.8, height: 2)
     private static let pieceGap: CGFloat = 0.8
+    private static let dot = CGRect(x: 13, y: 0.5, width: 4.5, height: 4.5)
 
     /// Progress is drawn in steps of about one pixel, so it creeps rather than jumps.
     static let progressSteps = 34
 
     @MainActor
-    static func image(progress fraction: Double?, needsAttention: Bool = false) -> NSImage {
+    static func image(progress fraction: Double?, needsAttention: Bool = false, hasUpdate: Bool = false) -> NSImage {
         let ink: NSColor = needsAttention ? .systemRed : .black
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
             ink.setFill()
             ink.setStroke()
             arrow().fill()
+            if hasUpdate { NSBezierPath(ovalIn: dot).fill() }
             if let fraction {
                 progressBar(fraction, ink: ink)
             } else {
