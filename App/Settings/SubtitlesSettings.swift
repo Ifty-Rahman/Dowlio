@@ -23,24 +23,7 @@ struct SubtitlesSection: View {
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
                 VStack(spacing: 0) {
-                    List(selection: $selected) {
-                        ForEach(Array(languages.enumerated()), id: \.element) { index, code in
-                            HStack(spacing: DowlioDesign.Spacing.sm) {
-                                Text(verbatim: "\(index + 1)")
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
-                                    .frame(minWidth: 14, alignment: .trailing)
-                                Text(Self.name(of: code))
-                            }
-                            .background(AlwaysVisibleScroller())
-                            .tag(code)
-                        }
-                        .onMove(perform: move)
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.visible)
-                    .frame(height: Self.listHeight)
+                    LanguageList(languages: $languages, selected: $selected, height: Self.listHeight, name: Self.name, changed: save)
                     Divider()
                     HStack(spacing: 0) {
                         Menu {
@@ -84,10 +67,6 @@ struct SubtitlesSection: View {
         .onAppear { languages = UserDefaults.standard.subtitlePreference.languages }
     }
 
-    private func move(from source: IndexSet, to destination: Int) {
-        languages.move(fromOffsets: source, toOffset: destination)
-        save()
-    }
 
     private static let choices: [String] = {
         let codes = Set(Locale.LanguageCode.isoLanguageCodes.map(\.identifier).filter { $0.count == 2 } + SubtitlePreference.macLanguages)
@@ -116,19 +95,120 @@ struct SubtitlesSection: View {
     }
 }
 
-private struct AlwaysVisibleScroller: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { ScrollerFinder() }
-    func updateNSView(_ view: NSView, context: Context) {}
+private struct LanguageList: View {
+    @Binding var languages: [String]
+    @Binding var selected: String?
+    let height: CGFloat
+    let name: (String) -> String
+    let changed: () -> Void
+    @State private var scrolled: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var dragging: String?
 
-    private final class ScrollerFinder: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            DispatchQueue.main.async { [weak self] in
-                guard let scrollView = self?.enclosingScrollView else { return }
-                scrollView.scrollerStyle = .legacy
-                scrollView.hasVerticalScroller = true
-                scrollView.autohidesScrollers = true
+    private static let space = "languages"
+    private static let rowHeight: CGFloat = 26
+    private static let barWidth: CGFloat = 6
+    private static let barInset: CGFloat = 4
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                ForEach(Array(languages.enumerated()), id: \.element) { index, code in
+                    row(index, code)
+                }
             }
+            .padding(.vertical, Self.barInset)
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(Self.space))
+            } action: { frame in
+                scrolled = -frame.minY
+                contentHeight = frame.height
+            }
+        }
+        .coordinateSpace(name: Self.space)
+        .scrollIndicators(.never)
+        .frame(height: height)
+        .overlay(alignment: .topTrailing) { bar }
+    }
+
+    private func row(_ index: Int, _ code: String) -> some View {
+        let isSelected = selected == code
+        return HStack(spacing: DowlioDesign.Spacing.sm) {
+            Text(verbatim: "\(index + 1)")
+                .monospacedDigit()
+                .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                .frame(minWidth: 20, alignment: .trailing)
+            Text(name(code))
+                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DowlioDesign.Spacing.sm)
+        .frame(height: Self.rowHeight)
+        .background(isSelected ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .padding(.leading, Self.barInset)
+        .padding(.trailing, Self.barWidth + Self.barInset * 2)
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { selected = code })
+        .onDrag {
+            dragging = code
+            return NSItemProvider(object: code as NSString)
+        }
+        .onDrop(of: [.text], delegate: Reorder(target: code, languages: $languages, dragging: $dragging, changed: changed))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { selected = code }
+        .accessibilityAction(named: "Move Up") { move(code, by: -1) }
+        .accessibilityAction(named: "Move Down") { move(code, by: 1) }
+    }
+
+    @ViewBuilder private var bar: some View {
+        if contentHeight > height + 1 {
+            let track = height - Self.barInset * 2
+            let thumb = max(20, track * height / contentHeight)
+            let progress = min(max(scrolled / (contentHeight - height), 0), 1)
+            ZStack(alignment: .top) {
+                Capsule().fill(Color.primary.opacity(0.08))
+                Capsule().fill(Color.primary.opacity(0.35))
+                    .frame(height: thumb)
+                    .offset(y: (track - thumb) * progress)
+            }
+            .frame(width: Self.barWidth, height: track)
+            .padding([.top, .trailing], Self.barInset)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func move(_ code: String, by step: Int) {
+        guard let from = languages.firstIndex(of: code) else { return }
+        let to = from + step
+        guard languages.indices.contains(to) else { return }
+        languages.swapAt(from, to)
+        changed()
+    }
+
+    private struct Reorder: DropDelegate {
+        let target: String
+        @Binding var languages: [String]
+        @Binding var dragging: String?
+        let changed: () -> Void
+
+        func dropEntered(info: DropInfo) {
+            guard let dragging, dragging != target,
+                  let from = languages.firstIndex(of: dragging), let to = languages.firstIndex(of: target) else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                languages.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+            }
+        }
+
+        func dropUpdated(info: DropInfo) -> DropProposal? {
+            DropProposal(operation: .move)
+        }
+
+        func performDrop(info: DropInfo) -> Bool {
+            dragging = nil
+            changed()
+            return true
         }
     }
 }
