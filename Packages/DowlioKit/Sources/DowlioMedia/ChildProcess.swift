@@ -33,8 +33,9 @@ struct ChildProcess {
         process.standardError = errors
         process.standardInput = FileHandle.nullDevice
         let run = RunState(onOutputLine: onOutputLine)
-        output.fileHandleForReading.readabilityHandler = { handle in run.addOutput(handle.availableData) }
-        errors.fileHandleForReading.readabilityHandler = { handle in run.addErrors(handle.availableData) }
+        let reading = NSLock()
+        output.fileHandleForReading.readabilityHandler = { handle in reading.withLock { run.addOutput(handle.availableData) } }
+        errors.fileHandleForReading.readabilityHandler = { handle in reading.withLock { run.addErrors(handle.availableData) } }
         let watchdog = Task.detached {
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
@@ -61,8 +62,10 @@ struct ChildProcess {
         }
         output.fileHandleForReading.readabilityHandler = nil
         errors.fileHandleForReading.readabilityHandler = nil
-        run.addOutput(output.fileHandleForReading.readDataToEndOfFile())
-        run.addErrors(errors.fileHandleForReading.readDataToEndOfFile())
+        reading.withLock {
+            run.addOutput(output.fileHandleForReading.readDataToEndOfFile())
+            run.addErrors(errors.fileHandleForReading.readDataToEndOfFile())
+        }
         run.finishLine()
         try Task.checkCancellation()
         return run.result(status: status)
