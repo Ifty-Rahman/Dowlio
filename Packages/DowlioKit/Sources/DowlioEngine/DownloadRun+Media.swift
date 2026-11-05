@@ -5,12 +5,23 @@ extension DownloadRun {
     func runMedia(_ media: MediaSource, resuming: Bool) async {
         var current: MediaPlan?
         do {
-            let plan = try await prepareMedia(media)
+            var plan = try await prepareMedia(media)
             current = plan
-            saveManifest(plan)
-            try await reportingProgress(of: plan) {
-                try await receivePieces(of: plan, resuming: resuming)
+            if plan.media.renewal?.needsListing == true {
+                guard canRenew(plan) else { throw DownloadError.needsTools }
+                plan = try await renewing(plan)
+                current = plan
             }
+            if plan.media.downloadsWithYTDLP {
+                saveManifest(plan)
+                return try await downloadWithYTDLP(plan)
+            }
+            if canRenew(plan), Self.isExpiring(plan.media, at: configuration.now()) {
+                plan = try await renewingBeforeStart(plan)
+                current = plan
+            }
+            saveManifest(plan)
+            plan = try await receivingWithRenewals(plan, resuming: resuming) { current = $0 }
             try await finish(plan)
         } catch where Task.isCancelled {
             if let current {
@@ -43,7 +54,7 @@ extension DownloadRun {
 
         let fileName = options.fileName.map(FileNaming.chosen) ?? Self.mediaFileName(for: url, of: media)
         let contentType = media.contentType
-        let folder = destination.folder(forFileNamed: fileName, contentType: contentType)
+        let folder = Self.folder(destination.folder(forFileNamed: fileName, contentType: contentType), within: options.subfolder)
         let category = FileCategory(fileName: fileName, contentType: contentType)
         let isNotSecure = media.tracks.contains { track in
             (track.fragments + (track.initialization.map { [$0] } ?? [])).contains { $0.url.isPlainHTTP }
@@ -64,7 +75,7 @@ extension DownloadRun {
             }
         }
         let partial = try PartialFile.create(for: fileName, in: folder)
-        let plan = MediaPlan(fileName: fileName, media: media, partial: partial)
+        let plan = MediaPlan(fileName: fileName, media: media, partial: partial, requestSizeLimit: options.requestSizeLimit ?? media.requestSizeLimit)
         adopt(plan)
         do {
             try FileManager.default.createDirectory(at: plan.partsFolder, withIntermediateDirectories: true)
@@ -72,6 +83,11 @@ extension DownloadRun {
             throw DownloadError.destinationNotWritable
         }
         return plan
+    }
+
+    static func folder(_ folder: URL, within subfolder: String?) -> URL {
+        guard let subfolder, !FileNaming.chosen(subfolder).isEmpty else { return folder }
+        return folder.appending(path: FileNaming.chosen(subfolder), directoryHint: .isDirectory)
     }
 
     static func mediaFileName(for url: URL, of media: MediaSource) -> String {
@@ -110,6 +126,193 @@ extension DownloadRun {
 
     private static func meansMediaLinkGone(_ error: DownloadError) -> Bool {
         error == .forbidden || error == .needsSignIn
+    }
+
+    static let mostRenewals = 3
+
+    private func receivingWithRenewals(
+        _ start: MediaPlan, resuming: Bool, adopted: (MediaPlan) -> Void
+    ) async throws -> MediaPlan {
+        var plan = start
+        var renewals = 0
+        while true {
+            do {
+                try await reportingProgress(of: plan) { try await receivePieces(of: plan, resuming: resuming) }
+                return plan
+            } catch let error as DownloadError where !Task.isCancelled && canRenew(plan) && Self.asksForFreshLinks(error) && renewals < Self.mostRenewals {
+                if renewals > 0 {
+                    try await Task.sleep(for: configuration.retry.delay(afterFailure: renewals, retryAfter: nil, random: configuration.random))
+                }
+                renewals += 1
+                plan = try await renewing(plan)
+                adopted(plan)
+            }
+        }
+    }
+
+    private func downloadWithYTDLP(_ plan: MediaPlan) async throws {
+        guard let download = configuration.downloadWithYTDLP else { throw DownloadError.needsTools }
+        let latest = LatestProgress()
+        let request = YTDLPDownload(media: plan.media, folder: plan.partial.packageURL.appending(path: "yt-dlp", directoryHint: .isDirectory)) { progress in
+            latest.set(progress)
+        }
+        let reporter = Task {
+            while !Task.isCancelled {
+                if let progress = latest.take() { await show(progress) }
+                try? await Task.sleep(for: Self.progressInterval)
+            }
+        }
+        defer { reporter.cancel() }
+        var output: URL
+        do {
+            output = try await download(request)
+        } catch RenewalFailure.toolsMissing {
+            throw DownloadError.needsTools
+        } catch where Task.isCancelled {
+            throw CancellationError()
+        } catch let error as DownloadError {
+            throw error
+        } catch {
+            throw DownloadError.network(NetworkFailure(error))
+        }
+        reporter.cancel()
+        if let progress = latest.take() { await show(progress) }
+        try Task.checkCancellation()
+        await changeSnapshot {
+            $0.bytesPerSecond = 0
+            $0.timeRemaining = nil
+            $0.state = .finalizing
+        }
+        output = await addingExtras(to: output, of: plan)
+        try Task.checkCancellation()
+        let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int64) ?? nil
+        let finished = try plan.partial.finish(
+            named: plan.fileName, in: plan.partial.packageURL.deletingLastPathComponent(),
+            policy: options.nameConflictPolicy, source: url, replacingDataWith: output
+        )
+        partialFile.url = nil
+        mediaPlans.forget()
+        await changeSnapshot {
+            if let size {
+                $0.receivedBytes = size
+                $0.totalBytes = size
+            }
+            $0.fileName = finished.name
+            $0.wasSkipped = finished.wasSkipped
+            $0.state = .completed
+        }
+    }
+
+    private func addingExtras(to output: URL, of plan: MediaPlan) async -> URL {
+        guard plan.media.extras != nil, let remux = configuration.remux else { return output }
+        let extras = await fetchExtras(of: plan)
+        let joined = plan.partial.packageURL.appending(path: "with-extras.\(output.pathExtension)")
+        let request = RemuxRequest(
+            tracks: [output], output: joined, mediaSource: plan.media, subtitles: extras.subtitles,
+            chapters: plan.media.extras?.chapters ?? [], coverArt: extras.coverArt
+        )
+        guard request.hasExtras, !Task.isCancelled else { return output }
+        do {
+            try await remux(request)
+            return joined
+        } catch {
+            return output
+        }
+    }
+
+    private func show(_ progress: YTDLPProgress) async {
+        await changeSnapshot {
+            $0.receivedBytes = progress.receivedBytes
+            $0.totalBytes = progress.totalBytes
+            $0.bytesPerSecond = progress.bytesPerSecond
+            $0.timeRemaining = progress.secondsLeft
+            $0.activeConnections = 1
+            let whole = progress.totalBytes.map {
+                [SegmentProgress(start: 0, end: max($0 - 1, 0), receivedBytes: min(progress.receivedBytes, $0), isActive: true)]
+            } ?? []
+            $0.segments = whole
+            $0.plannedSegments = whole.map { SegmentBounds(start: $0.start, end: $0.end) }
+        }
+    }
+
+    private func renewingBeforeStart(_ plan: MediaPlan) async throws -> MediaPlan {
+        do {
+            return try await renewing(plan)
+        } catch DownloadError.needsTools {
+            throw DownloadError.needsTools
+        } catch where Task.isCancelled {
+            throw CancellationError()
+        } catch {
+            return plan
+        }
+    }
+
+    static let renewalMargin: TimeInterval = 5 * 60
+
+    static func isExpiring(_ media: MediaSource, at now: Date) -> Bool {
+        guard let expiry = media.expiry else { return false }
+        return expiry.timeIntervalSince(now) < renewalMargin
+    }
+
+    private static func asksForFreshLinks(_ error: DownloadError) -> Bool {
+        [.linkExpired, .forbidden, .notFound, .needsSignIn].contains(error)
+    }
+
+    private func canRenew(_ plan: MediaPlan) -> Bool {
+        configuration.renew != nil && plan.media.renewal != nil
+    }
+
+    private func renewing(_ plan: MediaPlan) async throws -> MediaPlan {
+        guard let renew = configuration.renew else { return plan }
+        let fresh: MediaSource
+        do {
+            fresh = try await renew(plan.media)
+        } catch RenewalFailure.toolsMissing {
+            throw DownloadError.needsTools
+        } catch let error as DownloadError {
+            throw error
+        } catch RenewalFailure.needsSignIn {
+            throw DownloadError.needsSignIn
+        } catch RenewalFailure.network {
+            throw DownloadError.network(NetworkFailure(code: .notConnectedToInternet, message: "Couldn't reach the page for fresh links"))
+        } catch where Task.isCancelled {
+            throw CancellationError()
+        } catch {
+            throw DownloadError.linkExpired
+        }
+        try Task.checkCancellation()
+        let keepsParts = Self.sameLayout(plan.media, fresh)
+        let (base, _) = FileNaming.split(plan.fileName)
+        let fileName = fresh.fileExtension == plan.media.fileExtension ? plan.fileName : "\(base).\(fresh.fileExtension)"
+        let next = MediaPlan(
+            fileName: fileName, media: fresh, partial: plan.partial, requestSizeLimit: options.requestSizeLimit ?? fresh.requestSizeLimit ?? plan.media.requestSizeLimit,
+            finished: keepsParts ? plan.finishedBytes : [:]
+        )
+        saveManifest(next)
+        if !keepsParts {
+            try? FileManager.default.removeItem(at: plan.partsFolder)
+            do {
+                try FileManager.default.createDirectory(at: plan.partsFolder, withIntermediateDirectories: true)
+            } catch {
+                throw DownloadError.destinationNotWritable
+            }
+        }
+        adopt(next)
+        let reading = next.reading
+        await changeSnapshot {
+            $0.renewedMedia = fresh
+            $0.fileName = fileName
+            $0.apply(reading)
+        }
+        return next
+    }
+
+    private static func sameLayout(_ old: MediaSource, _ new: MediaSource) -> Bool {
+        func layout(_ media: MediaSource) -> [[ClosedRange<Int64>?]] {
+            media.tracks.map { track in ((track.initialization.map { [$0] } ?? []) + track.fragments).map(\.bytes) }
+        }
+        let before = layout(old)
+        return before == layout(new) && !before.joined().contains(nil)
     }
 
     private func receive(_ piece: MediaPlan.Piece, of plan: MediaPlan) async throws {
@@ -225,8 +428,20 @@ extension DownloadRun {
         guard let remux = configuration.remux else { throw DownloadError.mediaUnplayable }
         let joined = try join(plan)
         let output = plan.partial.packageURL.appending(path: "output.\(plan.media.fileExtension)")
+        let extras = await fetchExtras(of: plan)
+        try Task.checkCancellation()
+        let request = RemuxRequest(
+            tracks: joined, output: output, mediaSource: plan.media, subtitles: extras.subtitles,
+            chapters: plan.media.extras?.chapters ?? [], coverArt: extras.coverArt
+        )
         do {
-            try await remux(joined, output)
+            try await remux(request)
+        } catch where request.hasExtras && !Task.isCancelled {
+            do {
+                try await remux(RemuxRequest(tracks: joined, output: output, mediaSource: plan.media.with(extras: nil)))
+            } catch {
+                throw DownloadError.mediaUnplayable
+            }
         } catch {
             throw DownloadError.mediaUnplayable
         }
@@ -242,6 +457,42 @@ extension DownloadRun {
             $0.wasSkipped = finished.wasSkipped
             $0.state = .completed
         }
+    }
+
+    static let largestExtra = 16 * 1024 * 1024
+
+    private func fetchExtras(of plan: MediaPlan) async -> (subtitles: [RemuxRequest.SubtitleFile], coverArt: URL?) {
+        guard let extras = plan.media.extras else { return ([], nil) }
+        var subtitles: [RemuxRequest.SubtitleFile] = []
+        for (index, subtitle) in extras.subtitles.enumerated() {
+            let file = plan.partial.packageURL.appending(path: "subtitle-\(index).\(subtitle.format)")
+            if await fetchWhole(subtitle.url, to: file) {
+                subtitles.append(RemuxRequest.SubtitleFile(file: file, language: subtitle.language, name: subtitle.name))
+            }
+        }
+        var cover: URL?
+        if let art = extras.coverArt {
+            let file = plan.partial.packageURL.appending(path: "cover.\(art.pathExtension.isEmpty ? "jpg" : art.pathExtension.lowercased())")
+            if await fetchWhole(art, to: file) { cover = file }
+        }
+        return (subtitles, cover)
+    }
+
+    private func fetchWhole(_ url: URL, to file: URL) async -> Bool {
+        let connection = connections.open(url, range: nil)
+        defer { connection.cancel() }
+        guard let response = try? await connection.firstResponse(), response.statusCode == 200 else { return false }
+        var data = Data()
+        do {
+            for try await event in connection.events {
+                guard case .data(let chunk) = event else { continue }
+                data.append(chunk)
+                if data.count > Self.largestExtra { return false }
+            }
+        } catch {
+            return false
+        }
+        return !data.isEmpty && FileManager.default.createFile(atPath: file.path, contents: data)
     }
 
     private func join(_ plan: MediaPlan) throws -> [URL] {
@@ -294,7 +545,8 @@ extension DownloadRun {
             layout: nil,
             nameConflictPolicy: options.nameConflictPolicy,
             mediaSource: plan.media,
-            finishedFragments: plan.finishedPositions
+            finishedFragments: plan.finishedPositions,
+            requestSizeLimit: options.requestSizeLimit ?? plan.media.requestSizeLimit
         )
         try? plan.partial.saveManifest(manifest)
     }
@@ -319,5 +571,21 @@ extension DownloadSnapshot {
         let whole = reading.estimatedTotal.map { [SegmentProgress(start: 0, end: max($0 - 1, 0), receivedBytes: min(reading.receivedBytes, $0))] } ?? []
         segments = whole
         plannedSegments = whole.map { SegmentBounds(start: $0.start, end: $0.end) }
+    }
+}
+
+final class LatestProgress: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: YTDLPProgress?
+
+    func set(_ progress: YTDLPProgress) {
+        lock.withLock { value = progress }
+    }
+
+    func take() -> YTDLPProgress? {
+        lock.withLock {
+            defer { value = nil }
+            return value
+        }
     }
 }

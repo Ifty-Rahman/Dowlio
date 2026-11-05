@@ -62,6 +62,11 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
+      - name: Restore the ffmpeg helper
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: Build and sign
         env:
           RELEASE_TAG: ${{ github.ref_name }}

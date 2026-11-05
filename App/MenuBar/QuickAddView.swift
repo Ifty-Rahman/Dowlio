@@ -119,6 +119,14 @@ private struct MediaCard: View {
                         LookingLine(media: media)
                     }
                 }
+            case .playlist:
+                PlaylistBody(media: media)
+            case .ytdlpFailed:
+                MediaHeader(media: media)
+                ProblemBody(media: media)
+            case let phase where phase.isAboutTools:
+                MediaHeader(media: media)
+                ToolsBody(media: media)
             default:
                 MediaHeader(media: media)
                 MediaChoices(media: media, makesDefaultQuality: $makesDefaultQuality)

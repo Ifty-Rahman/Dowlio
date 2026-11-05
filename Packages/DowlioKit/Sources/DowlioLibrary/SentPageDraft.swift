@@ -11,6 +11,17 @@ public struct SentPageDraft: Equatable, Sendable {
         case needsSignIn
         case blocked
         case restricted(Candidate.Restriction)
+        case needsTools
+        case installingTools
+        case declinedTools
+        case couldntInstallTools
+        case toolsChanged
+        case ytdlpFailed(YTDLPFailure)
+        case playlist
+
+        public var isAboutTools: Bool {
+            [.needsTools, .installingTools, .declinedTools, .couldntInstallTools, .toolsChanged].contains(self)
+        }
     }
 
     public enum Showing: Equatable, Sendable {
@@ -29,11 +40,22 @@ public struct SentPageDraft: Equatable, Sendable {
     public private(set) var candidates: [Candidate] = []
     public private(set) var selected = 0
     public private(set) var isCheckingForMore = false
+    public private(set) var toolsSize: Int64?
+    public private(set) var offersYTDLP = false
+    public private(set) var playlist: PlaylistListing?
+    private var skippedEntries: Set<String> = []
+    public private(set) var playlistShowing: Showing = .video
+    public private(set) var playlistQuality: VideoQuality = .best
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
 
-    public var showing: Showing { showings[selected] ?? .video }
+    public var showing: Showing { showing(of: selected) }
+
+    private func showing(of index: Int) -> Showing {
+        if let chosen = showings[index] { return chosen }
+        return candidates.indices.contains(index) && candidates[index].opensAsAudio ? .audio : .video
+    }
     private var play: PlayRun?
 
     private enum PlayRun {
@@ -57,6 +79,7 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public mutating func update(_ analysis: PageAnalysis) -> URL? {
+        offersYTDLP = false
         switch analysis {
         case .looking:
             return nil
@@ -78,6 +101,30 @@ public struct SentPageDraft: Equatable, Sendable {
             return nil
         case .plainFile(let url):
             return url
+        case .needsTools:
+            candidates = []
+            phase = .needsTools
+            return nil
+        case .toolsChanged:
+            candidates = []
+            phase = .toolsChanged
+            return nil
+        case .ytdlpFailed(let failure):
+            candidates = []
+            phase = .ytdlpFailed(failure)
+            return nil
+        case .playlist(let listing):
+            candidates = []
+            let isSamePlaylist = phase == .playlist && playlist?.url == listing.url
+            playlist = listing
+            if !isSamePlaylist {
+                skippedEntries = []
+                playlistShowing = listing.isMusic ? .audio : .video
+                playlistQuality = preference.quality
+                phase = .playlist
+            }
+            playlistQuality = Self.fitting(playlistQuality, in: playlistHeights)
+            return nil
         case .found(let found):
             show(found)
             return nil
@@ -118,6 +165,164 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public var checkingLine: String { "Checking for more versions" }
+
+    public mutating func setToolsSize(_ size: Int64?) {
+        toolsSize = size
+    }
+
+    public mutating func startInstallingTools() {
+        phase = .installingTools
+    }
+
+    public mutating func declineTools() {
+        phase = .declinedTools
+    }
+
+    public mutating func setOffersYTDLP(_ offers: Bool) {
+        offersYTDLP = offers
+    }
+
+    public mutating func askForTools() {
+        offersYTDLP = false
+        phase = .needsTools
+    }
+
+    public mutating func askForToolsAgain() {
+        guard phase == .declinedTools || phase == .couldntInstallTools else { return }
+        phase = .needsTools
+    }
+
+    public mutating func failInstallingTools() {
+        phase = .couldntInstallTools
+    }
+
+    public var toolConsent: ToolConsentText {
+        let size = toolsSize.map { " About \(max(Int((Double($0) / 1_000_000).rounded()), 1)) MB." } ?? ""
+        return ToolConsentText(
+            title: "Download yt-dlp and QuickJS-NG?",
+            explanation: "This site needs yt-dlp, a free open-source tool, and QuickJS-NG, which yt-dlp uses for YouTube. "
+                + "Dowlio downloads them from their GitHub pages." + size,
+            tools: Tool.allCases.map { ToolConsentText.Link(name: $0.name, project: $0.project) },
+            keepsUpToDate: true,
+            agree: "Download",
+            decline: "Not Now"
+        )
+    }
+
+    public mutating func startLookingAgain() {
+        candidates = []
+        playlist = nil
+        skippedEntries = []
+        phase = .looking
+    }
+
+    public var problem: ProblemText? {
+        guard case .ytdlpFailed(let failure) = phase else { return nil }
+        let site = YouTubeLink(page.url) != nil || host.hasSuffix("youtube.com") ? "YouTube" : "The site"
+        return switch failure {
+        case .unsupportedSite: ProblemText(sentence: "yt-dlp doesn't support this site.", action: .lookAgain)
+        case .needsSignIn: ProblemText(sentence: "This video needs you to sign in.", action: nil)
+        case .private: ProblemText(sentence: "This video is private.", action: nil)
+        case .geoBlocked: ProblemText(sentence: "This video isn't available in your country.", action: nil)
+        case .protected: ProblemText(sentence: "This video is protected.", action: nil)
+        case .rateLimited: ProblemText(sentence: "\(site) is limiting requests. Try again in a few minutes.", action: .tryAgain)
+        case .extractorBroken: ProblemText(sentence: "yt-dlp can't read this site right now. An update may fix it.", action: .checkForUpdate)
+        case .network: ProblemText(sentence: "Dowlio couldn't reach the site.", action: .tryAgain)
+        case .live: ProblemText(sentence: "This video is live. Download it after the stream ends.", action: nil)
+        case .unavailable: ProblemText(sentence: "This video isn't available any more.", action: nil)
+        case .channel: ProblemText(sentence: "Channels aren't supported.", action: nil)
+        }
+    }
+
+    public func isIncluded(_ entry: PlaylistListing.Entry) -> Bool {
+        entry.isAvailable && !skippedEntries.contains(entry.id)
+    }
+
+    public mutating func include(_ entry: PlaylistListing.Entry, _ included: Bool) {
+        guard entry.isAvailable else { return }
+        if included { skippedEntries.remove(entry.id) } else { skippedEntries.insert(entry.id) }
+    }
+
+    public mutating func choosePlaylist(_ showing: Showing, quality: VideoQuality? = nil) {
+        playlistShowing = showing
+        if let quality { playlistQuality = quality }
+    }
+
+    public var includedEntries: [PlaylistListing.Entry] {
+        playlist?.entries.filter(isIncluded) ?? []
+    }
+
+    public var playlistLine: String? {
+        guard let playlist else { return nil }
+        let count = playlist.available.count
+        let line = "\(includedEntries.count) of \(count) \(playlist.noun(count))"
+        let length = includedEntries.compactMap(\.duration).reduce(0, +)
+        guard length >= 60 else { return line }
+        let minutes = Duration.seconds((length / 60).rounded() * 60)
+        return line + " · " + minutes.formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+    }
+
+    public var playlistByline: String? {
+        guard let playlist else { return nil }
+        let count = playlist.total ?? playlist.available.count
+        let size = "\(NumberFormatter.localizedString(from: NSNumber(value: count), number: .decimal)) \(playlist.noun(count))"
+        let updated = playlist.updated.map { "Updated " + $0.formatted(date: .abbreviated, time: .omitted) }
+        return [playlist.channel, size, updated].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    public var playlistHeights: [Int] {
+        guard let heights = playlist?.heights, !heights.isEmpty else { return VideoQuality.caps }
+        return heights
+    }
+
+    public func resolutionName(of height: Int) -> String {
+        Version.resolution(height: height, frameRate: playlist?.frameRates[height])
+    }
+
+    public var isCheckingResolutions: Bool {
+        guard let playlist else { return false }
+        return playlist.heights == nil && !playlist.isMusic
+    }
+
+    private static func fitting(_ quality: VideoQuality, in heights: [Int]) -> VideoQuality {
+        guard case .upTo(let height) = quality, !heights.contains(height), let lowest = heights.last else { return quality }
+        return .upTo(heights.first { $0 <= height } ?? lowest)
+    }
+
+    public var playlistResolutionNote: String? {
+        guard playlist != nil, playlistShowing == .video, case .upTo(let height) = playlistQuality else { return nil }
+        return "A video without \(height)p downloads at the next best resolution it has."
+    }
+
+    public var playlistNote: String? {
+        guard let playlist, playlist.isCut else { return nil }
+        let shown = NumberFormatter.localizedString(from: NSNumber(value: playlist.entries.count), number: .decimal)
+        guard let total = playlist.total, total > playlist.entries.count else {
+            return "This playlist has more than \(shown) videos. Dowlio lists the first \(shown)."
+        }
+        let number = NumberFormatter.localizedString(from: NSNumber(value: total), number: .decimal)
+        return "This playlist has \(number) videos. Dowlio lists the first \(shown)."
+    }
+
+    public var wholePlaylistLine: String? {
+        guard let offer = selectedCandidate?.playlistOffer else { return nil }
+        return "Whole playlist (\(offer.count) videos)"
+    }
+
+    public var subtitlesLine: String? {
+        guard let version = chosenVersion, case .media(let media) = version.source,
+              let subtitles = media.extras?.subtitles, !subtitles.isEmpty else { return nil }
+        return "Subtitles: " + subtitles.map(\.name).joined(separator: ", ")
+    }
+
+    public var installingLine: String { "Downloading yt-dlp and QuickJS-NG" }
+    public var declinedLine: String { "Dowlio needs yt-dlp to read this page. Nothing was downloaded." }
+    public var couldntInstallLine: String {
+        "Dowlio couldn't download yt-dlp and QuickJS-NG from GitHub. Check your connection and try again."
+    }
+    public var toolsChangedLine: String {
+        "yt-dlp or QuickJS-NG changed since Dowlio installed it, so Dowlio won't run it. Reinstall it to read this page."
+    }
 
     private static func phase(of found: [Candidate]) -> Phase {
         guard !found.isEmpty else { return .nothingFound }
@@ -167,7 +372,8 @@ public struct SentPageDraft: Equatable, Sendable {
         NothingFoundText(
             title: "No video or audio found on this page",
             explanation: "Dowlio couldn't find any audio or video to download on this page.",
-            action: play == nil ? "Look Again" : "Try Again"
+            action: play == nil ? "Look Again" : "Try Again",
+            ytdlpAction: offersYTDLP ? "Try with yt-dlp" : nil
         )
     }
 
@@ -190,7 +396,7 @@ public struct SentPageDraft: Equatable, Sendable {
         guard candidates.indices.contains(index) else { return nil }
         let versions = candidates[index].versions
         guard !versions.isEmpty else { return nil }
-        let showing = showings[index] ?? .video
+        let showing = showing(of: index)
         if let pick = picks[index], versions.contains(pick), MediaText.isAudio(pick) == (showing == .audio) { return pick }
         if !versions.contains(where: MediaText.isAudio) || !versions.contains(where: { !MediaText.isAudio($0) }) {
             return preference.pick(from: versions, showing: MediaText.isAudio(versions[0]) ? .audio : .video) ?? versions.first
@@ -242,11 +448,13 @@ public struct NothingFoundText: Equatable, Sendable {
     public var title: String
     public var explanation: String
     public var action: String
+    public var ytdlpAction: String?
 
-    public init(title: String, explanation: String, action: String) {
+    public init(title: String, explanation: String, action: String, ytdlpAction: String? = nil) {
         self.title = title
         self.explanation = explanation
         self.action = action
+        self.ytdlpAction = ytdlpAction
     }
 }
 
@@ -265,7 +473,7 @@ public enum MediaText {
     }
 
     public static func container(of version: Version) -> String {
-        if case .media(let media) = version.source { return media.fileExtension.uppercased() }
+        if case .media(let media) = version.source { return media.outputContainer.displayName }
         let ext = version.source.url.pathExtension.uppercased()
         if !ext.isEmpty { return ext }
         return version.contentType?.split(separator: "/").last.map { $0.uppercased() } ?? "File"
@@ -273,14 +481,14 @@ public enum MediaText {
 
     public static func title(of version: Version) -> String {
         if isAudio(version) { return "Audio" }
-        if let height = version.height { return "\(height)p" }
+        if let resolution = version.resolution { return resolution }
         return container(of: version)
     }
 
     public static func detail(of version: Version) -> String {
         let parts = isAudio(version)
             ? [container(of: version), version.codecs, version.language, version.isExtractedAudio ? "extracted after download" : nil]
-            : [version.height == nil ? nil : container(of: version), version.codecs]
+            : [version.height == nil ? nil : container(of: version), version.codecs, version.isHDR ? "HDR" : nil]
         return parts.compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -309,5 +517,54 @@ public enum MediaText {
         let total = Int(seconds.rounded())
         let (hours, minutes, rest) = (total / 3600, total % 3600 / 60, total % 60)
         return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
+}
+
+public struct ToolConsentText: Equatable, Sendable {
+    public struct Link: Equatable, Sendable {
+        public var name: String
+        public var project: URL
+    }
+
+    public var title: String
+    public var explanation: String
+    public var tools: [Link]
+    public var keepsUpToDate: Bool
+    public var agree: String
+    public var decline: String
+}
+
+public struct ProblemText: Equatable, Sendable {
+    public enum Action: Equatable, Sendable {
+        case lookAgain
+        case tryAgain
+        case checkForUpdate
+
+        public var title: String {
+            switch self {
+            case .lookAgain: "Look Again"
+            case .tryAgain: "Try Again"
+            case .checkForUpdate: "Check for Update"
+            }
+        }
+    }
+
+    public var sentence: String
+    public var action: Action?
+
+    public init(sentence: String, action: Action?) {
+        self.sentence = sentence
+        self.action = action
+    }
+}
+
+extension PlaylistListing {
+    func noun(_ count: Int) -> String {
+        switch (isMusic, count == 1) {
+        case (true, true): "song"
+        case (true, false): "songs"
+        case (false, true): "video"
+        case (false, false): "videos"
+        }
     }
 }

@@ -1,5 +1,6 @@
 import DowlioCore
 import Foundation
+import VideoToolbox
 
 public struct PageAnalyzer: Sendable {
     public typealias Inspect = @Sendable (URL, RequestOptions) async throws -> LinkInspection
@@ -15,6 +16,9 @@ public struct PageAnalyzer: Sendable {
     private let sizes: SizeCheck
     private let identity: BrowserIdentity
     private let cooldown: HostCooldown
+    private let ytdlp: YTDLPRunner?
+    private let decodesAV1: Bool
+    private let subtitles: @Sendable () -> SubtitlePreference
 
     @TaskLocal static var reachesLocalNetwork = false
 
@@ -35,8 +39,14 @@ public struct PageAnalyzer: Sendable {
         lookingFor longestLooking: Duration = .seconds(15),
         readers: [any SiteReader] = SiteReaders.all,
         readerFailed: @escaping @Sendable (ReaderFailure) -> Void = ReaderFailure.log,
+        ytdlp: YTDLPRunner? = nil,
+        decodesAV1: Bool = VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
+        subtitles: @escaping @Sendable () -> SubtitlePreference = { .off },
         inspect: @escaping Inspect
     ) {
+        self.subtitles = subtitles
+        self.ytdlp = ytdlp
+        self.decodesAV1 = decodesAV1
         self.session = session
         self.identity = identity
         self.cooldown = cooldown
@@ -148,6 +158,21 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+        if let link = YouTubeLink(page.url) {
+            switch link.kind {
+            case .video:
+                return report(await withYTDLP(page, opensAsAudio: link.isMusic))
+            case .playlist:
+                let listed = await playlist(page, isMusic: link.isMusic)
+                report(listed)
+                guard case .playlist(let listing) = listed, !listing.isMusic else { return }
+                return report(.playlist(await withHeights(listing)))
+            case .videoInPlaylist(let list):
+                return report(await video(page, inPlaylist: list, isMusic: link.isMusic))
+            case .channel:
+                return report(.ytdlpFailed(.channel))
+            }
+        }
         let start = ContinuousClock.now
         if DASHVersions.isStream(page.url) {
             return report(await linkedPlaylist(page, label: page.url.lastPathComponent))
@@ -174,7 +199,28 @@ public struct PageAnalyzer: Sendable {
         async let fromFrames = frameCandidates(on: page, reading: reading, within: longestLooking - (ContinuousClock.now - start))
         let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
         let framed = await fromFrames
-        let found = framed.isEmpty ? steps.found : Self.merged(steps.found + framed)
+        var found = framed.isEmpty ? steps.found : Self.merged(steps.found + framed)
+        switch await youTubeEmbeds(in: reading, on: page, within: longestLooking - (ContinuousClock.now - start)) {
+        case .found(let embedded) where !embedded.isEmpty:
+            found = Self.merged(found + embedded)
+        case .needsTools where found.isEmpty:
+            return report(.needsTools)
+        default:
+            break
+        }
+        if found.isEmpty, let ytdlp, await ytdlp.isInstalled {
+            let tried = await withYTDLP(page, opensAsAudio: false)
+            switch tried {
+            case .found(let candidates) where candidates.contains(where: Self.isOffered):
+                return report(.found(candidates.filter(Self.isOffered)))
+            case .ytdlpFailed(.private), .ytdlpFailed(.geoBlocked), .ytdlpFailed(.live), .ytdlpFailed(.rateLimited), .toolsChanged:
+                return report(tried)
+            case .needsSignIn where !refusals.blocked:
+                return report(.needsSignIn)
+            default:
+                break
+            }
+        }
         if found.isEmpty, refusals.blocked {
             guard play != nil else { return report(.blocked) }
             return await playAndRead(page, report: report)
@@ -187,6 +233,172 @@ public struct PageAnalyzer: Sendable {
         report(.checkingForMore(found))
         guard let more = await lookedAgain(page, within: left) else { return }
         report(.found(Self.added(more.candidates, to: found)))
+    }
+
+    private func withYTDLP(_ page: SentPage, opensAsAudio: Bool) async -> PageAnalysis {
+        guard let ytdlp else { return .found([]) }
+        guard await ytdlp.isInstalled else { return .needsTools }
+        let label = page.title ?? Self.site(of: page.url)
+        do {
+            let info = try await Self.infoRetryingWithSignIn(for: page, from: ytdlp)
+            let playlists = await playlists(neededBy: info, on: page)
+            let versions = YTDLPVersions.withExtras(
+                YTDLPVersions.versions(of: info, page: page.url, decodesAV1: decodesAV1, playlists: playlists), of: info, subtitles: subtitles()
+            )
+            return .found([Candidate(
+                label: info.title ?? label, thumbnail: info.thumbnail, duration: info.duration, versions: versions, opensAsAudio: opensAsAudio
+            )])
+        } catch ToolInstaller.Failure.changed, is ChildProcess.CouldNotStart {
+            return .toolsChanged
+        } catch is CancellationError {
+            return .found([])
+        } catch let failure as YTDLPFailure {
+            switch failure {
+            case .needsSignIn: return .needsSignIn
+            case .protected: return .found([Candidate(label: label, versions: [], restriction: .protected)])
+            default: return .ytdlpFailed(failure)
+            }
+        } catch {
+            return .ytdlpFailed(.extractorBroken)
+        }
+    }
+
+    private func playlists(neededBy info: MediaInfo, on page: SentPage) async -> [String: MediaPlaylist] {
+        let needed = info.formats.filter { YTDLPVersions.needsPlaylist($0, among: info.formats) }
+        guard !needed.isEmpty else { return [:] }
+        let refusals = Refusals()
+        return await withTaskGroup(of: (String, MediaPlaylist)?.self) { group in
+            for format in needed {
+                guard let url = format.url else { continue }
+                var options = mediaOptions(page, for: url)
+                if let agent = format.headers["User-Agent"] { options.userAgent = agent }
+                if let referrer = format.headers["Referer"].flatMap(URL.init(string:)) { options.referrer = referrer }
+                if let origin = format.headers["Origin"] { options.origin = origin }
+                group.addTask {
+                    guard case .media(let playlist) = await self.playlist(at: url, options: options, refusals: refusals),
+                          HLSVersions.restriction(of: playlist) == nil, !playlist.fragments.isEmpty else { return nil }
+                    return (format.id, playlist)
+                }
+            }
+            var found: [String: MediaPlaylist] = [:]
+            for await pair in group { if let pair { found[pair.0] = pair.1 } }
+            return found
+        }
+    }
+
+    static let mostEmbedsRead = 3
+
+    private func playlist(_ page: SentPage, isMusic: Bool) async -> PageAnalysis {
+        guard let ytdlp else { return .found([]) }
+        guard await ytdlp.isInstalled else { return .needsTools }
+        do {
+            let info: MediaInfo
+            do {
+                info = try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: [], flatPlaylist: true)
+            } catch let failure as YTDLPFailure where (failure == .needsSignIn || failure == .private) && !page.cookies.isEmpty {
+                info = try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: page.cookies, flatPlaylist: true)
+            }
+            return .playlist(Self.playlist(from: info, page: page, isMusic: isMusic))
+        } catch ToolInstaller.Failure.changed, is ChildProcess.CouldNotStart {
+            return .toolsChanged
+        } catch is CancellationError {
+            return .found([])
+        } catch let failure as YTDLPFailure {
+            return failure == .needsSignIn ? .needsSignIn : .ytdlpFailed(failure)
+        } catch {
+            return .ytdlpFailed(.extractorBroken)
+        }
+    }
+
+    private func withHeights(_ listing: PlaylistListing) async -> PlaylistListing {
+        var checked = listing
+        guard let ytdlp, let first = listing.available.first, let info = try? await ytdlp.info(for: first.url) else {
+            checked.heights = []
+            return checked
+        }
+        let videos = info.formats.filter(\.hasVideo)
+        checked.heights = Set(videos.compactMap(\.height)).sorted(by: >)
+        for format in videos {
+            guard let height = format.height, let rate = format.frameRate.map({ Int($0.rounded()) }) else { continue }
+            checked.frameRates[height] = max(checked.frameRates[height] ?? 0, rate)
+        }
+        return checked
+    }
+
+    private static func playlist(from info: MediaInfo, page: SentPage, isMusic: Bool) -> PlaylistListing {
+        let listed = info.entries.prefix(YTDLPRunner.longestPlaylist).enumerated().compactMap { index, entry -> PlaylistListing.Entry? in
+            guard let id = entry.id ?? entry.url?.absoluteString else { return nil }
+            let url = entry.url ?? URL(string: "https://www.youtube.com/watch?v=\(id)")!
+            return PlaylistListing.Entry(
+                id: id, position: index + 1, title: entry.title ?? id, url: url, duration: entry.duration, thumbnail: entry.thumbnail,
+                isAvailable: entry.isAvailable
+            )
+        }
+        return PlaylistListing(
+            title: info.title ?? page.title ?? "Playlist", url: page.url, entries: Array(listed),
+            total: info.playlistCount ?? (info.entries.count > YTDLPRunner.longestPlaylist ? nil : info.entries.count), isMusic: isMusic,
+            isCut: info.entries.count > YTDLPRunner.longestPlaylist, channel: info.channel, thumbnail: info.playlistThumbnail,
+            updated: info.modifiedDate.flatMap(Self.day)
+        )
+    }
+
+    private static func day(_ text: String) -> Date? {
+        guard text.count == 8, let year = Int(text.prefix(4)), let month = Int(text.dropFirst(4).prefix(2)), let day = Int(text.suffix(2)) else { return nil }
+        return DateComponents(calendar: .current, year: year, month: month, day: day).date
+    }
+
+    private func video(_ page: SentPage, inPlaylist list: String, isMusic: Bool) async -> PageAnalysis {
+        let whole = YouTubeLink.playlistURL(list: list)
+        async let listing = playlist(SentPage(url: whole, cookies: page.cookies), isMusic: isMusic)
+        let single = await withYTDLP(page, opensAsAudio: isMusic)
+        guard case .found(var candidates) = single, !candidates.isEmpty else { return single }
+        if case .playlist(let playlist) = await listing, playlist.available.count > 1 {
+            candidates[0].playlistOffer = PlaylistOffer(url: whole, count: playlist.available.count)
+        }
+        return .found(candidates)
+    }
+
+    private static func isOffered(_ candidate: Candidate) -> Bool {
+        !candidate.versions.isEmpty || candidate.restriction != nil
+    }
+
+    private func youTubeEmbeds(in reading: HTMLReader?, on page: SentPage, within limit: Duration) async -> PageAnalysis {
+        guard ytdlp != nil, page.framedBy == nil, let reading, limit > .zero else { return .found([]) }
+        var seen = Set<URL>()
+        let embeds = Array(reading.frames.map(\.url).filter { YouTubeLink($0) != nil && seen.insert($0).inserted }.prefix(Self.mostEmbedsRead))
+        guard !embeds.isEmpty else { return .found([]) }
+        let results = await withTaskGroup(of: (Int, PageAnalysis)?.self) { group in
+            for (index, url) in embeds.enumerated() {
+                group.addTask {
+                    let framed = SentPage(url: url, userAgent: page.userAgent, framedBy: page.url)
+                    return (index, await self.withYTDLP(framed, opensAsAudio: false))
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            var found: [Int: PageAnalysis] = [:]
+            while found.count < embeds.count, let next = await group.next() {
+                guard let (index, analysis) = next else { break }
+                found[index] = analysis
+            }
+            group.cancelAll()
+            return embeds.indices.compactMap { found[$0] }
+        }
+        if results.contains(.needsTools) { return .needsTools }
+        return .found(results.flatMap { result -> [Candidate] in
+            guard case .found(let candidates) = result else { return [] }
+            return candidates.filter(Self.isOffered)
+        })
+    }
+
+    private static func infoRetryingWithSignIn(for page: SentPage, from ytdlp: YTDLPRunner) async throws -> MediaInfo {
+        do {
+            return try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: [])
+        } catch let failure as YTDLPFailure where (failure == .needsSignIn || failure == .private) && !page.cookies.isEmpty {
+            return try await ytdlp.infoUpdatingIfBroken(for: page.url, cookies: page.cookies)
+        }
     }
 
     static let mostFramesRead = 3
@@ -223,6 +435,10 @@ public struct PageAnalyzer: Sendable {
     }
 
     private func quickSteps(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> QuickSteps {
+        if readers.contains(where: { $0.recognises(page.url) && $0.post(in: page.url) != nil }) {
+            if let site = await readSite(page, reading: reading, refusals: refusals) { return QuickSteps(found: site.candidates, readerFound: true) }
+            return QuickSteps(found: await candidates(on: page, reading: reading, refusals: refusals, keepsOnlyPlayers: true, report: report), readerFound: false)
+        }
         async let fromSite = readSite(page, reading: reading, refusals: refusals)
         let fromPage = await candidates(on: page, reading: reading, refusals: refusals, report: report)
         let site = await fromSite
@@ -304,7 +520,9 @@ public struct PageAnalyzer: Sendable {
         var fragments = StreamFragments()
     }
 
-    private func candidates(on page: SentPage, reading: HTMLReader?, refusals: Refusals, report: (PageAnalysis) -> Void) async -> [Candidate] {
+    private func candidates(
+        on page: SentPage, reading: HTMLReader?, refusals: Refusals, keepsOnlyPlayers: Bool = false, report: (PageAnalysis) -> Void
+    ) async -> [Candidate] {
         var players = Players()
         for media in page.scan { players.add(media, from: "page") }
         let readMedia = reading?.media ?? []
@@ -326,7 +544,7 @@ public struct PageAnalyzer: Sendable {
             }
         }
         for url in scriptedFiles { players.add(ScannedMedia(url: url, kind: MediaFile.kind(of: url) ?? .video), from: "watched") }
-        let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams)
+        let layout = PageLayout(page: page, players: players.list.map { ($0.group, $0.sources) }, streams: streams, keepsOnlyPlayers: keepsOnlyPlayers)
         let label = Self.label(of: page, reading: reading)
         let fragments = StreamFragments()
         let context = PageContext(
@@ -920,7 +1138,7 @@ private extension PageAnalysis {
         case .found(let candidates): return .found(candidates.map { $0.requested(by: agent) })
         case .looking(let candidates): return .looking(candidates.map { $0.requested(by: agent) })
         case .checkingForMore(let candidates): return .checkingForMore(candidates.map { $0.requested(by: agent) })
-        case .playing, .needsSignIn, .blocked, .plainFile: return self
+        case .playing, .needsSignIn, .blocked, .plainFile, .needsTools, .toolsChanged, .ytdlpFailed, .playlist: return self
         }
     }
 }

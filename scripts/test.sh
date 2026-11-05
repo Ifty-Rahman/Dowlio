@@ -3,8 +3,14 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
+"$ROOT/scripts/build-ffmpeg.sh"
+export DOWLIO_FFMPEG="$BUILD_DIR/ffmpeg/ffmpeg"
+
+parallel="--parallel"
+if [ -n "${CI:-}" ]; then parallel="--no-parallel"; fi
+
 log "Running DowlioKit tests"
-(cd "$ROOT/Packages/DowlioKit" && swift test --skip DowlioConnectTests)
+(cd "$ROOT/Packages/DowlioKit" && swift test "$parallel" --skip DowlioConnectTests)
 
 log "Running Dowlio Connect server tests"
 (cd "$ROOT/Packages/DowlioKit" && swift test --filter DowlioConnectTests)

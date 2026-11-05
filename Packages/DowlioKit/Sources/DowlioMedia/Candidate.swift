@@ -127,11 +127,14 @@ public struct Candidate: Equatable, Sendable {
     public var isOnScreen: Bool
     public var isOther: Bool
     public var unprobed: [WatchedRequest]
+    public var opensAsAudio: Bool
+    public var playlistOffer: PlaylistOffer?
 
     public init(
         label: String, thumbnail: URL? = nil, duration: Double? = nil, versions: [Version], restriction: Restriction? = nil,
-        isOnScreen: Bool = false, isOther: Bool = false, unprobed: [WatchedRequest] = []
+        isOnScreen: Bool = false, isOther: Bool = false, unprobed: [WatchedRequest] = [], opensAsAudio: Bool = false
     ) {
+        self.opensAsAudio = opensAsAudio
         self.label = label
         self.thumbnail = thumbnail
         self.duration = duration
@@ -153,11 +156,14 @@ public struct Version: Equatable, Sendable {
     public var totalBytes: Int64?
     public var isEstimatedSize: Bool
     public var height: Int?
+    public var frameRate: Int?
     public var codecs: String?
     public var language: String?
     public var referrer: URL?
     public var origin: String?
     public var userAgent: String?
+    public var isHDR: Bool
+    public var requestSizeLimit: Int64?
 
     public init(
         source: DownloadSource,
@@ -169,8 +175,12 @@ public struct Version: Equatable, Sendable {
         language: String? = nil,
         referrer: URL? = nil,
         origin: String? = nil,
-        userAgent: String? = nil
+        userAgent: String? = nil,
+        isHDR: Bool = false,
+        requestSizeLimit: Int64? = nil,
+        frameRate: Int? = nil
     ) {
+        self.frameRate = frameRate
         self.source = source
         self.contentType = contentType
         self.totalBytes = totalBytes
@@ -181,7 +191,30 @@ public struct Version: Equatable, Sendable {
         self.referrer = referrer
         self.origin = origin
         self.userAgent = userAgent
+        self.isHDR = isHDR
+        self.requestSizeLimit = requestSizeLimit
     }
+
+    private var mediaSource: MediaSource? {
+        if case .media(let media) = source { media } else { nil }
+    }
+
+    public var outputContainer: MediaContainer? { mediaSource?.container }
+
+    public var resolution: String? {
+        height.map { Self.resolution(height: $0, frameRate: frameRate) }
+    }
+
+    public var isHighFrameRate: Bool { (frameRate ?? 0) > 30 }
+
+    public static func resolution(height: Int, frameRate: Int?) -> String {
+        guard let frameRate, frameRate > 30 else { return "\(height)p" }
+        return "\(height)p\(frameRate)"
+    }
+
+    public var expiry: Date? { mediaSource?.expiry }
+
+    public var renewal: MediaRenewal? { mediaSource?.renewal }
 }
 
 public enum PageAnalysis: Equatable, Sendable {
@@ -192,4 +225,73 @@ public enum PageAnalysis: Equatable, Sendable {
     case blocked
     case plainFile(URL)
     case found([Candidate])
+    case needsTools
+    case toolsChanged
+    case ytdlpFailed(YTDLPFailure)
+    case playlist(PlaylistListing)
+}
+
+public struct PlaylistOffer: Equatable, Sendable {
+    public var url: URL
+    public var count: Int
+
+    public init(url: URL, count: Int) {
+        self.url = url
+        self.count = count
+    }
+}
+
+public struct PlaylistListing: Equatable, Sendable {
+    public struct Entry: Equatable, Sendable, Identifiable {
+        public var videoID: String
+        public var position: Int
+        public var title: String
+        public var url: URL
+        public var duration: Double?
+        public var thumbnail: URL?
+        public var isAvailable: Bool
+
+        public var id: String { "\(position)-\(videoID)" }
+
+        public init(
+            id videoID: String, position: Int, title: String, url: URL, duration: Double? = nil, thumbnail: URL? = nil, isAvailable: Bool = true
+        ) {
+            self.videoID = videoID
+            self.position = position
+            self.title = title
+            self.url = url
+            self.duration = duration
+            self.thumbnail = thumbnail
+            self.isAvailable = isAvailable
+        }
+    }
+
+    public var title: String
+    public var url: URL
+    public var entries: [Entry]
+    public var total: Int?
+    public var isMusic: Bool
+    public var isCut: Bool
+    public var channel: String?
+    public var thumbnail: URL?
+    public var updated: Date?
+    public var heights: [Int]?
+    public var frameRates: [Int: Int] = [:]
+
+    public init(
+        title: String, url: URL, entries: [Entry], total: Int?, isMusic: Bool, isCut: Bool = false, channel: String? = nil, thumbnail: URL? = nil,
+        updated: Date? = nil, heights: [Int]? = nil
+    ) {
+        self.heights = heights
+        self.channel = channel
+        self.thumbnail = thumbnail
+        self.updated = updated
+        self.title = title
+        self.url = url
+        self.entries = entries
+        self.total = total
+        self.isMusic = isMusic
+        self.isCut = isCut
+    }
+    public var available: [Entry] { entries.filter(\.isAvailable) }
 }

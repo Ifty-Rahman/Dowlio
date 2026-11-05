@@ -1,0 +1,415 @@
+{
+ "_type": "playlist",
+ "id": "OLAK5uy_lqcFZTOPHGwcnP0nYMzNuY0IES0fl7Fe4",
+ "title": "Album - Abbey Road (Super Deluxe Edition)",
+ "extractor": "youtube:tab",
+ "extractor_key": "YoutubeTab",
+ "webpage_url": "https://www.youtube.com/playlist?list=OLAK5uy_lqcFZTOPHGwcnP0nYMzNuY0IES0fl7Fe4",
+ "original_url": "https://music.youtube.com/browse/MPREb_tQfaWH32ovE",
+ "channel": null,
+ "uploader": null,
+ "playlist_count": 40,
+ "availability": "unlisted",
+ "entries": [
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "wqaKHHxQFZc",
+   "url": "https://music.youtube.com/watch?v=wqaKHHxQFZc",
+   "title": "Come Together (2019 Mix)",
+   "duration": 261,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "cNavPZ8GA6I",
+   "url": "https://music.youtube.com/watch?v=cNavPZ8GA6I",
+   "title": "Something (2019 Mix)",
+   "duration": 183,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "3HuXFfq79I8",
+   "url": "https://music.youtube.com/watch?v=3HuXFfq79I8",
+   "title": "Maxwell's Silver Hammer (2019 Mix)",
+   "duration": 208,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "dpCpsyRTS7o",
+   "url": "https://music.youtube.com/watch?v=dpCpsyRTS7o",
+   "title": "Oh! Darling (2019 Mix)",
+   "duration": 208,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "x9VzJpl05N0",
+   "url": "https://music.youtube.com/watch?v=x9VzJpl05N0",
+   "title": "Octopus's Garden (2019 Mix)",
+   "duration": 171,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "wNL6bd7SpDE",
+   "url": "https://music.youtube.com/watch?v=wNL6bd7SpDE",
+   "title": "I Want You (She's So Heavy) (2019 Mix)",
+   "duration": 468,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "GKdl-GCsNJ0",
+   "url": "https://music.youtube.com/watch?v=GKdl-GCsNJ0",
+   "title": "Here Comes The Sun (2019 Mix)",
+   "duration": 186,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "2XyuywVao7g",
+   "url": "https://music.youtube.com/watch?v=2XyuywVao7g",
+   "title": "Because (2019 Mix)",
+   "duration": 166,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "W8uZjeeOcQo",
+   "url": "https://music.youtube.com/watch?v=W8uZjeeOcQo",
+   "title": "You Never Give Me Your Money (2019 Mix)",
+   "duration": 243,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "ujBRavK6YWo",
+   "url": "https://music.youtube.com/watch?v=ujBRavK6YWo",
+   "title": "Sun King (2019 Mix)",
+   "duration": 147,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Ts8L-6ghQuA",
+   "url": "https://music.youtube.com/watch?v=Ts8L-6ghQuA",
+   "title": "Mean Mr Mustard (2019 Mix)",
+   "duration": 67,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Jq7VkBUQ2Xg",
+   "url": "https://music.youtube.com/watch?v=Jq7VkBUQ2Xg",
+   "title": "Polythene Pam (2019 Mix)",
+   "duration": 73,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "hh80eYMh1gY",
+   "url": "https://music.youtube.com/watch?v=hh80eYMh1gY",
+   "title": "She Came In Through The Bathroom Window (2019 Mix)",
+   "duration": 119,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "hwi2ynHPB80",
+   "url": "https://music.youtube.com/watch?v=hwi2ynHPB80",
+   "title": "Golden Slumbers (2019 Mix)",
+   "duration": 92,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "0RagyYjgY4g",
+   "url": "https://music.youtube.com/watch?v=0RagyYjgY4g",
+   "title": "Carry That Weight (2019 Mix)",
+   "duration": 97,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "A5Tuu6UnEe8",
+   "url": "https://music.youtube.com/watch?v=A5Tuu6UnEe8",
+   "title": "The End (2019 Mix)",
+   "duration": 142,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "QhmyhwszSWA",
+   "url": "https://music.youtube.com/watch?v=QhmyhwszSWA",
+   "title": "Her Majesty (2019 Mix)",
+   "duration": 26,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "BvT4BUFauqc",
+   "url": "https://music.youtube.com/watch?v=BvT4BUFauqc",
+   "title": "I Want You (She's So Heavy) (Trident Recording Session & Reduction Mix)",
+   "duration": 420,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "1EIcqz-sjy4",
+   "url": "https://music.youtube.com/watch?v=1EIcqz-sjy4",
+   "title": "Goodbye (Home Demo)",
+   "duration": 144,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Vh_DB3glx_k",
+   "url": "https://music.youtube.com/watch?v=Vh_DB3glx_k",
+   "title": "Something (Studio Demo)",
+   "duration": 218,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "hwzHeAnFqrk",
+   "url": "https://music.youtube.com/watch?v=hwzHeAnFqrk",
+   "title": "The Ballad Of John And Yoko (Take 7)",
+   "duration": 218,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "ZbUULRUm-yE",
+   "url": "https://music.youtube.com/watch?v=ZbUULRUm-yE",
+   "title": "Old Brown Shoe (Take 2)",
+   "duration": 196,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "3Psnehhneis",
+   "url": "https://music.youtube.com/watch?v=3Psnehhneis",
+   "title": "Oh! Darling (Take 4)",
+   "duration": 211,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "PfL7sKcpr3Y",
+   "url": "https://music.youtube.com/watch?v=PfL7sKcpr3Y",
+   "title": "Octopus's Garden (Take 9)",
+   "duration": 103,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "QLJXHRsph0k",
+   "url": "https://music.youtube.com/watch?v=QLJXHRsph0k",
+   "title": "You Never Give Me Your Money (Take 36)",
+   "duration": 318,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Cj-w0641nbY",
+   "url": "https://music.youtube.com/watch?v=Cj-w0641nbY",
+   "title": "Her Majesty (Takes 1-3)",
+   "duration": 94,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "dHcPdqWYTc0",
+   "url": "https://music.youtube.com/watch?v=dHcPdqWYTc0",
+   "title": "Golden Slumbers / Carry That Weight (Takes 1-3 / Medley)",
+   "duration": 201,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "oIt8GN2sr4I",
+   "url": "https://music.youtube.com/watch?v=oIt8GN2sr4I",
+   "title": "Here Comes The Sun (Take 9)",
+   "duration": 221,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "RYDVmufHZg0",
+   "url": "https://music.youtube.com/watch?v=RYDVmufHZg0",
+   "title": "Maxwell's Silver Hammer (Take 12)",
+   "duration": 285,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "enBsVI8PdK4",
+   "url": "https://music.youtube.com/watch?v=enBsVI8PdK4",
+   "title": "Come Together (Take 5)",
+   "duration": 211,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "34Mz0ukU61E",
+   "url": "https://music.youtube.com/watch?v=34Mz0ukU61E",
+   "title": "The End (Take 3)",
+   "duration": 132,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "JSCVOQv4j6E",
+   "url": "https://music.youtube.com/watch?v=JSCVOQv4j6E",
+   "title": "Come And Get It (Studio Demo)",
+   "duration": 163,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "FvJzRmaKe-s",
+   "url": "https://music.youtube.com/watch?v=FvJzRmaKe-s",
+   "title": "Sun King (Take 20)",
+   "duration": 195,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "_2rsqSDwczE",
+   "url": "https://music.youtube.com/watch?v=_2rsqSDwczE",
+   "title": "Mean Mr. Mustard (Take 20)",
+   "duration": 95,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Mw_9MhbGh2c",
+   "url": "https://music.youtube.com/watch?v=Mw_9MhbGh2c",
+   "title": "Polythene Pam (Take 27)",
+   "duration": 100,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "uQ1Vgr6SPhs",
+   "url": "https://music.youtube.com/watch?v=uQ1Vgr6SPhs",
+   "title": "She Came In Through The Bathroom Window (Take 27)",
+   "duration": 127,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Sxpissu4gTk",
+   "url": "https://music.youtube.com/watch?v=Sxpissu4gTk",
+   "title": "Because (Take 1 / Instrumental)",
+   "duration": 188,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "a4Ujexj9YGs",
+   "url": "https://music.youtube.com/watch?v=a4Ujexj9YGs",
+   "title": "The Long One (Comprising of ‘You Never Give Me Your Money’, ’Sun King’/’Mean Mr...",
+   "duration": 971,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "PVBNm6l3yrI",
+   "url": "https://music.youtube.com/watch?v=PVBNm6l3yrI",
+   "title": "Something (Take 39 - Strings Only Instrumental)",
+   "duration": 162,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "oiEpeRP4d1E",
+   "url": "https://music.youtube.com/watch?v=oiEpeRP4d1E",
+   "title": "Golden Slumbers / Carry That Weight (Take 17 / Instrumental / Strings & Brass Only)",
+   "duration": 198,
+   "availability": null,
+   "live_status": null
+  }
+ ]
+}

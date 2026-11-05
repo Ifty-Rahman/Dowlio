@@ -35,12 +35,16 @@ public actor DownloadEngine {
     /// An engine whose learned host limits live in `hostLimits`. The default keeps them in memory.
     public init(
         hostLimits: any HostLimitStore = InMemoryHostLimitStore(),
-        remux: (@Sendable ([URL], URL) async throws -> Void)? = nil,
+        remux: (@Sendable (RemuxRequest) async throws -> Void)? = nil,
+        renew: (@Sendable (MediaSource) async throws -> MediaSource)? = nil,
+        downloadWithYTDLP: (@Sendable (YTDLPDownload) async throws -> URL)? = nil,
         identity: @escaping @Sendable () -> BrowserIdentity = { BrowserIdentity(userAgent: nil) }
     ) {
         var configuration = EngineConfiguration()
         configuration.hostLimits = hostLimits
         configuration.remux = remux
+        configuration.renew = renew
+        configuration.downloadWithYTDLP = downloadWithYTDLP
         configuration.identity = identity
         self.init(configuration: configuration)
     }
@@ -226,12 +230,16 @@ public actor DownloadEngine {
         options.referrer = manifest.referrer
         options.userAgent = manifest.userAgent
         options.origin = manifest.origin
+        options.requestSizeLimit = manifest.requestSizeLimit
         options.nameConflictPolicy = manifest.nameConflictPolicy ?? .keepBoth
         options.maximumFailures = maximumFailures
         options.allowsWorkStealing = allowsWorkStealing
 
         if let media = manifest.mediaSource {
-            let plan = MediaPlan(restoring: media, fileName: fileName, partial: partial, finished: manifest.finishedFragments ?? [])
+            let plan = MediaPlan(
+                restoring: media, fileName: fileName, partial: partial, requestSizeLimit: manifest.requestSizeLimit,
+                finished: manifest.finishedFragments ?? []
+            )
             var snapshot = DownloadSnapshot(
                 id: id, state: .paused, fileName: fileName, destinationFolder: folder,
                 isNotSecure: manifest.originalURL.isPlainHTTP, displayHost: manifest.originalURL.displayHost

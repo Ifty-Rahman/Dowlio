@@ -1,0 +1,267 @@
+{
+ "_type": "playlist",
+ "id": "PLlaN88a7y2_plecYoJxvRFTLHVbIVAOoc",
+ "title": "Rick Astley: Official Music Videos",
+ "extractor": "youtube:tab",
+ "extractor_key": "YoutubeTab",
+ "webpage_url": "https://www.youtube.com/playlist?list=PLlaN88a7y2_plecYoJxvRFTLHVbIVAOoc",
+ "original_url": "https://www.youtube.com/playlist?list=PLlaN88a7y2_plecYoJxvRFTLHVbIVAOoc",
+ "channel": "Rick Astley",
+ "uploader": "Rick Astley",
+ "playlist_count": 43,
+ "availability": "public",
+ "modified_date": "20261001",
+ "thumbnails": [
+  {
+   "url": "https://i.ytimg.com/vi/LLFhKaqnWwk/hqdefault.jpg?sqp=-oaymwEXCPYBEIoBSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLAyNil0kers1QKfYNymnq1GPcP9EA",
+   "height": 138,
+   "width": 246,
+   "id": "2",
+   "resolution": "246x138"
+  },
+  {
+   "url": "https://i.ytimg.com/vi/LLFhKaqnWwk/hqdefault.jpg?sqp=-oaymwEXCNACELwBSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLBuO4SdzK-phSD_gsWJUOzXsmCEvw",
+   "height": 188,
+   "width": 336,
+   "id": "3",
+   "resolution": "336x188"
+  }
+ ],
+ "entries": [
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "LLFhKaqnWwk",
+   "url": "https://www.youtube.com/watch?v=LLFhKaqnWwk",
+   "title": "Rick Astley - Never Gonna Give You Up (Official Animated Video)",
+   "duration": 213,
+   "availability": null,
+   "live_status": null,
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/LLFhKaqnWwk/hqdefault.jpg?sqp=-oaymwEgCNACELwBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC8xg=&rs=AOn4CLD5P5wVbvgZFaMh9EclJcDm7scRNQ",
+     "height": 188,
+     "width": 336
+    }
+   ]
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "LjmOX9jGoR4",
+   "url": "https://www.youtube.com/watch?v=LjmOX9jGoR4",
+   "title": "Rick Astley - Raindrops (Official Video)",
+   "duration": 216,
+   "availability": null,
+   "live_status": null,
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/LjmOX9jGoR4/hqdefault.jpg?sqp=-oaymwEgCNACELwBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC8xg=&rs=AOn4CLD8Mvrr6MWllg1CNKRwceVVC9K_IA",
+     "height": 188,
+     "width": 336
+    }
+   ]
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "zRVjZ2DJ9Cg",
+   "url": "https://www.youtube.com/watch?v=zRVjZ2DJ9Cg",
+   "title": "Rick Astley - Waiting On You (Official Video)",
+   "duration": 231,
+   "availability": null,
+   "live_status": null,
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/zRVjZ2DJ9Cg/hqdefault.jpg?sqp=-oaymwEgCNACELwBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC8xg=&rs=AOn4CLC1brVjHnQg8-NjGvQvkClkvf3PCA",
+     "height": 188,
+     "width": 336
+    }
+   ]
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "yPYZpwSpKmA",
+   "url": "https://www.youtube.com/watch?v=yPYZpwSpKmA",
+   "title": "[Private video]",
+   "duration": null,
+   "availability": null,
+   "live_status": null,
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/yPYZpwSpKmA/hqdefault.jpg?sqp=-oaymwEgCNACELwBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC8xg=&rs=AOn4CLCVo-tvA0i2MQjqhyWA7oEAKI7VsQ",
+     "height": 188,
+     "width": 336
+    }
+   ]
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "dQw4w9WgXcQ",
+   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+   "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+   "duration": 214,
+   "availability": null,
+   "live_status": null,
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg?sqp=-oaymwEgCNACELwBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC8xg=&rs=AOn4CLCqh65ZpY-1S9Y3vJeHWwXLcY0qUw",
+     "height": 188,
+     "width": 336
+    }
+   ]
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "C2xel6q0yao",
+   "url": "https://www.youtube.com/watch?v=C2xel6q0yao",
+   "title": "Rick Astley - Cry for Help (Official Video) (4K Remaster)",
+   "duration": 292,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "zVRaZlwLyJw",
+   "url": "https://www.youtube.com/watch?v=zVRaZlwLyJw",
+   "title": "Rick Astley - Dippin My Feet (Official Video)",
+   "duration": 192,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "BeyEGebJ1l4",
+   "url": "https://www.youtube.com/watch?v=BeyEGebJ1l4",
+   "title": "[Deleted video]",
+   "duration": null,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "mIHHfNVfhPk",
+   "url": "https://www.youtube.com/watch?v=mIHHfNVfhPk",
+   "title": "Rick Astley - Driving Me Crazy (Official Video)",
+   "duration": 209,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "Zoedy_5fLmE",
+   "url": "https://www.youtube.com/watch?v=Zoedy_5fLmE",
+   "title": "Rick Astley - When I Fall In Love (Official Video, HD Remaster)",
+   "duration": 183,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "QJjrf9RkzGo",
+   "url": "https://www.youtube.com/watch?v=QJjrf9RkzGo",
+   "title": "Rick Astley - Forever and More (Official Video)",
+   "duration": 227,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "cc91EfoBh8A",
+   "url": "https://www.youtube.com/watch?v=cc91EfoBh8A",
+   "title": "Rick Astley - Angels On My Side (Official Video) [4K Remaster]",
+   "duration": 206,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "qWNQUvIk954",
+   "url": "https://www.youtube.com/watch?v=qWNQUvIk954",
+   "title": "Rick Astley - Never Gonna Stop (Official Video)",
+   "duration": 201,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "lU1EmTA4J60",
+   "url": "https://www.youtube.com/watch?v=lU1EmTA4J60",
+   "title": "Rick Astley - Unwanted (Official Song from the Podcast) (Lyric Video) [Remastered in 4K]",
+   "duration": 213,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "7ZjBiDVoTTE",
+   "url": "https://www.youtube.com/watch?v=7ZjBiDVoTTE",
+   "title": "Rick Astley ft.The Unsung Heroes - Every One of Us (Heroes Edit) (Official Music Video)",
+   "duration": 208,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "uYCUNULp868",
+   "url": "https://www.youtube.com/watch?v=uYCUNULp868",
+   "title": "Rick Astley - Love This Christmas (Official Music Video)",
+   "duration": 241,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "eYuUAGXN0KM",
+   "url": "https://www.youtube.com/watch?v=eYuUAGXN0KM",
+   "title": "Rick Astley - Take Me to Your Heart (Official Video) (4K Remaster)",
+   "duration": 212,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "yBwD4iYcWC4",
+   "url": "https://www.youtube.com/watch?v=yBwD4iYcWC4",
+   "title": "Rick Astley - She Wants To Dance With Me (Official Video) (4K Remaster)",
+   "duration": 260,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "DqZS89jFCFg",
+   "url": "https://www.youtube.com/watch?v=DqZS89jFCFg",
+   "title": "Rick Astley - Hold Me In Your Arms (Official Video) [4K Remaster]",
+   "duration": 264,
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "_type": "url",
+   "ie_key": "Youtube",
+   "id": "AC3Ejf7vPEY",
+   "url": "https://www.youtube.com/watch?v=AC3Ejf7vPEY",
+   "title": "Rick Astley - Keep Singing (Official Video) [4K Remaster]",
+   "duration": 219,
+   "availability": null,
+   "live_status": null
+  }
+ ]
+}

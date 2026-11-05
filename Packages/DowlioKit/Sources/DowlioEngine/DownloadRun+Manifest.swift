@@ -22,7 +22,8 @@ extension DownloadRun {
             origin: options.origin,
             segments: reading.segments.map { .init(start: $0.start, end: $0.end, received: $0.receivedBytes) },
             layout: layout,
-            nameConflictPolicy: options.nameConflictPolicy
+            nameConflictPolicy: options.nameConflictPolicy,
+            requestSizeLimit: options.requestSizeLimit
         )
         try? plan.partial.saveManifest(manifest)
     }

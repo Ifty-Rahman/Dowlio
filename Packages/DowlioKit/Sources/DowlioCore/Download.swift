@@ -70,6 +70,14 @@ public enum DownloadError: Error, Equatable, Sendable {
     /// of mixing versions.
     case serverChangedFile
     case mediaUnplayable
+    case needsTools
+}
+
+public enum RenewalFailure: Error, Equatable, Sendable {
+    case toolsMissing
+    case needsSignIn
+    case network
+    case failed
 }
 
 /// What went wrong with the network: the URL loading system's error code and its description.
@@ -124,6 +132,9 @@ public struct RequestOptions: Equatable, Sendable {
     /// A connection that finishes its segment takes over half of the slowest segment's remaining
     /// work. With this off, each connection closes when its own segment is done.
     public var allowsWorkStealing = true
+    public var requestSizeLimit: Int64?
+    public var subfolder: String?
+    public var playlistGroup: String?
     /// The name the user chose for the finished file. Unsafe characters are removed. `nil` takes
     /// the name the server or the link gives.
     public var fileName: String?
@@ -288,6 +299,7 @@ public struct DownloadSnapshot: Equatable, Sendable {
     /// The original link's host, lowercased, for showing where the download comes from. It stays
     /// the same when redirects lead elsewhere. `nil` for a link without a host.
     public var displayHost: String?
+    public var renewedMedia: MediaSource?
 
     public init(
         id: DownloadID,

@@ -54,19 +54,34 @@ final class AppModel {
 
     private let library: Library?
     private var connectServer: ConnectServer?
+    let tools: ToolInstaller
+    let toolsModel: ToolsModel
+    var toolsNeededFor: DownloadID?
+    private var resumedMedia: Set<DownloadID> = []
+    private let renewalSignIn = RenewalSignIn()
 
     init() {
         UserDefaults.standard.removeRetiredSettings()
         URLCache.shared = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 0)
         Task.detached(priority: .background) { Self.removeSavedWebData() }
+        YTDLPRunner.removeLeftoverCookies()
+        let support = DebugLaunch.supportFolder ?? URL.applicationSupportDirectory.appending(
+            path: AppIdentity.supportFolderName, directoryHint: .isDirectory
+        )
+        tools = ToolInstaller(folder: support.appending(path: "Tools", directoryHint: .isDirectory))
+        toolsModel = ToolsModel(installer: tools)
+        toolsModel.startWeeklyChecks()
         do {
-            let support = try DebugLaunch.supportFolder ?? FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-            ).appending(path: AppIdentity.supportFolderName, directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let store = try DownloadStore(databaseAt: support.appending(path: "Dowlio.sqlite"))
-            let library = Library(engine: DownloadEngine(remux: AVRemuxer.remux, identity: { BrowserIdentity.standard }), store: store)
+            let engine = DownloadEngine(
+                remux: MediaRemuxer.remux, renew: Self.renewal(tools: tools, signIn: renewalSignIn),
+                downloadWithYTDLP: Self.ytdlpDownload(tools: tools, signIn: renewalSignIn), identity: { BrowserIdentity.standard }
+            )
+            let library = Library(engine: engine, store: store)
             self.library = library
             startConnectServer(store: store, library: library, support: support)
+            renewalSignIn.set { [weak self] url in await self?.browserCookies(for: url) ?? [] }
         } catch {
             library = nil
             problem = "Dowlio can't open its history: \(error.localizedDescription)"
@@ -253,7 +268,10 @@ final class AppModel {
         #else
         let readerFailed = ReaderFailure.log
         #endif
-        return PageAnalyzer(identity: .standard, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed) { url, options in
+        return PageAnalyzer(
+            identity: .standard, cooldown: hostCooldown, lookAgain: { await HiddenPlayer.play($0) }, readerFailed: readerFailed,
+            ytdlp: YTDLPRunner(installer: tools), subtitles: { UserDefaults.standard.subtitlePreference }
+        ) { url, options in
             try await library.inspect(url, options: options)
         }
     }
@@ -314,10 +332,29 @@ final class AppModel {
         }
     }
 
+    private var toolConsent: ToolConsent {
+        let tools = tools
+        let toolsModel = toolsModel
+        return ToolConsent(size: { try? await tools.downloadSize() }, install: { keeps in
+            try await tools.install()
+            if let keeps { UserDefaults.standard.set(keeps, forKey: SettingsKey.keepsYTDLPUpToDate) }
+            await toolsModel.refresh()
+        }, update: {
+            let updated = try await tools.update()
+            await toolsModel.refresh()
+            return updated
+        }, isInstalled: {
+            await tools.isInstalled
+        })
+    }
+
     /// A draft for the New Download sheet or Quick add, checking links through the library.
     func makeNewDownload(_ text: String = "") -> NewDownloadModel? {
         guard let library else { return nil }
-        let list = LinkList(analyze: analyze, lookAgain: lookAgain, probe: probe) { AppModel.currentSettings().qualityPreference }
+        let list = LinkList(
+            analyze: analyze, lookAgain: lookAgain, probe: probe, preference: { AppModel.currentSettings().qualityPreference },
+            tools: toolConsent
+        )
         let model = NewDownloadModel(text: text, folder: downloadsFolder, list: list, inspect: { url, options in
             try await library.inspect(url, options: options)
         }, signIn: { [weak self] url in
@@ -401,13 +438,21 @@ final class AppModel {
         }
         let isTaken = Self.nameIsTaken(in: draft.folder)
         let addsResolution = settings.nameConflictPolicy == .keepBoth
-        let added = list.downloads.map { download -> (DownloadSource, RequestOptions, DownloadOrigin?) in
+        let subtitles = UserDefaults.standard.subtitlePreference
+        let added = list.downloads.flatMap { download -> [(DownloadSource, RequestOptions, DownloadOrigin?)] in
+            if case let .playlist(page, listing, entries, showing, quality) = download {
+                return playlistDownloads(page, listing, entries, showing, quality, draft: draft, subtitles: subtitles)
+            }
+            return single(download).map { [$0] } ?? []
+        }
+        func single(_ download: LinkDownload) -> (DownloadSource, RequestOptions, DownloadOrigin?)? {
             switch download {
             case let .media(page, candidate, version, name):
                 let chosen = draft.options(for: page.url)
                 var options = settings.options(connections: chosen.connections)
                 options.referrer = chosen.referrer ?? version.referrer ?? page.url
                 options.origin = version.origin
+                options.requestSizeLimit = version.requestSizeLimit
                 options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
                 options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: version.source.url, from: page.url)
                 options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)
@@ -420,12 +465,32 @@ final class AppModel {
                 options.cookies = chosen.cookies
                 options.fileName = name
                 return (.file(url), options, draft.origin(for: url))
+            case .playlist:
+                return nil
             }
         }
         perform { library in
             for (source, options, origin) in added {
                 await library.add(source, destination: destination, options: options, startImmediately: draft.startImmediately, origin: origin)
             }
+        }
+    }
+
+    private func playlistDownloads(
+        _ page: SentPage, _ listing: PlaylistListing, _ entries: [PlaylistListing.Entry], _ showing: SentPageDraft.Showing,
+        _ quality: VideoQuality, draft: NewDownloadDraft, subtitles: SubtitlePreference
+    ) -> [(DownloadSource, RequestOptions, DownloadOrigin?)] {
+        let chosen = draft.options(for: page.url)
+        return entries.map { entry in
+            let media = PlaylistNaming.media(for: entry, showing: showing, quality: quality, subtitles: subtitles.downloads ? subtitles.languages : [])
+            var options = settings.options(connections: chosen.connections)
+            options.referrer = chosen.referrer ?? page.url
+            options.userAgent = chosen.userAgent ?? page.userAgent
+            options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: entry.url, from: page.url)
+            options.fileName = PlaylistNaming.fileName(position: entry.position, of: listing.entries.count, title: entry.title, fileExtension: media.fileExtension)
+            options.subfolder = PlaylistNaming.folderName(listing.title)
+            options.playlistGroup = listing.url.absoluteString
+            return (.media(media), options, draft.origin(for: page.url))
         }
     }
 
@@ -455,8 +520,49 @@ final class AppModel {
     }
 
     func pause(_ row: DownloadRow) { perform { await $0.pause(row.id) } }
-    func resume(_ row: DownloadRow) { perform { await $0.resume(row.id) } }
-    func retry(_ row: DownloadRow) { perform { await $0.retry(row.id) } }
+    func resume(_ row: DownloadRow) {
+        if row.isMedia { resumedMedia.insert(row.id) }
+        perform { await $0.resume(row.id) }
+    }
+    func retry(_ row: DownloadRow) {
+        if row.state == .failed(.needsTools) {
+            toolsNeededFor = row.id
+            showLibraryWindow()
+            return
+        }
+        perform { await $0.retry(row.id) }
+    }
+
+    func installToolsAndRetry() {
+        guard let id = toolsNeededFor else { return }
+        toolsNeededFor = nil
+        Task {
+            do {
+                try await tools.install()
+                await toolsModel.refresh()
+                perform { await $0.retry(id) }
+            } catch {
+                actionFailure = ToolsModel.sentence(for: error)
+            }
+        }
+    }
+
+    private func browserCookies(for url: URL) async -> [Cookie] {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.usesBrowserSignIn) else { return [] }
+        return await connectServer?.signIn(for: url, frontBrowser: FrontBrowser.frontApp?.name)?.cookies ?? []
+    }
+
+    nonisolated private static func ytdlpDownload(
+        tools: ToolInstaller, signIn: RenewalSignIn
+    ) -> @Sendable (YTDLPDownload) async throws -> URL {
+        { request in try await YTDLPRunner(installer: tools).download(request) { url in await signIn.cookies(for: url) } }
+    }
+
+    nonisolated private static func renewal(
+        tools: ToolInstaller, signIn: RenewalSignIn
+    ) -> @Sendable (MediaSource) async throws -> MediaSource {
+        { media in try await YTDLPRunner(installer: tools).renew(media) { url in await signIn.cookies(for: url) } }
+    }
     func cancel(_ row: DownloadRow) { perform { await $0.cancel(row.id) } }
     func removeFromList(_ row: DownloadRow) { perform { await $0.removeFromList(row.id) } }
     func clearCompleted() { perform { await $0.clearCompleted() } }
@@ -507,6 +613,37 @@ final class AppModel {
         for await rows in await library.rows() {
             self.rows = rows
             notifier.update(rows)
+            askForToolsIfAResumeNeedsThem(rows)
         }
+    }
+
+    private func askForToolsIfAResumeNeedsThem(_ rows: [DownloadRow]) {
+        guard !resumedMedia.isEmpty else { return }
+        for row in rows where resumedMedia.contains(row.id) {
+            switch row.state {
+            case .failed(.needsTools):
+                resumedMedia.remove(row.id)
+                toolsNeededFor = row.id
+                showLibraryWindow()
+            case .failed, .completed, .paused:
+                resumedMedia.remove(row.id)
+            default:
+                break
+            }
+        }
+    }
+}
+
+final class RenewalSignIn: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lookup: (@Sendable (URL) async -> [Cookie])?
+
+    func set(_ lookup: @escaping @Sendable (URL) async -> [Cookie]) {
+        lock.withLock { self.lookup = lookup }
+    }
+
+    func cookies(for url: URL) async -> [Cookie] {
+        guard let lookup = lock.withLock({ lookup }) else { return [] }
+        return await lookup(url)
     }
 }

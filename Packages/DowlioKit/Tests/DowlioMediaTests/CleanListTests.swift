@@ -101,6 +101,20 @@ struct CleanListTests {
         #expect(candidates.map(\.label) == ["Launch day"])
     }
 
+    @Test func controlsTextRunTogetherWithALabelIsCutOut() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Stories</title>", at: "/watch")
+        site.serve(video: 2_000_000, at: "/clip.mp4")
+
+        let found = try await site.analyze("/watch") {
+            $0.players = [ScannedPlayer(group: 1, label: "sampleuserAudio is mutedPauseMenuQuick Reactions😂😮😍😢👏🔥…", visibility: 1)]
+            $0.scan = [ScannedMedia(url: site.url("/clip.mp4"), kind: .video, group: 1)]
+        }
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == ["sampleuser"])
+    }
+
     @Test func aTitleIsReadWithItsNumberedCharacters() async throws {
         let site = try await Site()
         site.serve(html: #"<title>She&#039;s here &#x2014; part&nbsp;2</title><video src="/clip.mp4"></video>"#, at: "/watch")

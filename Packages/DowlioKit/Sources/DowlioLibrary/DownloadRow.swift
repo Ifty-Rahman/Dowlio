@@ -245,6 +245,7 @@ public struct FailureText: Equatable, Sendable {
         case .destinationNotWritable: (reason, nextStep) = ("Can't save to this folder", "Fix its permissions, then Retry")
         case .incompleteFile: (reason, nextStep) = ("Incomplete file", "Retry fetches the missing part")
         case .mediaUnplayable: (reason, nextStep) = ("Couldn't make a playable file", "Send the page again and pick another version")
+        case .needsTools: (reason, nextStep) = ("Needs yt-dlp", "Retry asks to download yt-dlp and QuickJS-NG again")
         }
     }
 }

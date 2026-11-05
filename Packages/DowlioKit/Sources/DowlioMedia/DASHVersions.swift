@@ -14,19 +14,31 @@ enum DASHVersions {
         if manifest.isProtected || manifest.isDynamic {
             return Candidate(label: label, thumbnail: thumbnail, duration: manifest.duration, versions: [], restriction: manifest.isProtected ? .protected : .live)
         }
-        let usable = manifest.tracks.filter { !$0.fragments.isEmpty && canBeMuxed($0) }
+        let usable = manifest.tracks.filter { !$0.fragments.isEmpty }
         let audio = usable.filter { $0.kind == .audio }
-        let best = audio.max { rank($0) < rank($1) }
-        let videos = usable.filter { $0.kind == .video }.compactMap { video(of: $0, with: best, duration: manifest.duration) }
-        let sounds = bestPerLanguage(audio).compactMap { sound(of: $0, duration: manifest.duration) }
+        let joinable = audio.filter { !isWebM($0) }
+        let bestJoinable = joinable.max { rank($0) < rank($1) } ?? audio.max { rank($0) < rank($1) }
+        let bestWebM = audio.filter(isWebM).max { rank($0) < rank($1) } ?? bestJoinable
+        let allVideo = usable.filter { $0.kind == .video }
+        let joinableHeights = Set(allVideo.filter { !isWebM($0) }.compactMap(\.height))
+        let videos = allVideo
+            .filter { !isWebM($0) || !joinableHeights.contains($0.height ?? -1) }
+            .compactMap { video(of: $0, with: isWebM($0) ? bestWebM : bestJoinable, duration: manifest.duration) }
+        let joinableLanguages = Set(joinable.map(\.language))
+        let extraLanguages = audio.filter { isWebM($0) && !joinableLanguages.contains($0.language) }
+        let sounds = (bestPerLanguage(joinable) + bestPerLanguage(extraLanguages)).compactMap { sound(of: $0, duration: manifest.duration) }
         guard !videos.isEmpty || !sounds.isEmpty else { return nil }
         return Candidate(label: label, thumbnail: thumbnail, duration: manifest.duration, versions: videos + sounds)
     }
 
-    private static func canBeMuxed(_ track: DASHTrack) -> Bool {
+    private static func isWebM(_ track: DASHTrack) -> Bool {
         let type = track.mimeType?.lowercased() ?? ""
-        let codecs = track.codecs
-        return !type.contains("webm") && !codecs.contains(where: MediaCodecs.needsWebM)
+        return type.contains("webm") || track.codecs.contains { MediaCodecs.needsWebM($0) || MediaCodecs.isVP($0) }
+    }
+
+    private static func container(video: DASHTrack?, audio: DASHTrack?) -> MediaContainer? {
+        let parts = [video, audio].compactMap { $0 }
+        return !parts.isEmpty && parts.allSatisfy(isWebM) ? .webm : nil
     }
 
     private static func rank(_ audio: DASHTrack) -> (Int, Int, Int) {
@@ -48,7 +60,7 @@ enum DASHVersions {
     private static func video(of video: DASHTrack, with audio: DASHTrack?, duration: Double?) -> Version? {
         var tracks = [MediaTrack(kind: audio == nil ? .combined : .video, dash: video)]
         if let audio { tracks.append(MediaTrack(kind: .audio, dash: audio)) }
-        guard let source = try? MediaSource(tracks: tracks) else { return nil }
+        guard let source = try? MediaSource(tracks: tracks, container: container(video: video, audio: audio)) else { return nil }
         let bandwidth = (video.bandwidth ?? 0) + (audio?.bandwidth ?? 0)
         return Version(
             source: .media(source), contentType: source.contentType, totalBytes: estimate(bandwidth, duration), isEstimatedSize: true,
@@ -57,7 +69,9 @@ enum DASHVersions {
     }
 
     private static func sound(of audio: DASHTrack, duration: Double?) -> Version? {
-        guard let source = try? MediaSource(tracks: [MediaTrack(kind: .audio, dash: audio)]) else { return nil }
+        guard let source = try? MediaSource(tracks: [MediaTrack(kind: .audio, dash: audio)], container: container(video: nil, audio: audio)) else {
+            return nil
+        }
         return Version(
             source: .media(source), contentType: source.contentType, totalBytes: estimate(audio.bandwidth ?? 0, duration), isEstimatedSize: true,
             codecs: MediaCodecs.names(audio.codecs), language: audio.language
@@ -72,6 +86,6 @@ enum DASHVersions {
 
 private extension MediaTrack {
     init(kind: Kind, dash: DASHTrack) {
-        self.init(kind: kind, initialization: dash.initialization, fragments: dash.fragments)
+        self.init(kind: kind, initialization: dash.initialization, fragments: dash.fragments, codecs: dash.codecs)
     }
 }

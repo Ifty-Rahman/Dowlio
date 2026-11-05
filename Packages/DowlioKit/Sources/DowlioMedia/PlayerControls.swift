@@ -7,6 +7,14 @@ enum PlayerControls {
         "audio is muted", "muted", "unmute", "play", "play video", "pause", "loading", "video player", "tap to unmute", "click to unmute",
     ]
 
+    private static let gluedPhrases = ["Audio is muted", "Audio is playing", "Quick Reactions"]
+
+    static func withoutGluedControls(_ text: String) -> String? {
+        guard let start = gluedPhrases.compactMap({ text.range(of: $0)?.lowerBound }).min() else { return text }
+        let kept = text[..<start].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return kept.isEmpty ? nil : kept
+    }
+
     static func looksLikeControls(_ text: String) -> Bool {
         let lowered = text.lowercased()
         let trimmed = lowered.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
@@ -21,6 +29,7 @@ extension SentPage {
         var cleaned = self
         cleaned.players = players.map { player in
             var player = player
+            player.label = player.label.flatMap(PlayerControls.withoutGluedControls)
             if let label = player.label, PlayerControls.looksLikeControls(label) { player.label = nil }
             return player
         }

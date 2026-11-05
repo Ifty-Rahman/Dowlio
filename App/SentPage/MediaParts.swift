@@ -138,6 +138,16 @@ struct MediaChoices: View {
                 .foregroundStyle(.secondary)
         } else {
             choices
+            if let whole = media.draft.wholePlaylistLine {
+                Button(whole, systemImage: "list.bullet") { media.showWholePlaylist() }
+                    .buttonStyle(.link)
+                    .font(DowlioDesign.TypeRole.detail)
+            }
+            if let subtitles = media.draft.subtitlesLine {
+                Label(subtitles, systemImage: "captions.bubble")
+                    .font(DowlioDesign.TypeRole.detail)
+                    .foregroundStyle(.secondary)
+            }
             if media.draft.isCheckingForMore { CheckingForMoreLine(media: media) }
         }
     }
@@ -215,9 +225,10 @@ struct VersionRows: View {
     }
 
     private func list(_ versions: [Version]) -> some View {
-        VStack(spacing: Self.spacing) {
+        let labelWidth: CGFloat = versions.contains(where: \.isHighFrameRate) ? 78 : 58
+        return VStack(spacing: Self.spacing) {
             ForEach(Array(versions.enumerated()), id: \.offset) { index, version in
-                VersionRow(version: version, isChosen: version == media.draft.chosenVersion) {
+                VersionRow(version: version, isChosen: version == media.draft.chosenVersion, labelWidth: labelWidth) {
                     media.pick(version)
                     focused = true
                 }
@@ -244,6 +255,7 @@ struct VersionRows: View {
 private struct VersionRow: View {
     let version: Version
     let isChosen: Bool
+    let labelWidth: CGFloat
     let choose: () -> Void
 
     var body: some View {
@@ -254,7 +266,7 @@ private struct VersionRow: View {
                     .foregroundStyle(isChosen ? Color.accentColor : Color.secondary)
                 Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
-                    .frame(width: 58, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                 Text(MediaText.detail(of: version))
                     .font(DowlioDesign.TypeRole.detail)
                     .foregroundStyle(.secondary)
@@ -356,7 +368,13 @@ struct NothingFoundBody: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            Button(text.action) { media.lookAgain() }
+            HStack {
+                Button(text.action) { media.lookAgain() }
+                if let ytdlp = text.ytdlpAction {
+                    Button(ytdlp) { media.tryWithYTDLP() }
+                        .help("yt-dlp, a free open-source tool, can read many sites Dowlio can't. Dowlio asks before downloading it.")
+                }
+            }
             OpenInWindowButton(media: media)
         }
         .frame(maxWidth: .infinity)

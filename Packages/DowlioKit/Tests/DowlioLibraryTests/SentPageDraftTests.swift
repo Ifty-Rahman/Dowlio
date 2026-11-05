@@ -137,6 +137,21 @@ struct SentPageDraftTests {
         #expect([MediaText.title(of: audio), MediaText.detail(of: audio), MediaText.size(of: audio)] == ["Audio", "M4A · AAC", "3.42 MB"])
     }
 
+    @Test func aRowWhoseFileWillBeWebMSaysWebM() throws {
+        let clip = URL(string: "https://cdn.example.com/clip.webm")!
+        let media = try MediaSource(
+            tracks: [MediaTrack(kind: .video, fragments: [MediaFragment(url: clip)]), MediaTrack(kind: .audio, fragments: [MediaFragment(url: clip)])],
+            container: .webm
+        )
+        let video = Version(source: .media(media), height: 2160, codecs: "VP9 + Opus")
+
+        #expect(MediaText.detail(of: video) == "WebM · VP9 + Opus")
+        var hdr = video
+        hdr.isHDR = true
+        #expect(MediaText.detail(of: hdr) == "WebM · VP9 + Opus · HDR")
+        #expect(MediaText.fileExtension(of: video) == "webm")
+    }
+
     @Test func anExtractedAudioRowSaysSoAndShowsTheVideosSize() throws {
         let video = Version(source: .file(URL(string: "https://cdn.example.com/clip.mp4")!), contentType: "video/mp4", totalBytes: 38_200_000, codecs: "H.264 + AAC")
         let audio = try #require(Version.extractedAudio(of: video))

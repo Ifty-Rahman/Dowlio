@@ -20,5 +20,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
+      - name: Restore the ffmpeg helper
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: Test and build
         run: ./scripts/test.sh

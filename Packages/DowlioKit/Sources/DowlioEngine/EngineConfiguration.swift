@@ -8,7 +8,9 @@ package struct EngineConfiguration: Sendable {
     var now: @Sendable () -> Date = { Date() }
     var random: @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }
     var hostLimits: any HostLimitStore = InMemoryHostLimitStore()
-    package var remux: (@Sendable ([URL], URL) async throws -> Void)?
+    package var remux: (@Sendable (RemuxRequest) async throws -> Void)?
+    package var renew: (@Sendable (MediaSource) async throws -> MediaSource)?
+    package var downloadWithYTDLP: (@Sendable (YTDLPDownload) async throws -> URL)?
     package var identity: @Sendable () -> BrowserIdentity = { BrowserIdentity(userAgent: nil) }
 
     package init() {}

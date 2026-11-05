@@ -108,10 +108,11 @@ public actor Library {
         origin: DownloadOrigin? = nil
     ) async -> DownloadID {
         let id = DownloadID()
-        let state: StoredDownload.State = !startImmediately ? .paused : activeCount < maximumActive ? .downloading : .queued
         var record = StoredDownload(
-            id: id.rawValue, source: source, destination: destination, options: options, state: state, addedAt: now()
+            id: id.rawValue, source: source, destination: destination, options: options, state: .queued, addedAt: now()
         )
+        let state: StoredDownload.State = !startImmediately ? .paused : hasRoom(for: record) ? .downloading : .queued
+        record.state = state
         record.origin = origin
         records[id] = record
         save(record)
@@ -170,6 +171,14 @@ public actor Library {
         records.values.count { $0.state == .downloading }
     }
 
+    public static let playlistAtOnce = 3
+
+    private func hasRoom(for record: StoredDownload) -> Bool {
+        guard activeCount < maximumActive else { return false }
+        guard let group = record.playlistGroup else { return true }
+        return records.values.count { $0.state == .downloading && $0.playlistGroup == group && $0.id != record.id } < Self.playlistAtOnce
+    }
+
     private func setState(_ state: StoredDownload.State, of id: DownloadID) {
         guard var record = records[id], record.state != state else { return }
         record.state = state
@@ -179,7 +188,7 @@ public actor Library {
     }
 
     private func runOrQueue(_ id: DownloadID) async {
-        guard activeCount < maximumActive else { return setState(.queued, of: id) }
+        guard let record = records[id], hasRoom(for: record) else { return setState(.queued, of: id) }
         await run(id)
     }
 
@@ -199,7 +208,7 @@ public actor Library {
 
     private func fillSlots() async {
         while !pausingAll, activeCount < maximumActive,
-              let next = records.values.filter({ $0.state == .queued }).min(by: { $0.addedAt < $1.addedAt }) {
+              let next = records.values.filter({ $0.state == .queued && hasRoom(for: $0) }).min(by: { $0.addedAt < $1.addedAt }) {
             await run(DownloadID(rawValue: next.id))
         }
     }
@@ -338,6 +347,11 @@ public actor Library {
             && (snapshot.plannedSegments.isEmpty
                 ? !SegmentLayout.stillMatches(planned: record.plannedSegments ?? [], current: snapshot.segments)
                 : snapshot.plannedSegments != record.plannedSegments)
+        if let renewed = snapshot.renewedMedia, record.mediaSource?.firstURL != renewed.firstURL || record.mediaSource?.expiry != renewed.expiry {
+            record.mediaSource = renewed
+            records[id] = record
+            save(record)
+        }
         if changed || layoutStarted {
             if layoutStarted {
                 record.plannedSegments = snapshot.plannedSegments.isEmpty ? SegmentLayout.bounds(of: snapshot.segments) : snapshot.plannedSegments
@@ -389,8 +403,23 @@ public actor Library {
     }
 
     private func currentRows() -> [DownloadRow] {
-        records.values
-            .sorted { ($0.addedAt, $0.id.uuidString) > ($1.addedAt, $1.id.uuidString) }
+        var newestInPlaylist: [String: Date] = [:]
+        for record in records.values {
+            guard let group = record.playlistGroup else { continue }
+            newestInPlaylist[group] = max(newestInPlaylist[group] ?? record.addedAt, record.addedAt)
+        }
+        func placed(_ record: StoredDownload) -> Date {
+            record.playlistGroup.flatMap { newestInPlaylist[$0] } ?? record.addedAt
+        }
+        return records.values
+            .sorted { a, b in
+                let (isActive, otherIsActive) = (a.state == .downloading, b.state == .downloading)
+                if isActive != otherIsActive { return isActive }
+                let (first, second) = (placed(a), placed(b))
+                if first != second { return first > second }
+                if let group = a.playlistGroup, group == b.playlistGroup, a.addedAt != b.addedAt { return a.addedAt < b.addedAt }
+                return (a.addedAt, a.id.uuidString) > (b.addedAt, b.id.uuidString)
+            }
             .map { row(for: $0) }
     }
 

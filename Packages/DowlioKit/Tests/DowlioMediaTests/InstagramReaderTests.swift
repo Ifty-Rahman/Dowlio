@@ -145,6 +145,25 @@ struct InstagramReaderTests {
         #expect(site.log.failures == [ReaderFailure(reader: "Instagram", site: site.host, reason: "found nothing")])
     }
 
+    @Test func aStoryLinkListsOnlyThatStoryInItsH264VersionNamedAfterItsUser() async throws {
+        let site = try await instagram()
+        site.site.serve(html: "<title>Stories • Instagram</title>", at: "/stories/sampleuser/3300000000000000002/")
+        func story(_ pk: String) -> [String: Any] {
+            [
+                "pk": pk, "id": "\(pk)_42", "media_type": 2, "user": ["username": "sampleuser", "full_name": "Sample User"],
+                "video_duration": 15.4,
+                "video_versions": [["width": 720, "height": 1280, "url": "https://scontent.cdn.example/v/\(pk).mp4"]],
+            ]
+        }
+        let reels = ["reels_media": [["items": [story("3300000000000000001"), story("3300000000000000002")]]]]
+
+        let candidates = try await site.candidates("/stories/sampleuser/3300000000000000002/") { $0.embeddedJSON = [PageFixture.json(reels)] }
+
+        #expect(candidates.count == 1)
+        #expect(candidates.first?.label == "Sample User")
+        #expect(candidates.first?.versions.map(\.source) == [.file(URL(string: "https://scontent.cdn.example/v/3300000000000000002.mp4")!)])
+    }
+
     @Test func instagramRecognisesItsPermalinks() {
         let reader = InstagramReader()
         #expect(reader.recognises(URL(string: "https://www.instagram.com/")!))
@@ -152,5 +171,7 @@ struct InstagramReaderTests {
         #expect(reader.post(in: URL(string: "https://www.instagram.com/someone/p/Ab_1-x/")!) == "Ab_1-x")
         #expect(reader.post(in: URL(string: "https://www.instagram.com/reels/")!) == nil)
         #expect(reader.post(in: URL(string: "https://www.instagram.com/someone/")!) == nil)
+        #expect(reader.post(in: URL(string: "https://www.instagram.com/stories/someone/3300000000000000002/")!) == "3300000000000000002")
+        #expect(reader.post(in: URL(string: "https://www.instagram.com/stories/someone/")!) == nil)
     }
 }

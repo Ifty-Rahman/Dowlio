@@ -57,6 +57,7 @@ public final class TestServer: @unchecked Sendable {
         public var requiredReferrer: String?
         public var requiredUserAgent: String?
         public var requiredOrigin: String?
+        public var forbiddenAfterRequests: Int?
 
         public init(
             data: Data,
@@ -84,8 +85,10 @@ public final class TestServer: @unchecked Sendable {
             requiredForm: Data? = nil,
             requiredReferrer: String? = nil,
             requiredUserAgent: String? = nil,
-            requiredOrigin: String? = nil
+            requiredOrigin: String? = nil,
+            forbiddenAfterRequests: Int? = nil
         ) {
+            self.forbiddenAfterRequests = forbiddenAfterRequests
             self.requiredUserAgent = requiredUserAgent
             self.requiredOrigin = requiredOrigin
             self.requiredCookie = requiredCookie
@@ -407,6 +410,10 @@ public final class TestServer: @unchecked Sendable {
 
         if let form = file.requiredForm, request.method != "POST" || request.body != form {
             return send(status: "405 Method Not Allowed", headers: [:], body: Data(), hold: nil, on: connection)
+        }
+
+        if let limit = file.forbiddenAfterRequests, lock.withLock({ servedCount[request.path, default: 0] }) >= limit {
+            return send(status: "403 Forbidden", headers: [:], body: Data(), hold: nil, on: connection)
         }
 
         if let fault = file.failFirst, takeFault(\.status, at: request.path, limit: fault.count) {

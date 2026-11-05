@@ -38,7 +38,7 @@ struct DASHTests {
         #expect(audio.first?.isExtractedAudio == false)
     }
 
-    @Test func onlyAudioAVFoundationCanMuxIsPairedAndListedOncePerLanguage() async throws {
+    @Test func vp9IsLeftOutWhereH264CoversEveryHeightAndAudioStaysAACOncePerLanguage() async throws {
         let site = try await Site()
 
         let found = try await analyze(try fixture("dash-static-languages-and-text"), on: site)
@@ -48,6 +48,22 @@ struct DASHTests {
         let audio = video.versions.filter(\.isAudio)
         #expect(audio.compactMap(\.language).sorted() == ["de", "en", "es", "fr", "it"])
         #expect(audio.allSatisfy { $0.codecs == "AAC" })
+    }
+
+    @Test func aManifestOfOnlyVP9AndOpusIsOfferedAsWebM() async throws {
+        let site = try await Site()
+
+        let found = try await analyze(try fixture("dash-static-webm"), on: site)
+
+        guard case .found(let candidates) = found, let video = candidates.first else { Issue.record("not found: \(found)"); return }
+        let videos = video.versions.filter { !$0.isAudio }
+        #expect(videos.compactMap(\.height).sorted() == [360, 720])
+        #expect(videos.allSatisfy { $0.codecs == "VP9 + Opus" && $0.outputContainer == .webm })
+        let audio = video.versions.filter(\.isAudio)
+        #expect(audio.map(\.codecs) == ["Opus"])
+        #expect(audio.first?.outputContainer == .webm)
+        guard case .media(let media) = videos.first?.source else { Issue.record("not media"); return }
+        #expect(media.tracks.map(\.codecs) == [["vp09.00.21.08"], ["opus"]])
     }
 
     @Test func aProtectedManifestIsProtected() async throws {

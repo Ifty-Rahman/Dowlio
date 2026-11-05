@@ -62,6 +62,12 @@ struct LinkItemBody: View {
                 NeedsSignInBody(media: page)
             case .blocked:
                 BlockedBody(media: page)
+            case let phase where phase.isAboutTools:
+                ToolsBody(media: page)
+            case .ytdlpFailed:
+                ProblemBody(media: page)
+            case .playlist:
+                PlaylistBody(media: page)
             case .nothingFound:
                 NothingFoundBody(media: page)
                 LinkCard(url: page.draft.page.url, check: sheet.draft.check(for: page.draft.page.url))

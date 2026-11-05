@@ -44,6 +44,46 @@ struct XReaderTests {
         #expect(candidates.first?.label == "Sample Author: Sample post text about the match that ends")
     }
 
+    @Test func aPostOpenedFromSearchShowsOnlyItsOwnVideoWhileLooking() async throws {
+        let x = try await xSite()
+        x.site.serve(html: "<title>Sample Author on X</title>", at: post)
+        try x.serve(fixture: "x-tweet-result.json", at: "/tweet-result")
+        let searched = (1...6).map { "/amplify_video/300000000000000000\($0)/vid/avc1/0/0/720x1280/search.mp4" }
+        for path in searched { x.site.serve(video: 4096, at: path) }
+        var page = SentPage(url: x.url(post), throughDowlioConnect: true)
+        page.watched = searched.map { WatchedRequest(url: x.url($0), kind: .file) }
+
+        var updates: [PageAnalysis] = []
+        for await update in x.site.analyzer.analyze(page) { updates.append(update) }
+
+        #expect(updates.count == 1)
+        guard case .found(let candidates)? = updates.last else { Issue.record("not found: \(updates)"); return }
+        #expect(candidates.map(\.label) == ["Sample Author: Sample post text about the match that ends"])
+        #expect(!x.site.server.requests.contains { $0.path.hasSuffix("search.mp4") })
+    }
+
+    @Test func aPostXWithholdsListsOnlyThePlayerOnThePageNotVideosFromSearch() async throws {
+        let x = try await xSite()
+        x.site.serve(html: "<title>Sample Author on X</title>", at: post)
+        x.site.serve(text: #"{"__typename":"TweetTombstone","tombstone":{}}"#, type: "application/json", at: "/tweet-result")
+        let searched = ["3000000000000000001", "3000000000000000002", "3000000000000000003"]
+        let own = "2000000000000000002"
+        for id in searched + [own] {
+            x.site.serve(text: PageAnalyzerTests.mediaPlaylist(segments: id == own ? 3 : 2, named: id), at: "/amplify_video/\(id)/pl/avc1/720x1280/v.m3u8")
+        }
+
+        let candidates = try await x.candidates(post) {
+            $0.throughDowlioConnect = true
+            $0.players = [ScannedPlayer(group: 1, label: "Sample Author: post", poster: x.url("/amplify_video_thumb/\(own)/img/a.jpg"), visibility: 1)]
+            $0.watched = (searched.prefix(2) + [own] + searched.suffix(1)).map {
+                WatchedRequest(url: x.url("/amplify_video/\($0)/pl/avc1/720x1280/v.m3u8"), kind: .manifest, referrer: x.url("/"))
+            }
+        }
+
+        #expect(candidates.count == 1)
+        #expect(candidates.first?.versions.first?.source.url.path().contains(own) == true)
+    }
+
     @Test func aPostServedOnlyAsAPlaylistIsReadThroughThePlaylist() async throws {
         let x = try await xSite()
         x.site.serve(html: "<title>X</title>", at: post)

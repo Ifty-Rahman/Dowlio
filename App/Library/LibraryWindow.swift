@@ -149,6 +149,13 @@ struct LibraryWindow: View {
             .alert(model.actionFailure ?? "", isPresented: failureShown) {
                 Button("OK") {}
             }
+            .sheet(isPresented: toolsNeeded) {
+                ToolsConsentSheet(tools: model.toolsModel, agree: { model.installToolsAndRetry() }, decline: { model.toolsNeededFor = nil })
+            }
+    }
+
+    private var toolsNeeded: Binding<Bool> {
+        Binding(get: { model.toolsNeededFor != nil }, set: { if !$0 { model.toolsNeededFor = nil } })
     }
 
     private func revealCaught() {

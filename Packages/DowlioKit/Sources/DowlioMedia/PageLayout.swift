@@ -20,7 +20,7 @@ struct PageLayout {
     private(set) var buckets: [Bucket] = []
     let isFeed: Bool
 
-    init(page: SentPage, players: [(group: Int?, sources: [ScannedMedia])], streams: [URL]) {
+    init(page: SentPage, players: [(group: Int?, sources: [ScannedMedia])], streams: [URL], keepsOnlyPlayers: Bool = false) {
         let holdingMedia = Set(players.compactMap(\.group))
         let shown = page.players.filter { player in
             player.isPlaying || player.visibility > 0 || player.poster != nil || player.duration != nil || holdingMedia.contains(player.group)
@@ -40,7 +40,7 @@ struct PageLayout {
         var unplaced: [URL] = []
         for url in streams {
             let referrer = page.watched.first { $0.url == url }?.referrer
-            if let group = Self.matchingPlayer(for: url, in: shown) ?? Self.framingPlayer(for: referrer, in: shown) {
+            if let group = Self.matchingPlayer(for: url, in: shown) ?? Self.framingPlayer(for: referrer, in: shown, on: page.url) {
                 byGroup[group]?.streams.append(url)
             } else {
                 unplaced.append(url)
@@ -48,13 +48,15 @@ struct PageLayout {
         }
         if isFeed {
             other.streams = unplaced
-        } else if let only = shown.first {
+        } else if let only = shown.first, byGroup[only.group]?.isEmpty != false {
             byGroup[only.group]?.streams += unplaced
+        } else if shown.first != nil {
+            other.streams = unplaced
         } else if !unplaced.isEmpty {
             loose.append(Bucket(streams: unplaced))
         }
-        let ordered = Self.ordered(shown)
-        buckets = (ordered.compactMap { byGroup[$0.group] } + loose + [other]).filter { !$0.isEmpty }
+        let ordered = Self.ordered(shown).compactMap { byGroup[$0.group] }.filter { !$0.isEmpty }
+        buckets = keepsOnlyPlayers && !ordered.isEmpty ? ordered : (ordered + loose + [other]).filter { !$0.isEmpty }
     }
 
     static func ordered(_ players: [ScannedPlayer]) -> [ScannedPlayer] {
@@ -71,8 +73,8 @@ struct PageLayout {
         return players.first { player in player.poster.map { !ids(in: $0).isDisjoint(with: wanted) } ?? false }?.group
     }
 
-    static func framingPlayer(for referrer: URL?, in players: [ScannedPlayer]) -> Int? {
-        guard let origin = referrer?.webOrigin else { return nil }
+    static func framingPlayer(for referrer: URL?, in players: [ScannedPlayer], on page: URL) -> Int? {
+        guard let origin = referrer?.webOrigin, origin != page.webOrigin else { return nil }
         let framed = players.filter { $0.origin?.webOrigin == origin }
         if framed.count == 1 { return framed[0].group }
         let playing = framed.filter(\.isPlaying)

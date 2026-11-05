@@ -23,6 +23,7 @@ public struct LinkItem: Identifiable {
 public enum LinkDownload: Equatable, Sendable {
     case media(page: SentPage, candidate: Candidate, version: Version, name: String?)
     case file(URL, name: String?)
+    case playlist(page: SentPage, listing: PlaylistListing, entries: [PlaylistListing.Entry], showing: SentPageDraft.Showing, quality: VideoQuality)
 }
 
 @MainActor
@@ -53,13 +54,16 @@ public final class LinkList {
     @ObservationIgnored private let lookAgain: (SentPage) -> AsyncStream<PageAnalysis>
     @ObservationIgnored private let probe: (SentPage, Candidate) async -> Candidate
     @ObservationIgnored private let preference: () -> QualityPreference
+    @ObservationIgnored private let tools: ToolConsent?
 
     public init(
         analyze: @escaping (SentPage) -> AsyncStream<PageAnalysis>,
         lookAgain: @escaping (SentPage) -> AsyncStream<PageAnalysis> = { _ in .nothingFound },
         probe: @escaping (SentPage, Candidate) async -> Candidate = { $1 },
-        preference: @escaping () -> QualityPreference = { QualityPreference() }
+        preference: @escaping () -> QualityPreference = { QualityPreference() },
+        tools: ToolConsent? = nil
     ) {
+        self.tools = tools
         self.analyze = analyze
         self.lookAgain = lookAgain
         self.probe = probe
@@ -115,7 +119,7 @@ public final class LinkList {
     }
 
     private func makeModel(_ page: SentPage) -> SentPageModel {
-        SentPageModel(page: page, preference: preference(), playPage: lookAgain, probe: probe)
+        SentPageModel(page: page, preference: preference(), playPage: lookAgain, analyzePage: analyze, tools: tools, probe: probe)
     }
 
     private func stop(_ entry: Entry) {
@@ -151,7 +155,7 @@ public final class LinkList {
             switch model.draft.phase {
             case .found, .restricted:
                 return model.draft.candidates.indices.map { LinkItem(id: .init(entry: entry.id, candidate: $0), kind: .video(model, $0)) }
-            case .looking, .playing, .nothingFound, .needsSignIn, .blocked:
+            default:
                 return [LinkItem(id: .init(entry: entry.id, candidate: nil), kind: .page(model))]
             }
         }
@@ -223,7 +227,7 @@ public final class LinkList {
         case .checking, .file:
             return true
         case .page(let model):
-            guard let candidate else { return model.draft.phase.isLooking }
+            guard let candidate else { return model.draft.phase.isLooking || model.draft.phase == .playlist }
             return model.draft.candidates.indices.contains(candidate) && model.draft.candidates[candidate].restriction == nil
         }
     }
@@ -277,6 +281,14 @@ public final class LinkList {
             case .file(let url, _):
                 return .file(url, name: name)
             case .page(let model):
+                if model.draft.phase == .playlist, let listing = model.draft.playlist {
+                    let entries = model.draft.includedEntries
+                    guard !entries.isEmpty else { return nil }
+                    return .playlist(
+                        page: model.draft.page, listing: listing, entries: entries, showing: model.draft.playlistShowing,
+                        quality: model.draft.playlistQuality
+                    )
+                }
                 return model.draft.phase.isLooking ? nil : .file(model.draft.page.url, name: name)
             case .video(let model, let candidate):
                 guard let version = model.draft.chosenVersion(of: candidate) else { return nil }
