@@ -4,182 +4,67 @@
 
 ![Platform](https://img.shields.io/badge/Platform-macOS_14+-black) ![Architecture](https://img.shields.io/badge/Architecture-Apple_Silicon/Intel-black) ![Privacy](https://img.shields.io/badge/Privacy-No_accounts,_no_tracking-success)
 
-**Dowlio** splits each download across several connections, so large files arrive faster. It lives in your menu bar, keeps going when you close the window, and picks up where it left off after a quit. With Dowlio Connect, downloads you start in Chrome, Arc, Brave or Edge finish in Dowlio. Send it a page with a video, from YouTube, X, Instagram, Facebook, Reddit or hundreds of other sites, and it lists every video on the page so you can pick a quality and get one playable file. Whole YouTube Playlists and YouTube Music albums download in one go.
+![Dowlio's library with three downloads in progress, each split into eight segments](.github/readme/library.png)
+
+Dowlio splits each download across several connections, so large files arrive faster. It catches the downloads you start in your browser, finds the video on almost any page, and keeps going after you close the window or quit.
 
 ---
 
-## 📥 How to Download Dowlio
+## 📥 Install
 
-Get `Dowlio-<version>.dmg` from the [latest release](../../releases/latest). Dowlio needs macOS 14 or later and runs on Apple silicon and Intel Macs.
+1. Download `Dowlio-<version>.dmg` from the [latest release](../../releases/latest) and drag Dowlio to Applications.
+2. Open Dowlio. macOS says it can't verify the app, because Dowlio isn't notarized yet. Click Done.
+3. In System Settings › Privacy & Security, click Open Anyway next to the message about Dowlio.
 
-Dowlio isn't notarized yet, because notarization needs a paid Apple Developer account. macOS blocks the first launch. You approve it once:
-
-1. Open the DMG and drag Dowlio to Applications.
-2. Open Dowlio. macOS says it can't verify the app. Click Done.
-3. Open System Settings, then Privacy & Security.
-4. Scroll to the message about Dowlio and click Open Anyway. Confirm with your password.
-
-Dowlio opens normally after that, and updates won't ask again.
-
-If you paired a browser with Dowlio Connect, macOS asks once after each update whether Dowlio may read its saved pairings. Choose Always Allow. This stops once Dowlio is signed with an Apple Developer ID.
-
-From Terminal, this does the same as steps 2 to 4:
-
-```
-xattr -dr com.apple.quarantine /Applications/Dowlio.app
-```
+Dowlio needs macOS 14 or later and runs on Apple silicon and Intel Macs. It updates itself after that. If you paired a browser, allow the one-time keychain prompt after each update so it stays paired.
 
 ---
 
-## ✅ Key Features
+## ✅ What it does
 
-- **Catch downloads:** with Dowlio Connect added, a download you start in a Chromium browser moves to Dowlio and starts at once. If Dowlio is quit or can't take it, the browser keeps it.
-- **Send to Dowlio:** hand Dowlio a link from the browser's right-click menu. Nothing downloads until you choose Download.
-- **Videos from a page:** press ⌥⇧D on a page, or choose Send this page to Dowlio, and Dowlio lists the videos on it with their qualities, sizes and an audio-only choice. Feeds label each video with its post text or title.
-- **Streams too:** HLS and DASH videos download to one MP4, with separate video and audio joined. DRM-protected media is refused with a clear message.
-- **YouTube:** videos, Shorts, finished live streams and YouTube Music songs, from 144p up to 2160p, or Audio only. Videos filmed at 60 frames a second show as 1080p60 and download at 60. Dubbed languages are listed as their own audio choices.
-- **Playlists and albums:** send a Playlist or a YouTube Music album to see its cover, channel, length and every video. Untick what you don't want and pick one resolution. A video without it downloads at the next best one. The videos download 3 at a time into a numbered folder named after the Playlist.
-- **Hundreds more sites:** when Dowlio finds no video on a page, it asks yt-dlp, which reads sites like bilibili and TED. YouTube players embedded in other pages are found too.
-- **Subtitles, Chapters and Cover art:** turn on Download subtitles to get subtitles in your languages inside the file. Chapters and the video's thumbnail go in automatically.
-- **Links that last:** a YouTube download paused overnight gets fresh links on its own and carries on. A link that's refused mid-download is refreshed up to 3 times.
-- **Updates in the app:** Dowlio checks for a new version once a day and installs it when you say so. Check for Updates in the Dowlio menu checks now.
-- **Faster downloads:** each file is split into segments fetched over several connections at once, from 1 to 16 per download (8 by default). You see every segment fill on a segmented progress bar.
-- **Take over slow segments:** when a connection finishes early, it can split the slowest remaining segment and help with it. This is off by default, and a download never has more than 32 segments.
-- **Pause and resume:** pause from a row, the toolbar or the menu bar. If a server can't resume, Dowlio tells you before a pause would start the file over.
-- **Survives a quit:** quit mid-download and reopen, and each unfinished download comes back paused, ready to continue. If you deleted the partial file, it starts over from its link.
-- **Menu bar first:** the icon shows progress while anything downloads. Open it for a summary, pause and resume rows, or add a link without opening the window.
-- **Quick add:** paste or type a link in the menu bar panel and start the download right there.
-- **Your choice of Dock or menu bar:** keep Dowlio in either, or both. It can start quietly at login, or open only its menu bar icon at every launch.
-- **Automatic sorting:** files are grouped into Video, Audio, Documents, Archives, and Apps & Disk Images, and can be saved into matching folders.
-- **Queue:** choose how many downloads run at once. The rest wait their turn, and downloads in progress stay at the top of the list.
-- **A history you can search:** find a download by file name or host, filter by state or category, and see how long a finished one took.
-- **Notifications:** get a notice when a download finishes, with Show in Finder and Open. Downloads that finish together collapse into one notice.
-- **Plain failure messages:** a failed download says why and what to do next.
-- **Marked when not secure:** plain-HTTP links carry a "Not secure" label everywhere they appear.
+- **Faster downloads.** Up to 16 connections per file, each segment shown on the progress bar.
+- **YouTube and hundreds of sites.** Pick any resolution up to 2160p60, or Audio only. Whole Playlists and YouTube Music albums download in one go.
+- **Catches browser downloads.** With Dowlio Connect, downloads you start in Chrome, Arc, Brave or Edge finish in Dowlio.
+- **Pause, quit, resume.** Unfinished downloads come back after a quit, and expired YouTube links refresh on their own.
+- **Lives in the menu bar.** Add a link, watch progress and pause without opening the window.
+- **Sorted for you.** Video, Audio, Documents, Archives and Apps & Disk Images, each searchable.
 
----
-
-## ⚡ Quick Start
-
-1. Install Dowlio using the steps above.
-2. Open Dowlio and follow the short welcome. It asks where downloads should go and how Dowlio should live on your Mac.
-3. To catch browser downloads, choose Add next to your browser in the welcome or in Settings › Browsers. See [Dowlio Connect](#-dowlio-connect) below.
-4. Paste a link with ⌘V, drop one on the window, or press ⌘N.
-5. Check the file name and folder in the New Download sheet, then choose Download.
-6. Watch the bar fill. Pause, resume or cancel from the row.
+<table>
+  <tr>
+    <td><img src=".github/readme/youtube.png" alt="Choosing a resolution for a YouTube video"></td>
+    <td><img src=".github/readme/playlist.png" alt="A YouTube Playlist with its videos and resolutions"></td>
+  </tr>
+  <tr>
+    <td><img src=".github/readme/menubar.png" alt="The menu bar panel with three downloads in progress"></td>
+    <td><img src=".github/readme/settings.png" alt="Dowlio's General settings"></td>
+  </tr>
+</table>
 
 ---
 
 ## 🌐 Dowlio Connect
 
-Dowlio Connect is Dowlio's extension for Chromium browsers: Chrome, Arc, Brave, Edge and others. Dowlio finds the ones on your Mac and lists each by name in Settings › Browsers.
+Dowlio Connect is Dowlio's extension for Chromium browsers. It isn't in the Chrome Web Store yet, so you add it yourself in about a minute:
 
-### Adding it to a browser
+1. In Settings › Browsers, choose Add next to your browser. Dowlio opens its extensions page and shows a folder path.
+2. Turn on Developer mode, click Load unpacked, and choose that folder.
+3. Type the 6-digit code Dowlio shows into the Dowlio Connect popup.
 
-Dowlio Connect isn't in the Chrome Web Store yet, so you load it yourself. It takes about a minute:
-
-1. In Settings › Browsers, or in the welcome, choose Add next to your browser. Dowlio copies Dowlio Connect to a folder that doesn't change when Dowlio moves or updates, opens the browser's extensions page, and shows the folder's path with Copy path.
-2. In the browser, turn on Developer mode.
-3. Click Load unpacked, press ⌘⇧G, paste the path, and choose Select.
-4. Dowlio shows a 6-digit code. Open the Dowlio Connect popup in the browser, type the code and choose Connect. If you didn't just add Dowlio Connect, choose Don't Allow.
-
-The browser's row then says Connected. You pair once per browser. When Dowlio updates, it updates Dowlio Connect in every browser for you.
-
-### Catching downloads
-
-Start a download in a connected browser and it moves to Dowlio before the browser shows it. It starts at once and goes to your download folder, sorted like any other. A toast under the menu bar icon says "Added to Dowlio", with Show and Download in Browser Instead. Downloads that arrive within a couple of seconds of each other share one toast, such as "3 downloads caught", which offers Show in Dowlio. With the menu bar icon off, a notification does the same job.
-
-Some downloads always stay in the browser:
-
-- Every download while Dowlio is quit.
-- Downloads in incognito windows.
-- Files a page builds itself (`blob:` and `data:` links) and `file:` links.
-- Anything Dowlio can't take or doesn't answer for within 15 seconds. The browser gets it back, so a download is never lost.
-
-To stop catching, turn off Catch downloads in the Dowlio Connect popup or in Settings › Browsers, or Catch browser downloads in the menu bar. To keep one site's downloads in the browser, choose Never catch on that site in the popup. Settings › Browsers lists those sites, each with Remove.
-
-### Send to Dowlio
-
-Right-click a link and choose Send to Dowlio. The link opens in Quick add from the menu bar, or in the New Download sheet when the menu bar icon is off. Dowlio checks it first and says so when the link is a web page rather than a file. Nothing downloads until you choose Download, and Cancel drops it.
-
-### Send a page
-
-Press ⌥⇧D on a page with a video, or choose Send this page to Dowlio in the Dowlio Connect popup or the page's right-click menu. Quick add opens at once and lists every video Dowlio finds, each with its resolutions, sizes and an audio-only choice. Pick one and choose Download, or Open in Dowlio for the full page of versions.
-
-In Safari, or a browser without Dowlio Connect, ⌥⇧D reads the page's address with your permission and Dowlio looks at the page itself. A link to a plain file, such as a PDF or a ZIP, opens the New Download sheet as before. You can change the shortcut in Settings › Browsers.
-
-### Cookies
-
-Dowlio Connect passes along a site's cookies with each download it hands over, so files from sites you're logged in to work in Dowlio too. Dowlio sends each cookie only to the site it belongs to, keeps them in memory for that download only, and never writes them to disk.
-
----
-
-## 🗂️ Working With Many Downloads
-
-Select downloads the way you do in Finder:
-
-- Click, ⌘-click to add or remove one, and ⇧-click for a range.
-- ⌘A selects everything in the current view, and Esc clears the selection.
-- ↑ and ↓ move the selection, and ⇧↑ and ⇧↓ extend it.
-- Drag a box across rows to select them. Hold ⌘ to add to what is already selected.
-
-Then act on the whole selection from the toolbar, the Download menu or a right-click. Menu items say how many downloads they cover, such as "Pause 3 Downloads". Cancel, Remove from List and Move to Trash ask once for the whole group. The inspector shows the combined size and speed.
-
-Other tools in the library:
-
-- **Inspector:** the percentage, each segment, speed, time left, whether the server can resume, and where the file comes from.
-- **Open with a double-click:** double-click a finished download to open it in its usual app. For a download in progress, double-click shows the detail window, with every segment's range and bytes and a 60-second speed graph.
-- **Quick Look:** press Space to preview finished files without opening them.
-- **Clear Completed:** tidy the list without touching the files.
-
----
-
-## ⚙️ Settings
-
-- **General:** open at login, start in the menu bar, show in the menu bar, show in the Dock, notifications, what happens when a download finishes (nothing or Show in Finder), and whether Dowlio checks for updates by itself.
-- **Downloads:** the download folder, sorting into category folders, what to do when a file with the same name exists (keep both, replace or skip), the default video quality, subtitles and their languages, and Tools, where you install, update or remove yt-dlp and QuickJS-NG.
-- **Connections:** connections per download, downloads at once, how extra connections open, how many times to retry a failed connection, and Take over slow segments.
-- **Browsers:** each Chromium browser on your Mac and whether it's connected, with Add, Test and Reload. Also the Catch downloads switch and the sites that are never caught.
+After that, downloads move to Dowlio as they start. Press ⌥⇧D on any page to send its videos to Dowlio.
 
 ---
 
 ## 🔒 Privacy
 
-Dowlio has no account and no tracking. It talks to the sites you download from and to GitHub, to check for updates and, if you agree, to download yt-dlp and QuickJS-NG. When you send it a page, it reads that page the way a browser would, so it also contacts the hosts the page uses for its video. If it has to play the page to find the video, the page runs in a hidden window, ads and trackers included, and nothing from it is kept afterwards. Dowlio never contacts addresses on your own network for a page that isn't on it.
-
-Dowlio stores what it needs to resume a download and show your history, and the sites you never catch on. It stores no page titles, no cookies, no request bodies and no copies of the pages it reads. It does keep each download's link and the page it came from, because some servers only resume a download for the page that linked to it. Removing a download from the list deletes that record. Cookies from Dowlio Connect stay in memory for the one download or page that needs them, and each goes only to the site it belongs to.
-
-Dowlio Connect talks to Dowlio only on your Mac, at `127.0.0.1`. Dowlio refuses web pages and any extension other than Dowlio Connect. Pairing needs the code Dowlio shows, typed into Dowlio Connect. After that, Dowlio and Dowlio Connect prove to each other who they are each time they connect, without sending their shared secret, and Dowlio Connect answers nothing until Dowlio has proved it. Report a Problem opens a prefilled GitHub issue with only the app and macOS versions. It never includes your links, file names or hosts.
+- No account, no tracking. Dowlio talks to the sites you download from, and to GitHub for updates.
+- Cookies from your browser stay in memory for the one download that needs them, and go only to their own site.
+- YouTube support uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [QuickJS-NG](https://github.com/quickjs-ng/quickjs). Dowlio asks before downloading them and checks each one before it runs.
 
 ---
 
-## ♿ Accessibility
+## 🛠️ Feedback
 
-Dowlio works in light and dark mode and with Increase Contrast. It calms its animations when Reduce Motion is on. With VoiceOver, each download is read as its name, state, progress and speed, in the library and in the menu bar. State is always shown with a word and an icon as well as a colour.
-
----
-
-## 🔭 Coming Next
-
-- A scheduled queue with a speed limit, duplicate checks and recovery for expired links.
-
----
-
-## 🧰 YouTube and the Tools
-
-Dowlio reads YouTube and many other sites with two free, open-source tools: [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [QuickJS-NG](https://github.com/quickjs-ng/quickjs), which yt-dlp uses to run YouTube's scripts. They aren't bundled. The first time a page needs them, Dowlio asks before downloading them from their GitHub pages, about 56 MB. You can also install them during the welcome, or in Settings › Downloads › Tools, which also updates and removes them.
-
-Dowlio checks each tool against the hash its project publishes, and never runs a copy that has changed since. It keeps yt-dlp up to date once a week unless you turn that off.
-
-Dowlio includes FFmpeg, built without any GPL or non-free parts, to join video and audio that macOS can't join by itself. It never re-encodes your video or audio.
-
----
-
-## 🛠️ Troubleshooting
-
-If you hit a problem or have a question, [open an issue](../../issues). Report a Problem in the menu bar's ⋯ menu starts one with the right details filled in.
-
----
+Found a problem? Choose Report a Problem in Settings or the menu bar, or [open an issue](../../issues).
 
 ## ⚖️ License
 
