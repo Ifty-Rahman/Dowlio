@@ -231,7 +231,7 @@ struct LibraryWindow: View {
 
     /// The toolbar spans the whole window and never changes with the panels, so this one width
     /// keeps every button out of the overflow menu.
-    private static let toolbarMinimumWidth: CGFloat = 752
+    private static let toolbarMinimumWidth: CGFloat = 840
     static let firstSize = NSSize(width: 870, height: 472)
     private static let listMinimumWidth: CGFloat = 360
     private static let sidebarWidth: CGFloat = 230
