@@ -108,7 +108,7 @@ public struct ProblemNotice: Equatable, Sendable {
     }
 }
 
-/// What Settings › General's "Then" does after a single download finishes.
+/// What Settings › Notifications' "Then" does after a single download finishes.
 public enum ThenAction: String, CaseIterable, Sendable {
     case nothing
     case showInFinder

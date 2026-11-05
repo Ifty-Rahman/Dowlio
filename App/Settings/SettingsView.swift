@@ -8,19 +8,21 @@ import UserNotifications
 struct SettingsView: View {
     let model: AppModel
     @AppStorage("settingsTab") private var tab = "general"
-    private static let tabs: Set<String> = ["general", "downloads", "connections", "browsers"]
+    private static let tabs: Set<String> = ["general", "notifications", "downloads", "video", "connections", "browsers"]
 
     var body: some View {
         TabView(selection: Binding(get: { Self.tabs.contains(tab) ? tab : "general" }, set: { tab = $0 })) {
             GeneralSettings(model: model).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+            NotificationSettings().tabItem { Label("Notifications", systemImage: "bell.badge") }.tag("notifications")
             DownloadsSettings(model: model).tabItem { Label("Downloads", systemImage: "arrow.down.circle") }.tag("downloads")
+            VideoSettings(model: model).tabItem { Label("Video", systemImage: "play.rectangle") }.tag("video")
             ConnectionsSettings(model: model).tabItem { Label("Connections", systemImage: "point.3.connected.trianglepath.dotted") }
                 .tag("connections")
             BrowsersSettings(model: model)
                 .tabItem { Label("Browsers", systemImage: "globe") }
                 .tag("browsers")
         }
-        .frame(width: 520)
+        .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
         .hidingToolbarBackground()
         .background(SettingsWindowBehavior(model: model))
@@ -29,6 +31,27 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     let model: AppModel
+
+    var body: some View {
+        Form {
+            Section {
+                PresenceToggles(model: model)
+            }
+            UpdateSettings(updater: model.updater)
+            Section("Help") {
+                LabeledContent {
+                    Button("Report a Problem…") { model.reportProblem() }
+                } label: {
+                    Text("Something not working?")
+                    Text("Opens a new issue on GitHub with your Dowlio and macOS versions filled in. Nothing about your downloads is included.")
+                }
+            }
+        }
+        .settingsForm()
+    }
+}
+
+private struct NotificationSettings: View {
     @AppStorage(SettingsKey.notifiesWhenFinished) private var notifies = true
     @AppStorage(SettingsKey.notifiesOnProblems) private var notifiesOnProblems = true
     @AppStorage(SettingsKey.thenAction) private var thenAction = ThenAction.nothing
@@ -37,9 +60,6 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            Section {
-                PresenceToggles(model: model)
-            }
             Section("When a download finishes") {
                 Toggle("Show a notification", isOn: $notifies)
                 if notifies && permission.needsAttention { NotificationPermissionRow(permission: permission) }
@@ -54,15 +74,6 @@ private struct GeneralSettings: View {
             }
             Section("When a download fails or can't resume") {
                 Toggle("Show a notification", isOn: $notifiesOnProblems)
-            }
-            UpdateSettings(updater: model.updater)
-            Section("Help") {
-                LabeledContent {
-                    Button("Report a Problem…") { model.reportProblem() }
-                } label: {
-                    Text("Something not working?")
-                    Text("Opens a new issue on GitHub with your Dowlio and macOS versions filled in. Nothing about your downloads is included.")
-                }
             }
         }
         .settingsForm()
@@ -161,8 +172,6 @@ private struct DownloadsSettings: View {
     @AppStorage(SettingsKey.downloadFolder) private var folderPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].path
     @AppStorage(SettingsKey.sortsIntoCategoryFolders) private var sortsIntoCategoryFolders = false
     @AppStorage(SettingsKey.nameConflictPolicy) private var policy = NameConflictPolicy.keepBoth.rawValue
-    @AppStorage(SettingsKey.videoQualityCap) private var videoQualityCap = 0
-    @AppStorage(SettingsKey.prefersH264) private var prefersH264 = true
     @State private var choosingFolder = false
     @State private var confirmingReplace = false
     @State private var confirmingClear = false
@@ -181,22 +190,8 @@ private struct DownloadsSettings: View {
                 Text("Replace").tag(NameConflictPolicy.replace.rawValue)
                 Text("Skip").tag(NameConflictPolicy.skip.rawValue)
             }
-            Picker("Video quality", selection: $videoQualityCap) {
-                Text("Best available").tag(0)
-                ForEach(VideoQuality.caps, id: \.self) { cap in
-                    Text(verbatim: "Up to \(cap)p").tag(cap)
-                }
-            }
-            Toggle("Prefer H.264 MP4", isOn: $prefersH264)
-                .help("H.264 MP4 plays in every media player, even when a higher resolution is offered in VP9 or AV1.")
             LabeledContent("History") {
                 Button("Clear History…") { confirmingClear = true }
-            }
-            SubtitlesSection()
-            Section {
-                ToolsRows(tools: model.toolsModel)
-            } header: {
-                ToolsInfoTitle()
             }
         }
         .settingsForm()
@@ -223,6 +218,34 @@ private struct DownloadsSettings: View {
         } else {
             policy = value
         }
+    }
+}
+
+private struct VideoSettings: View {
+    let model: AppModel
+    @AppStorage(SettingsKey.videoQualityCap) private var videoQualityCap = 0
+    @AppStorage(SettingsKey.prefersH264) private var prefersH264 = true
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Quality", selection: $videoQualityCap) {
+                    Text("Best available").tag(0)
+                    ForEach(VideoQuality.caps, id: \.self) { cap in
+                        Text(verbatim: "Up to \(cap)p").tag(cap)
+                    }
+                }
+                Toggle("Prefer H.264 MP4", isOn: $prefersH264)
+                    .help("H.264 MP4 plays in every media player, even when a higher resolution is offered in VP9 or AV1.")
+            }
+            SubtitlesSection()
+            Section {
+                ToolsRows(tools: model.toolsModel)
+            } header: {
+                ToolsInfoTitle()
+            }
+        }
+        .settingsForm()
     }
 }
 
