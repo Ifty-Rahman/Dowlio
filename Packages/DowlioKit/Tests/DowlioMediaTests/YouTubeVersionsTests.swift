@@ -19,6 +19,21 @@ struct YouTubeVersionsTests {
 
     private struct FoundNothing: Error {}
 
+    @Test func aWideVideoIsNamedByYouTubesQualityNotItsHeightInPixels() async throws {
+        let video = try await candidate(watch, fixture: "derived-video-wide.json")
+
+        #expect(video.versions.filter { !$0.isAudio }.compactMap(\.height) == [1080, 720, 480, 360, 240, 144])
+    }
+
+    @Test func aPortraitOrSquareVideoIsNamedByItsShorterSide() {
+        #expect(MediaInfo.Format.standardHeight(width: 1080, height: 1920) == 1080)
+        #expect(MediaInfo.Format.standardHeight(width: 1080, height: 1080) == 1080)
+        #expect(MediaInfo.Format.standardHeight(width: 3840, height: 1920) == 2160)
+        #expect(MediaInfo.Format.standardHeight(width: 1920, height: 1036) == 1080)
+        #expect(MediaInfo.Format.standardHeight(width: 2160, height: 1162) == 1080)
+        #expect(MediaInfo.Format.standardHeight(width: nil, height: 1162) == 1162)
+    }
+
     @Test func eachHeightUpTo1080pIsOneH264VersionPairedWithTheAACTrack() async throws {
         let video = try await candidate(watch, fixture: "video-1080p.json")
 

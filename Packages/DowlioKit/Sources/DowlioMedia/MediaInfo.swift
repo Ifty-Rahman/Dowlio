@@ -4,6 +4,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
     public struct Format: Decodable, Equatable, Sendable {
         public var id: String
         public var height: Int?
+        public var width: Int?
         public var frameRate: Double?
         public var videoCodec: String?
         public var audioCodec: String?
@@ -26,7 +27,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case id = "format_id"
-            case height
+            case height, width
             case frameRate = "fps"
             case videoCodec = "vcodec"
             case audioCodec = "acodec"
@@ -65,6 +66,7 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
             id = try values.decode(String.self, forKey: .id)
             url = (try? values.decodeIfPresent(String.self, forKey: .url)).flatMap(URL.init(string:))
             height = try? values.decodeIfPresent(Int.self, forKey: .height)
+            width = try? values.decodeIfPresent(Int.self, forKey: .width)
             frameRate = try? values.decodeIfPresent(Double.self, forKey: .frameRate)
             let video = try? values.decodeIfPresent(String.self, forKey: .videoCodec)
             let audio = try? values.decodeIfPresent(String.self, forKey: .audioCodec)
@@ -116,6 +118,19 @@ public struct MediaInfo: Decodable, Equatable, Sendable {
         private var codecsUnknown: Bool { videoCodec == nil && audioCodec == nil && !videoCodecIsNone && !audioCodecIsNone }
 
         private static let imageExtensions: Set<String> = ["mhtml", "jpg", "jpeg", "png", "webp", "gif"]
+
+        public var standardHeight: Int? {
+            height.map { Self.standardHeight(width: width, height: $0) }
+        }
+
+        static let standardHeights = [144, 240, 360, 480, 720, 1080, 1440, 2160, 4320]
+
+        public static func standardHeight(width: Int?, height: Int) -> Int {
+            guard let width else { return height }
+            let byShortSide = standardHeights.last { $0 <= min(width, height) }
+            let byLongSide = standardHeights.last { $0 * 16 / 9 <= max(width, height) }
+            return [byShortSide, byLongSide].compactMap { $0 }.max() ?? height
+        }
 
         public var hasVideo: Bool {
             if videoCodec != nil { return true }
