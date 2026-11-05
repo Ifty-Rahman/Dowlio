@@ -216,6 +216,7 @@ struct LibraryWindow: View {
                 rows: view.rows, selection: $selection, actions: actions,
                 quickLook: { quickLookFile = quickLookFiles.first },
                 open: { openWindow(id: DetailWindow.sceneID, value: $0.id) },
+                openFile: { model.open($0) },
                 focusList: { isFocused = true }
             )
         }

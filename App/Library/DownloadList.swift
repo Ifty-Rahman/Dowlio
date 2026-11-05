@@ -13,6 +13,7 @@ struct DownloadList: View {
     let actions: RowActions
     let quickLook: () -> Void
     let open: (DownloadRow) -> Void
+    let openFile: (DownloadRow) -> Void
     /// Clicking a row takes focus back from the search field, so ↑, ↓ and Space reach the list.
     let focusList: () -> Void
 
@@ -70,7 +71,7 @@ struct DownloadList: View {
                 selection.click(row.id, in: ids, modifiers: Self.currentModifiers)
                 focusList()
             }
-            .simultaneousGesture(TapGesture(count: 2).onEnded { open(row) })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { row.finishedFile == nil ? open(row) : openFile(row) })
             .contextMenu {
                 SelectionMenuItems(rows: menuRows(for: row), actions: actions, quickLook: quickLook)
                     .onAppear { selection.prepareContextMenu(for: row.id, in: ids) }
