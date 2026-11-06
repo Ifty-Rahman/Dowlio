@@ -13,17 +13,24 @@ Dowlio splits each download across several connections, so large files arrive fa
 ## 📥 Install
 
 1. Download `Dowlio-<version>.dmg` from the [latest release](../../releases/latest) and drag Dowlio to Applications.
-2. Open Dowlio. macOS says it can't verify the app, because Dowlio isn't notarized yet. Click Done.
-3. In System Settings › Privacy & Security, click Open Anyway next to the message about Dowlio.
+2. Dowlio isn't notarized yet, so macOS will refuse to open it at first. Open Terminal and remove the quarantine flag once:
 
-Dowlio needs macOS 14 or later and runs on Apple silicon and Intel Macs. It updates itself after that. If you paired a browser, allow the one-time keychain prompt after each update so it stays paired.
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Dowlio.app
+   ```
+
+3. Open Dowlio. It launches normally from then on.
+
+Prefer not to use Terminal? Open Dowlio, click Done on the warning, then go to System Settings › Privacy & Security and click Open Anyway next to the message about Dowlio.
+
+Dowlio needs macOS 14 or later and runs on Apple silicon and Intel Macs. If you paired a browser, allow the one-time keychain prompt after each update so it stays paired.
 
 ---
 
 ## ✅ What it does
 
 - **Faster downloads.** Up to 16 connections per file, each segment shown on the progress bar.
-- **YouTube and hundreds of sites.** Pick any resolution up to 2160p60, or Audio only. Whole Playlists and YouTube Music albums download in one go.
+- **YouTube, Facebook, X and hundreds of other sites.** Pick any resolution, or Audio only. Whole Playlists and YouTube Music albums download in one go.
 - **Catches browser downloads.** With Dowlio Connect, downloads you start in Chrome, Arc, Brave or Edge finish in Dowlio.
 - **Pause, quit, resume.** Unfinished downloads come back after a quit, and expired YouTube links refresh on their own.
 - **Lives in the menu bar.** Add a link, watch progress and pause without opening the window.
