@@ -36,13 +36,11 @@ struct QuickAddView: View {
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
         }
         if items.count > 1 {
-            LinkPager(sheet: sheet, makesDefaultQuality: Bindable(sheet).makesDefaultQuality)
+            LinkPager(sheet: sheet)
                 .padding(DowlioDesign.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
-            Text(sheet.list.includedLine)
-                .font(DowlioDesign.TypeRole.detail)
-                .foregroundStyle(.secondary)
+            IncludedLine(list: sheet.list)
         } else if let item = items.first {
             singleItem(item, of: sheet)
                 .showsInList(item, of: sheet.list)
@@ -92,7 +90,7 @@ struct QuickAddView: View {
                 .padding(.horizontal, DowlioDesign.Spacing.md)
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
         case .page(let page), .video(let page, _):
-            MediaCard(media: page, makesDefaultQuality: Bindable(sheet).makesDefaultQuality)
+            MediaCard(media: page)
         }
     }
 
@@ -106,7 +104,6 @@ struct QuickAddView: View {
 
 private struct MediaCard: View {
     let media: SentPageModel
-    @Binding var makesDefaultQuality: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
@@ -129,7 +126,7 @@ private struct MediaCard: View {
                 ToolsBody(media: media)
             default:
                 MediaHeader(media: media)
-                MediaChoices(media: media, makesDefaultQuality: $makesDefaultQuality)
+                MediaChoices(media: media)
             }
         }
         .padding(DowlioDesign.Spacing.md)

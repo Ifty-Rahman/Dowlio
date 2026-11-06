@@ -4,7 +4,9 @@ import Foundation
 extension Version {
     public static let extractionRangeSize: Int64 = 8 * 1024 * 1024
     private static let audioCodecs: Set<String> = ["AAC", "AC-3", "E-AC-3", "MP3"]
-    private static let containersWithoutM4AAudio: Set<String> = ["webm", "mkv", "ogg", "ogv"]
+    private static let containersWithoutM4AAudio: Set<String> = [
+        "webm", "mkv", "ogg", "ogv", "avi", "wmv", "asf", "flv", "f4v", "mpg", "mpeg", "m2v", "divx", "vob", "m2ts", "mts", "rmvb",
+    ]
 
     public var isAudio: Bool {
         if case .media(let media) = source { return media.isAudio }

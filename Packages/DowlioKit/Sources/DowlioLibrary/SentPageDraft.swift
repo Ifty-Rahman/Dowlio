@@ -49,6 +49,8 @@ public struct SentPageDraft: Equatable, Sendable {
     private var included: Set<Int> = []
     private var picks: [Int: Version] = [:]
     private var showings: [Int: Showing] = [:]
+    public private(set) var isSelecting = false
+    private var selections: [Int: [Version]] = [:]
 
     public var showing: Showing { showing(of: selected) }
 
@@ -139,11 +141,13 @@ public struct SentPageDraft: Equatable, Sendable {
         let previousIncluded = included
         let previousPicks = picks
         let previousShowings = showings
+        let previousSelections = selections
         candidates = found
         selected = 0
         included = []
         picks = [:]
         showings = [:]
+        selections = [:]
         phase = Self.phase(of: found)
         guard refreshing else { return }
         func moved(_ index: Int) -> Int? {
@@ -157,6 +161,11 @@ public struct SentPageDraft: Equatable, Sendable {
         }
         for (index, showing) in previousShowings {
             if let to = moved(index) { showings[to] = showing }
+        }
+        for (index, versions) in previousSelections {
+            guard let to = moved(index) else { continue }
+            let kept = versions.filter(found[to].versions.contains)
+            selections[to] = kept.isEmpty && !versions.isEmpty ? nil : kept
         }
     }
 
@@ -385,6 +394,7 @@ public struct SentPageDraft: Equatable, Sendable {
         guard let index = candidates.firstIndex(of: waiting) else { return }
         candidates[index] = found
         picks[index] = nil
+        selections[index] = nil
     }
 
     public mutating func select(_ index: Int) {
@@ -409,7 +419,7 @@ public struct SentPageDraft: Equatable, Sendable {
     }
 
     public mutating func moveChoice(by step: Int) {
-        let rows = hasVideoAndAudio ? versions(showing: showing) : selectedCandidate?.versions ?? []
+        let rows = shownVersions
         guard !rows.isEmpty, let current = chosenVersion, let index = rows.firstIndex(of: current) else { return }
         picks[selected] = rows[min(max(index + step, 0), rows.count - 1)]
     }
@@ -425,17 +435,101 @@ public struct SentPageDraft: Equatable, Sendable {
 
     public mutating func include(_ index: Int, _ included: Bool) {
         if included { self.included.insert(index) } else { self.included.remove(index) }
+        if included, selections[index]?.isEmpty == true { selections[index] = nil }
     }
 
     public var downloads: [Download] {
-        candidates.indices.compactMap { index in
-            guard isIncluded(index), let version = chosenVersion(of: index) else { return nil }
-            return Download(candidate: candidates[index], version: version)
+        candidates.indices.flatMap { index in
+            isIncluded(index) ? selectedVersions(of: index).map { Download(candidate: candidates[index], version: $0) } : []
         }
     }
 
-    public var hasVideoAndAudio: Bool {
-        let versions = selectedCandidate?.versions ?? []
+    public mutating func setSelecting(_ selecting: Bool) {
+        guard selecting != isSelecting else { return }
+        if selecting {
+            if let chosen = chosenVersion { selections[selected] = [chosen] }
+        } else {
+            for (index, versions) in selections {
+                guard let first = versions.first, let chosen = chosenVersion(of: index), !versions.contains(chosen) else { continue }
+                picks[index] = first
+                if hasVideoAndAudio(index) { showings[index] = MediaText.isAudio(first) ? .audio : .video }
+            }
+            selections = [:]
+        }
+        isSelecting = selecting
+    }
+
+    public func selectedVersions(of index: Int) -> [Version] {
+        guard candidates.indices.contains(index) else { return [] }
+        let chosen = chosenVersion(of: index).map { [$0] } ?? []
+        guard isSelecting, let ticked = selections[index] else { return chosen }
+        return candidates[index].versions.filter(ticked.contains)
+    }
+
+    public func isTicked(_ version: Version) -> Bool {
+        selectedVersions(of: selected).contains(version)
+    }
+
+    public mutating func toggle(_ version: Version) {
+        guard isSelecting, let candidate = selectedCandidate, candidate.versions.contains(version) else { return }
+        var ticked = selectedVersions(of: selected)
+        if let index = ticked.firstIndex(of: version) { ticked.remove(at: index) } else { ticked.append(version) }
+        tick(ticked)
+        picks[selected] = version
+    }
+
+    public mutating func toggleChosen() {
+        if let chosenVersion { toggle(chosenVersion) }
+    }
+
+    public mutating func selectAllShown(_ all: Bool) {
+        guard isSelecting, let candidate = selectedCandidate else { return }
+        let shown = shownVersions
+        let others = selectedVersions(of: selected).filter { !shown.contains($0) }
+        tick(candidate.versions.filter((all ? others + shown : others).contains))
+    }
+
+    public var selectsAllShown: Bool {
+        let shown = shownVersions
+        let ticked = selectedVersions(of: selected)
+        return !shown.isEmpty && shown.allSatisfy(ticked.contains)
+    }
+
+    private mutating func tick(_ versions: [Version]) {
+        selections[selected] = versions
+        if versions.isEmpty { included.remove(selected) } else { included.insert(selected) }
+    }
+
+    public enum SelectionLength: Sendable {
+        case full
+        case short
+        case total
+    }
+
+    public var selectionLine: String { selectionLine(.full) }
+
+    public func selectionLine(_ length: SelectionLength) -> String {
+        let ticked = selectedVersions(of: selected)
+        guard !ticked.isEmpty else { return "Nothing selected" }
+        let audio = ticked.filter(MediaText.isAudio).count
+        let counts = hasVideoAndAudio && length != .total
+            ? [ticked.count - audio, audio].enumerated().filter { $0.element > 0 }.map { "\($0.element) \($0.offset == 0 ? "video" : "audio")" }
+            : ["\(ticked.count)"]
+        let count = counts.joined(separator: ", ") + (length == .full ? " selected" : "")
+        let sizes = ticked.compactMap(\.totalBytes)
+        guard sizes.count == ticked.count else { return count }
+        let estimated = ticked.contains(where: \.isEstimatedSize) ? "~" : ""
+        return "\(count) · \(estimated)\(ByteText.string(sizes.reduce(0, +)))"
+    }
+
+    public var shownVersions: [Version] {
+        hasVideoAndAudio ? versions(showing: showing) : selectedCandidate?.versions ?? []
+    }
+
+    public var hasVideoAndAudio: Bool { hasVideoAndAudio(selected) }
+
+    private func hasVideoAndAudio(_ index: Int) -> Bool {
+        let versions = candidates.indices.contains(index) ? candidates[index].versions : []
         return versions.contains(where: MediaText.isAudio) && versions.contains { !MediaText.isAudio($0) }
     }
 

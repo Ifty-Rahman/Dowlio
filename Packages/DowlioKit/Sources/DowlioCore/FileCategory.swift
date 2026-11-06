@@ -33,8 +33,8 @@ public enum FileCategory: String, CaseIterable, Codable, Sendable {
 
     private static let byExtension: [String: FileCategory] = {
         let extensions: [FileCategory: [String]] = [
-            .video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mpg", "mpeg", "3gp", "ts"],
-            .audio: ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus", "wma", "alac"],
+            .video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mpg", "mpeg", "3gp", "3g2", "ts", "asf", "f4v", "m2v", "ogv", "divx", "vob", "m2ts", "mts", "rmvb"],
+            .audio: ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "ogg", "oga", "opus", "wma", "alac", "mka", "ape", "ac3", "dts", "wv"],
             .documents: [
                 "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "txt", "md",
                 "csv", "pages", "numbers", "key", "epub", "torrent", "conf", "cfg", "ini", "json", "xml", "yaml", "yml", "toml", "log", "plist",

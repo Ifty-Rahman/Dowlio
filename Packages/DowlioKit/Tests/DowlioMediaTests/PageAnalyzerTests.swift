@@ -471,6 +471,59 @@ struct PageAnalyzerTests {
         #expect(Set(video.versions.compactMap(\.height)) == [240, 360, 480, 720])
         #expect(video.versions.filter { $0.height == 720 }.compactMap(\.codecs).sorted() == ["AV1", "H.264"])
     }
+
+    @Test func eachMediaFileInAnApacheIndexIsItsOwnVideoNamedAfterTheFile() async throws {
+        let site = try await Site()
+        site.serve(html: try fixture("directory-apache"), at: "/FILE/Series/Show/Season%201/")
+        site.serve(video: 573, type: "video/x-matroska", at: "/FILE/Series/Show/Season%201/Show.EP01.2019.BDRip.720p.x265-Group.mkv")
+        site.serve(video: 571, type: "video/x-matroska", at: "/FILE/Series/Show/Season%201/Show.EP02.2019.BDRip.720p.x265-Group.mkv")
+        site.serve(video: 9, type: "audio/flac", at: "/FILE/Series/Show/Season%201/Theme%20Song.flac")
+
+        let found = try await site.analyze("/FILE/Series/Show/Season%201/")
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == [
+            "Show.EP01.2019.BDRip.720p.x265-Group.mkv", "Show.EP02.2019.BDRip.720p.x265-Group.mkv", "Theme Song.flac",
+        ])
+        #expect(candidates.map { $0.versions.count } == [1, 1, 1])
+        #expect(candidates.compactMap { $0.versions.first?.totalBytes } == [573, 571, 9])
+    }
+
+    @Test func anIndexMadeByH5aiGivesItsAviFiles() async throws {
+        let site = try await Site()
+        site.serve(html: try fixture("directory-h5ai"), at: "/FILE/Series/Show/Season%201/")
+        for episode in ["01%20-%2012AM%20-%201AM", "02%20-%201AM%20-%202AM"] {
+            site.serve(video: 300, type: "video/x-msvideo", at: "/FILE/Series/Show/Season%201/Show%20Season%201%20Episode%20\(episode).avi")
+        }
+
+        let found = try await site.analyze("/FILE/Series/Show/Season%201/")
+
+        guard case .found(let candidates) = found.withoutExtractedAudio else { Issue.record("not found: \(found)"); return }
+        #expect(candidates.map(\.label) == ["Show Season 1 Episode 01 - 12AM - 1AM.avi", "Show Season 1 Episode 02 - 1AM - 2AM.avi"])
+    }
+
+    @Test func anIndexWithOnlyFoldersFindsNothing() async throws {
+        let site = try await Site()
+        site.serve(html: "<title>Index of /series</title><h1>Index of /series</h1><a href=\"../\">Parent Directory</a><a href=\"show/\">show/</a>", at: "/series/")
+
+        let found = try await site.analyze("/series/")
+
+        #expect(found == .found([]))
+    }
+
+    @Test func everyCommonVideoAndAudioExtensionIsRecognised() {
+        for name in ["a.avi", "a.mkv", "a.wmv", "a.flv", "a.mpg", "a.mpeg", "a.3gp", "a.m2ts", "a.ogv", "a.vob", "a.divx", "a.MKV"] {
+            #expect(MediaFile.kind(of: URL(string: "https://x.example/\(name)")!) == .video, "\(name)")
+        }
+        for name in ["a.wma", "a.aiff", "a.mka", "a.ape", "a.ac3", "a.alac"] {
+            #expect(MediaFile.kind(of: URL(string: "https://x.example/\(name)")!) == .audio, "\(name)")
+        }
+        #expect(MediaFile.kind(of: URL(string: "https://x.example/app.ts")!) == nil)
+    }
+}
+
+private func fixture(_ name: String) throws -> String {
+    try String(contentsOf: try #require(Bundle.module.url(forResource: "Fixtures/Pages/\(name)", withExtension: "html")), encoding: .utf8)
 }
 
 struct Site {

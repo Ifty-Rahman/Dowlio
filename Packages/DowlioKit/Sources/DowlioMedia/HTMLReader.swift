@@ -9,6 +9,7 @@ struct HTMLReader {
     private(set) var scriptMedia: [URL] = []
     private(set) var frames: [Frame] = []
     private(set) var hasVideoElement = false
+    private(set) var isDirectoryListing = false
     let html: String
 
     init(_ html: String, base: URL) {
@@ -48,7 +49,8 @@ struct HTMLReader {
                 continue
             }
         }
-        for anchor in Self.anchors(in: html) {
+        let anchors = Self.anchors(in: html)
+        for anchor in anchors {
             guard let url = Self.resolve(anchor.href, against: base), let kind = MediaFile.kind(of: url) else { continue }
             let described = anchor.text + " " + url.path
             let height = MediaFile.height(in: described)
@@ -58,10 +60,19 @@ struct HTMLReader {
             let inner = html[range].replacingOccurrences(of: #"</?title[^>]*>"#, with: "", options: [.regularExpression, .caseInsensitive])
             pageTitle = Self.decode(inner).trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        isDirectoryListing = Self.listsDirectory(titled: pageTitle, html: html, anchors: anchors)
         for block in Self.jsonLD(in: html) { readJSONLD(block, base: base) }
         embeddedJSON = Self.scripts(ofType: "application/json", in: html)
         scriptMedia = ScriptMedia.addresses(in: html, base: base).filter { url in !media.contains { $0.url == url } }
         if title == nil, let pageTitle, !pageTitle.isEmpty { title = pageTitle }
+    }
+
+    private static func listsDirectory(titled title: String?, html: String, anchors: [(href: String, text: String)]) -> Bool {
+        if title?.firstMatch(of: /^(?:index of|directory listing for)\b/.ignoresCase()) != nil { return true }
+        if html.range(of: "powered by h5ai", options: .caseInsensitive) != nil { return true }
+        return anchors.contains { anchor in
+            ["parent directory", "[to parent directory]", "..", "../"].contains(anchor.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
     }
 
     private mutating func add(_ found: ScannedMedia) {

@@ -4,7 +4,6 @@ import SwiftUI
 
 struct LinkPager: View {
     let sheet: NewDownloadModel
-    @Binding var makesDefaultQuality: Bool
     var boxed = false
 
     var body: some View {
@@ -26,7 +25,7 @@ struct LinkPager: View {
                         .font(DowlioDesign.TypeRole.detail)
                         .disabled(item.isRestricted)
                 }
-                LinkItemBody(sheet: sheet, item: item, makesDefaultQuality: $makesDefaultQuality, boxed: boxed)
+                LinkItemBody(sheet: sheet, item: item, boxed: boxed)
                 if item.savesAFile {
                     TextField("File name", text: Binding(get: { sheet.fileName(of: item) }, set: { sheet.rename(item, to: $0) }))
                         .textFieldStyle(.roundedBorder)
@@ -35,6 +34,26 @@ struct LinkPager: View {
             }
             .showsInList(item, of: list)
         }
+    }
+}
+
+struct IncludedLine: View {
+    let list: LinkList
+
+    var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.sm) {
+            Text(list.includedLine)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer(minLength: DowlioDesign.Spacing.sm)
+            if list.items.contains(where: \.isOpenToInclude) {
+                let all = list.includesAll
+                Button(all ? "Include None" : "Include All") { list.includeAll(!all) }
+                    .controlSize(.small)
+                    .help(all ? "Take every video out" : "Include every video on this page")
+            }
+        }
+        .font(DowlioDesign.TypeRole.detail)
     }
 }
 
@@ -47,7 +66,6 @@ extension View {
 struct LinkItemBody: View {
     let sheet: NewDownloadModel
     let item: LinkItem
-    @Binding var makesDefaultQuality: Bool
     var boxed = false
 
     var body: some View {
@@ -83,7 +101,7 @@ struct LinkItemBody: View {
         case .video(let page, let index):
             if page.draft.selected == index {
                 MediaHeader(media: page)
-                MediaChoices(media: page, makesDefaultQuality: $makesDefaultQuality, boxed: boxed)
+                MediaChoices(media: page, boxed: boxed)
             }
         }
     }
@@ -132,7 +150,7 @@ extension LinkItem {
         case .checking: false
         case .file: true
         case .page(let page): page.draft.phase == .nothingFound
-        case .video(let page, let index): page.draft.candidates[index].restriction == nil && !page.draft.candidates[index].versions.isEmpty
+        case .video(let page, let index): page.draft.candidates[index].restriction == nil && page.draft.selectedVersions(of: index).count == 1
         }
     }
 }

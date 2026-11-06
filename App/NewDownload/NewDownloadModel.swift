@@ -79,8 +79,6 @@ final class NewDownloadModel: Identifiable {
         list.clear()
     }
 
-    var makesDefaultQuality = false
-
     func fileName(of item: LinkItem) -> String {
         list.name(of: item.id) ?? suggestedName(of: item)
     }

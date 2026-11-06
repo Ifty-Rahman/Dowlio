@@ -1,8 +1,12 @@
 import Foundation
 
 public enum MediaFile {
-    static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "mkv"]
-    static let audioExtensions: Set<String> = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac"]
+    static let videoExtensions: Set<String> = [
+        "mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "asf", "flv", "f4v", "mpg", "mpeg", "m2v", "3gp", "3g2", "ogv", "divx", "vob", "m2ts", "mts", "rmvb",
+    ]
+    static let audioExtensions: Set<String> = [
+        "m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac", "aiff", "aif", "wma", "mka", "ape", "alac", "ac3", "dts", "wv",
+    ]
 
     public static func kind(of url: URL, contentType: String? = nil) -> ScannedMedia.Kind? {
         if let type = contentType?.lowercased() {

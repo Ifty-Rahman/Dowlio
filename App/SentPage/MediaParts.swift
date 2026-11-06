@@ -116,7 +116,6 @@ struct InitialTile: View {
 
 struct MediaChoices: View {
     let media: SentPageModel
-    @Binding var makesDefaultQuality: Bool
     var boxed = false
 
     var body: some View {
@@ -164,11 +163,7 @@ struct MediaChoices: View {
                 .fixedSize()
             }
             rows
-            if let height = media.draft.chosenVersion.flatMap({ MediaText.isAudio($0) ? nil : $0.height }) {
-                Toggle(isOn: $makesDefaultQuality) { Text(verbatim: "Make \(height)p my default quality") }
-                    .toggleStyle(.checkbox)
-                    .font(DowlioDesign.TypeRole.detail)
-            }
+            if media.draft.isSelecting || media.draft.selectedCandidate.map({ $0.versions.count > 1 }) == true { SelectionBar(media: media) }
         }
     }
 
@@ -182,6 +177,41 @@ struct MediaChoices: View {
         } else {
             list
         }
+    }
+}
+
+struct SelectionBar: View {
+    let media: SentPageModel
+
+    var body: some View {
+        HStack(spacing: DowlioDesign.Spacing.sm) {
+            Toggle(isOn: Binding(get: { media.draft.isSelecting }, set: { media.setSelecting($0) })) {
+                Label("Select", systemImage: "checklist")
+            }
+            .toggleStyle(.button)
+            .help(media.draft.isSelecting ? "Go back to downloading one version" : "Pick several versions to download")
+            if media.draft.isSelecting {
+                ViewThatFits(in: .horizontal) {
+                    Text(media.draft.selectionLine)
+                    Text(media.draft.selectionLine(.short))
+                    Text(media.draft.selectionLine(.total)).lineLimit(1)
+                }
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .accessibilityLabel(media.draft.selectionLine)
+                Spacer(minLength: DowlioDesign.Spacing.sm)
+                let all = media.draft.selectsAllShown
+                Button(all ? "Deselect All" : "Select All") { media.selectAllShown(!all) }
+                    .help(scopeHelp(all))
+            }
+        }
+        .controlSize(.small)
+        .font(DowlioDesign.TypeRole.detail)
+    }
+
+    private func scopeHelp(_ all: Bool) -> String {
+        let kind = media.draft.hasVideoAndAudio ? (media.draft.showing == .audio ? " audio" : " video") : ""
+        return all ? "Untick every\(kind) version" : "Tick every\(kind) version"
     }
 }
 
@@ -220,6 +250,11 @@ struct VersionRows: View {
             media.moveChoice(by: 1)
             return .handled
         }
+        .onKeyPress(.space) {
+            guard media.draft.isSelecting else { return .ignored }
+            media.toggleChosen()
+            return .handled
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Versions")
     }
@@ -228,8 +263,11 @@ struct VersionRows: View {
         let labelWidth: CGFloat = versions.contains(where: \.isHighFrameRate) ? 78 : 58
         return VStack(spacing: Self.spacing) {
             ForEach(Array(versions.enumerated()), id: \.offset) { index, version in
-                VersionRow(version: version, isChosen: version == media.draft.chosenVersion, labelWidth: labelWidth) {
-                    media.pick(version)
+                VersionRow(
+                    version: version, isChosen: version == media.draft.chosenVersion, selecting: selecting(version),
+                    showsCursor: focused, labelWidth: labelWidth
+                ) {
+                    if media.draft.isSelecting { media.toggle(version) } else { media.pick(version) }
                     focused = true
                 }
                 .frame(height: Self.rowHeight)
@@ -247,23 +285,39 @@ struct VersionRows: View {
         }
     }
 
-    private var versions: [Version] {
-        media.draft.hasVideoAndAudio ? media.draft.versions(showing: media.draft.showing) : media.draft.selectedCandidate?.versions ?? []
+    private var versions: [Version] { media.draft.shownVersions }
+
+    private func selecting(_ version: Version) -> VersionRow.Selecting? {
+        media.draft.isSelecting ? VersionRow.Selecting(isTicked: media.draft.isTicked(version)) : nil
     }
 }
 
 private struct VersionRow: View {
+    struct Selecting {
+        var isTicked: Bool
+    }
+
     let version: Version
     let isChosen: Bool
+    let selecting: Selecting?
+    let showsCursor: Bool
     let labelWidth: CGFloat
     let choose: () -> Void
+
+    private var isMarked: Bool { selecting?.isTicked ?? isChosen }
+
+    private var symbol: String {
+        if let selecting { return selecting.isTicked ? "checkmark.square.fill" : "square" }
+        return isChosen ? "smallcircle.filled.circle.fill" : "circle"
+    }
 
     var body: some View {
         Button(action: choose) {
             HStack(spacing: DowlioDesign.Spacing.md) {
-                Image(systemName: isChosen ? "smallcircle.filled.circle.fill" : "circle")
+                Image(systemName: symbol)
                     .font(.system(size: 15))
-                    .foregroundStyle(isChosen ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isMarked ? Color.accentColor : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
                 Text(MediaText.title(of: version))
                     .font(DowlioDesign.TypeRole.heading)
                     .frame(width: labelWidth, alignment: .leading)
@@ -278,11 +332,17 @@ private struct VersionRow: View {
             }
             .padding(.horizontal, DowlioDesign.Spacing.sm)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(isChosen ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+            .background(isMarked ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested))
+            .overlay {
+                if selecting != nil, isChosen, showsCursor {
+                    RoundedRectangle(cornerRadius: DowlioDesign.Radius.nested).strokeBorder(Color.accentColor.opacity(0.6))
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(isChosen ? .isSelected : [])
+        .accessibilityAddTraits(isMarked ? .isSelected : [])
+        .accessibilityHint(selecting == nil ? "" : "Ticks or unticks this version")
     }
 }
 

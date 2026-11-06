@@ -76,10 +76,6 @@ extension UserDefaults {
         )
     }
 
-    func setVideoQualityCap(_ height: Int) {
-        set(height, forKey: SettingsKey.videoQualityCap)
-    }
-
     func removeRetiredSettings() {
         SettingsKey.retiredKeys.forEach(removeObject(forKey:))
     }

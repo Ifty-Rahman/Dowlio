@@ -24,8 +24,8 @@ struct NewDownloadSheet: View {
             }
             let items = sheet.list.items
             if items.count > 1 {
-                LinkPager(sheet: sheet, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
-                Text(sheet.list.includedLine).font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
+                LinkPager(sheet: sheet, boxed: true)
+                IncludedLine(list: sheet.list)
             } else if let item = items.first {
                 singleItem(item)
                     .showsInList(item, of: sheet.list)
@@ -112,7 +112,7 @@ struct NewDownloadSheet: View {
         case .found, .restricted:
             VStack(alignment: .leading, spacing: DowlioDesign.Spacing.md) {
                 MediaHeader(media: media, subtitle: versionsLine(media))
-                MediaChoices(media: media, makesDefaultQuality: $sheet.makesDefaultQuality, boxed: true)
+                MediaChoices(media: media, boxed: true)
                 if item.savesAFile {
                     VStack(alignment: .leading, spacing: DowlioDesign.Spacing.xs) {
                         Text("File name").font(DowlioDesign.TypeRole.detail).foregroundStyle(.secondary)
