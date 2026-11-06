@@ -40,16 +40,44 @@ public struct QualityPreference: Equatable, Sendable {
 
 public enum MediaNaming {
     public static func fileName(label: String, version: Version, addsResolution: Bool = true, isTaken: (String) -> Bool) -> String {
-        let ext = MediaText.fileExtension(of: version)
+        let (base, ext) = parts(label: label, version: version)
+        let named = joined(base, ext)
+        guard addsResolution, isTaken(named), let height = version.height else { return named }
+        return joined("\(base) (\(height)p)", ext)
+    }
+
+    public static func fileName(
+        label: String, version: Version, alongside siblings: [Version], addsResolution: Bool = true, isTaken: (String) -> Bool, besides named: Set<String>
+    ) -> String {
+        let (base, ext) = parts(label: label, version: version)
+        let clashing = siblings.filter { $0 != version && MediaText.fileExtension(of: $0) == ext }
+        let name: String
+        if let height = version.height, !clashing.isEmpty {
+            let sharesHeight = clashing.contains { $0.height == height }
+            let tag = ["\(height)p", sharesHeight ? version.codecs : nil].compactMap { $0 }.joined(separator: " ")
+            name = joined("\(base) (\(tag))", ext)
+        } else {
+            name = fileName(label: label, version: version, addsResolution: addsResolution, isTaken: isTaken)
+        }
+        guard named.contains(name) else { return name }
+        let stem = (name as NSString).deletingPathExtension
+        let numbered = (2...).lazy.map { joined("\(stem) \($0)", ext) }
+        return numbered.first { !named.contains($0) && !isTaken($0) }!
+    }
+
+    private static func parts(label: String, version: Version) -> (base: String, ext: String) {
         let cleaned = label
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "/", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = cleaned.isEmpty ? version.source.url.deletingPathExtension().lastPathComponent : String(cleaned.prefix(120))
-        let named = ext.isEmpty ? base : "\(base).\(ext)"
-        guard addsResolution, isTaken(named), let height = version.height else { return named }
-        let withResolution = "\(base) (\(height)p)"
-        return ext.isEmpty ? withResolution : "\(withResolution).\(ext)"
+        let ext = MediaText.fileExtension(of: version)
+        let named = cleaned.lowercased().hasSuffix(".\(ext.lowercased())") && !ext.isEmpty ? String(cleaned.dropLast(ext.count + 1)) : cleaned
+        let base = named.isEmpty ? version.source.url.deletingPathExtension().lastPathComponent : String(named.prefix(120))
+        return (base, ext)
+    }
+
+    private static func joined(_ base: String, _ ext: String) -> String {
+        ext.isEmpty ? base : "\(base).\(ext)"
     }
 }
 

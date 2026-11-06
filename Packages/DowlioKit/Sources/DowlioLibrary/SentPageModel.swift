@@ -190,7 +190,14 @@ public final class SentPageModel {
         probeIfNeeded(index)
     }
     public func pick(_ version: Version) { draft.pick(version) }
-    public func include(_ index: Int, _ included: Bool) { draft.include(index, included) }
+    public func include(_ index: Int, _ included: Bool) {
+        draft.include(index, included)
+        if included { probeIfNeeded(index) }
+    }
+    public func setSelecting(_ selecting: Bool) { draft.setSelecting(selecting) }
+    public func toggle(_ version: Version) { draft.toggle(version) }
+    public func toggleChosen() { draft.toggleChosen() }
+    public func selectAllShown(_ all: Bool) { draft.selectAllShown(all) }
     public func show(_ kind: SentPageDraft.Showing) { draft.show(kind) }
     public func moveChoice(by step: Int) { draft.moveChoice(by: step) }
 }

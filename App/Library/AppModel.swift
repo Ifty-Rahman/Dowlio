@@ -433,13 +433,18 @@ final class AppModel {
         let draft = sheet.draft
         let list = sheet.list
         let destination = settings.destination(in: draft.folder)
-        if sheet.makesDefaultQuality, let shown = list.current, let height = list.chosenVersion(of: shown.id)?.height {
-            UserDefaults.standard.setVideoQualityCap(height)
-        }
         let isTaken = Self.nameIsTaken(in: draft.folder)
         let addsResolution = settings.nameConflictPolicy == .keepBoth
         let subtitles = UserDefaults.standard.subtitlePreference
-        let added = list.downloads.flatMap { download -> [(DownloadSource, RequestOptions, DownloadOrigin?)] in
+        var named: Set<String> = []
+        let downloads = list.downloads
+        func versions(of candidate: Candidate, on page: SentPage) -> [Version] {
+            downloads.compactMap { download in
+                guard case let .media(otherPage, other, version, _) = download, otherPage == page, other == candidate else { return nil }
+                return version
+            }
+        }
+        let added = downloads.flatMap { download -> [(DownloadSource, RequestOptions, DownloadOrigin?)] in
             if case let .playlist(page, listing, entries, showing, quality) = download {
                 return playlistDownloads(page, listing, entries, showing, quality, draft: draft, subtitles: subtitles)
             }
@@ -455,7 +460,12 @@ final class AppModel {
                 options.requestSizeLimit = version.requestSizeLimit
                 options.userAgent = chosen.userAgent ?? version.userAgent ?? page.userAgent
                 options.cookies = (chosen.cookies.isEmpty ? page.cookies : chosen.cookies).sent(to: version.source.url, from: page.url)
-                options.fileName = name ?? MediaNaming.fileName(label: candidate.label, version: version, addsResolution: addsResolution, isTaken: isTaken)
+                let fileName = name ?? MediaNaming.fileName(
+                    label: candidate.label, version: version, alongside: versions(of: candidate, on: page),
+                    addsResolution: addsResolution, isTaken: isTaken, besides: named
+                )
+                named.insert(fileName)
+                options.fileName = fileName
                 return (version.source, options, draft.origin(for: page.url))
             case let .file(url, name):
                 let chosen = draft.options(for: url)

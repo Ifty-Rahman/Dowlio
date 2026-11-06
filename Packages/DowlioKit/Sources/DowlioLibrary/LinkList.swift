@@ -204,7 +204,7 @@ public final class LinkList {
 
     public func chosenVersion(of id: LinkItem.ID) -> Version? {
         guard let item = items.first(where: { $0.id == id }), case .video(let model, let candidate) = item.kind else { return nil }
-        return model.draft.chosenVersion(of: candidate)
+        return model.draft.selectedVersions(of: candidate).first
     }
 
     public func isIncluded(_ id: LinkItem.ID) -> Bool {
@@ -216,7 +216,7 @@ public final class LinkList {
         case .page(let model):
             if let candidate = id.candidate {
                 let restricted = model.draft.candidates.indices.contains(candidate) && model.draft.candidates[candidate].restriction != nil
-                return entry.included && !restricted && model.draft.isIncluded(candidate)
+                return !restricted && model.draft.isIncluded(candidate)
             }
             return model.draft.phase.isLooking ? entry.included : entry.pageIncluded
         }
@@ -239,7 +239,6 @@ public final class LinkList {
             entry?.included = included
         case .page(let model):
             if let candidate = id.candidate {
-                if included { entry?.included = true }
                 model.include(candidate, included)
             } else if model.draft.phase.isLooking {
                 entry?.included = included
@@ -249,8 +248,21 @@ public final class LinkList {
         }
     }
 
+    public var includesAll: Bool {
+        let videos = items.filter(\.isOpenToInclude)
+        return !videos.isEmpty && videos.allSatisfy { isIncluded($0.id) }
+    }
+
+    public func includeAll(_ included: Bool) {
+        for item in items where item.isOpenToInclude { include(item.id, included) }
+    }
+
     public func name(of id: LinkItem.ID) -> String? {
-        guard let named = names[id], named.version == chosenVersion(of: id) else { return nil }
+        name(of: id, version: chosenVersion(of: id))
+    }
+
+    private func name(of id: LinkItem.ID, version: Version?) -> String? {
+        guard let named = names[id], named.version == version else { return nil }
         return named.name
     }
 
@@ -272,27 +284,28 @@ public final class LinkList {
     }
 
     public var downloads: [LinkDownload] {
-        items.compactMap { item in
-            guard isIncluded(item.id) else { return nil }
+        items.flatMap { item -> [LinkDownload] in
+            guard isIncluded(item.id) else { return [] }
             let name = name(of: item.id)
             switch item.kind {
             case .checking:
-                return nil
+                return []
             case .file(let url, _):
-                return .file(url, name: name)
+                return [.file(url, name: name)]
             case .page(let model):
                 if model.draft.phase == .playlist, let listing = model.draft.playlist {
                     let entries = model.draft.includedEntries
-                    guard !entries.isEmpty else { return nil }
-                    return .playlist(
+                    guard !entries.isEmpty else { return [] }
+                    return [.playlist(
                         page: model.draft.page, listing: listing, entries: entries, showing: model.draft.playlistShowing,
                         quality: model.draft.playlistQuality
-                    )
+                    )]
                 }
-                return model.draft.phase.isLooking ? nil : .file(model.draft.page.url, name: name)
+                return model.draft.phase.isLooking ? [] : [.file(model.draft.page.url, name: name)]
             case .video(let model, let candidate):
-                guard let version = model.draft.chosenVersion(of: candidate) else { return nil }
-                return .media(page: model.draft.page, candidate: model.draft.candidates[candidate], version: version, name: name)
+                return model.draft.selectedVersions(of: candidate).map { version in
+                    .media(page: model.draft.page, candidate: model.draft.candidates[candidate], version: version, name: self.name(of: item.id, version: version))
+                }
             }
         }
     }
@@ -304,6 +317,13 @@ public final class LinkList {
     public var includedLine: String {
         let items = items
         return "\(items.filter { isIncluded($0.id) }.count) of \(items.count) included"
+    }
+}
+
+extension LinkItem {
+    @MainActor public var isOpenToInclude: Bool {
+        guard case .video(let model, let candidate) = kind else { return false }
+        return model.draft.candidates[candidate].restriction == nil
     }
 }
 
