@@ -31,7 +31,7 @@ Dowlio needs macOS 14 or later and runs on Apple silicon and Intel Macs. If you 
 
 - **Faster downloads.** Up to 16 connections per file, each segment shown on the progress bar.
 - **YouTube, Facebook, X and hundreds of other sites.** Pick any resolution, or Audio only. Whole Playlists and YouTube Music albums download in one go.
-- **Catches browser downloads.** With Dowlio Connect, downloads you start in Chrome, Arc, Brave or Edge finish in Dowlio.
+- **Catches browser downloads.** With Dowlio Connect, downloads you start in Chrome, Dia, Brave, Edge or any other chromium browser finish in Dowlio.
 - **Pause, quit, resume.** Unfinished downloads come back after a quit, and expired YouTube links refresh on their own.
 - **Lives in the menu bar.** Add a link, watch progress and pause without opening the window.
 - **Sorted for you.** Video, Audio, Documents, Archives and Apps & Disk Images, each searchable.
