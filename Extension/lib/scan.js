@@ -1,6 +1,6 @@
 export function scanPage(doc = document, base = doc.baseURI) {
-  const VIDEO_FILES = ["mp4", "m4v", "mov", "webm", "mkv"];
-  const AUDIO_FILES = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac"];
+  const VIDEO_FILES = ["mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "asf", "flv", "f4v", "mpg", "mpeg", "m2v", "3gp", "3g2", "ogv", "divx", "vob", "m2ts", "mts", "rmvb"];
+  const AUDIO_FILES = ["m4a", "mp3", "aac", "ogg", "oga", "opus", "wav", "flac", "aiff", "aif", "wma", "mka", "ape", "alac", "ac3", "dts", "wv"];
   const EMBEDDED_LIMIT = 160000;
   const MEDIA_KEYS = ["reblogKey", "grid_title", "upNextThumbnailUrl", "carousel_media", "video_versions", "video_dash_manifest", "videoDeliveryResponseFragment", "playable_url", "browser_native_hd_url"];
   const media = [];

@@ -156,3 +156,13 @@ test("embedded JSON is capped so the whole scan fits in one message", () => {
 
   assert.equal(found.embeddedJson.length, 1);
 });
+
+test("links in a file listing to avi, mkv and other media are found", () => {
+  const found = scan(`<a href="../">Parent Directory</a><a href="/files/ep%2001.avi">ep 01</a><a href="/files/ep02.MKV">ep 02</a><a href="/files/a.wma">a</a><a href="/files/sub.srt">sub</a>`);
+
+  assert.deepEqual(found.media, [
+    { url: "https://www.example.com/files/ep%2001.avi", kind: "video" },
+    { url: "https://www.example.com/files/ep02.MKV", kind: "video" },
+    { url: "https://www.example.com/files/a.wma", kind: "audio" },
+  ]);
+});

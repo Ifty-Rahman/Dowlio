@@ -208,6 +208,7 @@ public struct PageAnalyzer: Sendable {
         default:
             break
         }
+        if found.isEmpty, reading?.isDirectoryListing == true { return report(.found([])) }
         if found.isEmpty, let ytdlp, await ytdlp.isInstalled {
             let tried = await withYTDLP(page, opensAsAudio: false)
             switch tried {
@@ -518,12 +519,13 @@ public struct PageAnalyzer: Sendable {
         var watchedFiles: Set<URL>
         var scriptedFiles: Set<URL> = []
         var fragments = StreamFragments()
+        var listsFiles: Bool { reading?.isDirectoryListing == true }
     }
 
     private func candidates(
         on page: SentPage, reading: HTMLReader?, refusals: Refusals, keepsOnlyPlayers: Bool = false, report: (PageAnalysis) -> Void
     ) async -> [Candidate] {
-        var players = Players()
+        var players = Players(listsFiles: reading?.isDirectoryListing == true)
         for media in page.scan { players.add(media, from: "page") }
         let readMedia = reading?.media ?? []
         for media in readMedia where !DASHVersions.isStream(media.url) { players.add(media, from: "html") }
@@ -747,9 +749,14 @@ public struct PageAnalyzer: Sendable {
         var splittable: Set<URL> = []
     }
 
+    private static func fileName(of bucket: PageLayout.Bucket, in place: PageContext) -> String? {
+        guard place.listsFiles, bucket.files.count == 1 else { return nil }
+        return bucket.files[0].url.lastPathComponent
+    }
+
     private func placeholder(of bucket: PageLayout.Bucket, in place: PageContext) -> Candidate {
         Candidate(
-            label: bucket.player?.label ?? place.label,
+            label: bucket.player?.label ?? Self.fileName(of: bucket, in: place) ?? place.label,
             thumbnail: bucket.player?.poster ?? bucket.files.lazy.compactMap(\.poster).first ?? place.reading?.image,
             duration: bucket.player?.duration ?? bucket.files.lazy.compactMap(\.duration).first ?? place.reading?.duration,
             versions: [],
@@ -1020,11 +1027,14 @@ public struct PageAnalyzer: Sendable {
         }
 
         private(set) var list: [Player] = []
+        let listsFiles: Bool
 
         mutating func add(_ media: ScannedMedia, from origin: String) {
             guard !list.contains(where: { $0.sources.contains { $0.url == media.url } }) else { return }
             let key: String
-            if media.group == HTMLReader.downloadLinks || (origin != "watched" && media.group == nil && MediaFile.height(in: media.url.path) != nil) {
+            if listsFiles {
+                key = media.url.absoluteString
+            } else if media.group == HTMLReader.downloadLinks || (origin != "watched" && media.group == nil && MediaFile.height(in: media.url.path) != nil) {
                 key = "download-links"
             } else {
                 key = media.group.map { "\(origin)-\($0)" } ?? media.url.absoluteString
