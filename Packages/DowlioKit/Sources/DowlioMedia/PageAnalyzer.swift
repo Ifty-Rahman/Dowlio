@@ -594,6 +594,7 @@ public struct PageAnalyzer: Sendable {
         var candidates: [Candidate]
         var isPost: Bool
         var fromPlayers = false
+        var postLabels: Set<String> = []
     }
 
     private func readSite(_ page: SentPage, reading: HTMLReader?, refusals: Refusals) async -> SiteFinding? {
@@ -609,12 +610,14 @@ public struct PageAnalyzer: Sendable {
         let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
         let sitePage = SitePage(
             url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), html: reading?.html, cookies: page.cookies,
-            framedBy: page.framedBy, send: { url, body, headers in try await self.readerData(at: url, for: page, sending: body, headers: headers) }
+            framedBy: page.framedBy, media: page.scan.map(\.url) + page.watched.map(\.url),
+            send: { url, body, headers in try await self.readerData(at: url, for: page, sending: body, headers: headers) }
         ) { url in
             try await self.readerData(at: url, for: page)
         }
         let fallback = Self.label(of: page, reading: reading)
         var found: [Candidate] = []
+        var postLabels: Set<String> = []
         for reader in chosen {
             let videos: [SiteVideo]
             do {
@@ -625,6 +628,7 @@ public struct PageAnalyzer: Sendable {
             }
             var fromReader: [Candidate] = []
             for video in videos {
+                if let label = video.label { postLabels.insert(label) }
                 let label = video.label ?? Self.player(lasting: video.duration, on: page)?.label ?? fallback
                 fromReader += await candidates(of: video, on: page, label: label, refusals: refusals)
             }
@@ -635,7 +639,7 @@ public struct PageAnalyzer: Sendable {
         let isPost = chosen.count == 1 && chosen[0].post(in: page.url) != nil
         return SiteFinding(
             candidates: await sized(found, on: page).map { $0.withExtractedAudio(splittable: []) }, isPost: isPost,
-            fromPlayers: !chosen.contains { $0.recognises(page.url) }
+            fromPlayers: !chosen.contains { $0.recognises(page.url) }, postLabels: postLabels
         )
     }
 
@@ -700,12 +704,14 @@ public struct PageAnalyzer: Sendable {
             let ids = candidate.addressIDs
             let shared = rows.firstIndex { !$0.addresses.isDisjoint(with: candidate.addresses) }
                 ?? (ids.isEmpty ? nil : rows.firstIndex { !$0.addressIDs.isDisjoint(with: ids) })
+            let ownLabel = fromSite.postLabels.contains(candidate.label)
             if let index = shared ?? rows.firstIndex(where: { $0.restriction == nil && Self.sameLength($0.duration, candidate.duration) }) {
                 rows[index] = rows[index].joining(candidate)
+                if ownLabel { rows[index].label = candidate.label }
             } else if let rank = players.indices.first(where: { !taken.contains($0) && Self.sameLength(players[$0].duration, candidate.duration) }) {
                 taken.insert(rank)
                 var labelled = candidate
-                labelled.label = players[rank].label ?? candidate.label
+                if !ownLabel { labelled.label = players[rank].label ?? candidate.label }
                 placed.append((rank, labelled))
             } else {
                 placed.append((players.count, candidate))
@@ -939,7 +945,12 @@ public struct PageAnalyzer: Sendable {
         var seen = Set<String>()
         var rows: [Version] = []
         var rowOf: [String: Int] = [:]
-        for version in versions where seen.insert(sameFile(version)).inserted {
+        var codecsOf: [String: String] = [:]
+        for version in versions {
+            if let codecs = version.codecs { codecsOf[sameFile(version)] = codecs }
+        }
+        for var version in versions where seen.insert(sameFile(version)).inserted {
+            version.codecs = version.codecs ?? codecsOf[sameFile(version)]
             guard let key = sameRow(version) else {
                 rows.append(version)
                 continue

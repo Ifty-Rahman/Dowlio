@@ -83,7 +83,7 @@ public final class LinkList {
         guard let current = entry, current.url == url else { return }
         switch current.state {
         case .checking, .file:
-            if case .inspected(let inspection) = check, inspection.isWebPage {
+            if Self.mayBeAPage(check) {
                 let page = SentPage(url: url, cookies: current.options.cookies, userAgent: current.options.userAgent)
                 startAnalysing(makeModel(page))
             } else {
@@ -91,6 +91,14 @@ public final class LinkList {
             }
         case .page:
             break
+        }
+    }
+
+    private static func mayBeAPage(_ check: NewDownloadDraft.Check) -> Bool {
+        switch check {
+        case .inspected(let inspection): inspection.isWebPage
+        case .failed(.network(let failure)): failure.code == .badServerResponse
+        case .checking, .failed: false
         }
     }
 

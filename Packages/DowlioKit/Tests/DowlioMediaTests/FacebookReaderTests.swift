@@ -83,7 +83,7 @@ struct FacebookReaderTests {
         #expect(candidates.map(\.duration) == [135.185])
     }
 
-    @Test func aFeedsVideosAreLabelledWithTheirPostsAndTheOneOnScreenComesFirst() async throws {
+    @Test func aFeedsVideosAreLabelledWithTheirPostersAndCaptionsAndTheOneOnScreenComesFirst() async throws {
         let site = try await facebook()
         site.site.serve(html: "<title>Facebook</title>", at: "/")
         let feed = [
@@ -98,7 +98,7 @@ struct FacebookReaderTests {
 
         #expect(candidates.map(\.versions.first?.source.url.lastPathComponent) == ["two.mp4", "one.mp4"])
         #expect(candidates.map(\.isOnScreen) == [true, false])
-        #expect(candidates.map(\.label) == ["Second Author: Cooking dinner", "First Author: A long walk along the coast at sunset"])
+        #expect(candidates.map(\.label) == ["Second Author - Cooking dinner", "First Author - A long walk along the coast"])
     }
 
     @Test func aVideoWithoutPostTextTakesTheLabelOfThePlayerThatLastsAsLong() async throws {
@@ -112,7 +112,45 @@ struct FacebookReaderTests {
         #expect(candidates.map(\.label) == ["Sample Page: A reel about bread"])
     }
 
-    @Test func aReelIsNamedAfterItsPosterAndCaptionKeptBesideTheVideo() async throws {
+    @Test func aFeedVideoKeepsItsPostsCaptionOverTheTextAroundItsPlayer() async throws {
+        let site = try await facebook()
+        site.site.serve(html: "<title>Facebook</title>", at: "/")
+        let feed = [story("Cooking dinner for the whole family tonight", by: "Second Author", showing: try video(id: "22", seconds: 90, file: "https://video.cdn.example/v/two.mp4"))]
+
+        let candidates = try await site.candidates("/") {
+            $0.embeddedJSON = [PageFixture.json(["data": ["feed": feed]])]
+            $0.players = [ScannedPlayer(group: 1, label: "Second Author · Follow Original audio Cooking dinner", duration: 90, isPlaying: true, visibility: 1)]
+        }
+
+        #expect(candidates.map(\.label) == ["Second Author - Cooking dinner for the whole family"])
+    }
+
+    @Test func aVideoTakesItsPostersNameAndCaptionFromAPostKeptInAnotherPartOfThePage() async throws {
+        let site = try await facebook()
+        site.site.serve(html: "<title>Facebook</title>", at: "/reel/44/")
+        var playable = try video(id: "44", seconds: 15, file: "https://video.cdn.example/v/reel.mp4")
+        playable["owner"] = nil
+        let post = story("Youri Tielemans putting on a show dominating the midfield vs Villa", by: "Manunitedborn", showing: ["id": "44", "__typename": "Video"])
+
+        let candidates = try await site.candidates("/reel/44/") {
+            $0.embeddedJSON = [PageFixture.json(["data": post]), PageFixture.json(playable)]
+        }
+
+        #expect(candidates.map(\.label) == ["Manunitedborn - Youri Tielemans putting on a show"])
+    }
+
+    @Test func aWatchVideoTakesItsCaptionFromItsDescription() async throws {
+        let site = try await facebook()
+        site.site.serve(html: "<title>Facebook</title>", at: "/watch/")
+        var media = try video(id: "33", seconds: 60, file: "https://video.cdn.example/v/watch.mp4")
+        media["savable_description"] = ["text": "Morning run along the river with the whole crew"]
+
+        let candidates = try await site.candidates("/watch/?v=33") { $0.embeddedJSON = [PageFixture.json(media)] }
+
+        #expect(candidates.map(\.label) == ["Morning run along the river with"])
+    }
+
+    @Test func aReelIsNamedAfterItsPosterAndTheFirstWordsOfItsCaptionKeptBesideTheVideo() async throws {
         let site = try await facebook()
         site.site.serve(html: "<title>Facebook</title>", at: "/reel/3000000000000001/")
         let media = try video(id: "3000000000000001", seconds: 30, file: "https://video.cdn.example/v/reel.mp4")
@@ -126,7 +164,7 @@ struct FacebookReaderTests {
 
         let candidates = try await site.candidates("/reel/3000000000000001/") { $0.embeddedJSON = [PageFixture.json(reel)] }
 
-        #expect(candidates.map(\.label) == ["Sample Creator: Morning run along the river with the whole"])
+        #expect(candidates.map(\.label) == ["Sample Creator - Morning run along the river with"])
     }
 
     @Test func aReelWithoutACaptionIsNamedAfterItsPoster() async throws {
@@ -177,7 +215,7 @@ struct FacebookReaderTests {
 
         let candidates = try await site.candidates("/somepage/posts/pfbid02AbCd/") { $0.embeddedJSON = [PageFixture.json(["data": feed])] }
 
-        #expect(candidates.map(\.label) == ["Sample Page: The post itself"])
+        #expect(candidates.map(\.label) == ["Sample Page - The post itself"])
     }
 
     @Test func aPageWithoutVideoDataIsLoggedAndFallsBack() async throws {

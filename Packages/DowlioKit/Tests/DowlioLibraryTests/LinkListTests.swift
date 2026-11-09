@@ -73,6 +73,26 @@ struct LinkListTests {
         #expect(analyses.asked.map(\.url) == [pageA])
     }
 
+    @Test func aLinkTheServerRefusesTheFileCheckWithAStatusIsReadAsAPage() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+
+        list.checked(pageA, .failed(.network(NetworkFailure(code: .badServerResponse, message: "The server answered with status 400."))))
+
+        #expect(describe(list) == ["page a.example looking"])
+    }
+
+    @Test func aLinkThatLostItsConnectionStaysAFailedFile() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+
+        list.checked(pageA, .failed(.network(NetworkFailure(code: .networkConnectionLost, message: "The network connection was lost."))))
+
+        #expect(analyses.asked.isEmpty)
+    }
+
     @Test func aSentPageReplacesWhatTheListHeldAndStopsItsAnalysis() async throws {
         let analyses = Analyses()
         let list = list(analyses)

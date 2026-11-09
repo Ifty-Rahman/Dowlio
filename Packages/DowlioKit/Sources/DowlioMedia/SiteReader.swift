@@ -38,11 +38,12 @@ public struct SitePage: Sendable {
     public var html: String?
     public var cookies: [Cookie]
     public var framedBy: URL?
+    public var media: [URL]
     private let fetch: Fetch
     private let send: Send?
 
     public init(
-        url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], framedBy: URL? = nil, send: Send? = nil,
+        url: URL, embeddedJSON: [String] = [], html: String? = nil, cookies: [Cookie] = [], framedBy: URL? = nil, media: [URL] = [], send: Send? = nil,
         fetch: @escaping Fetch
     ) {
         self.url = url
@@ -50,6 +51,7 @@ public struct SitePage: Sendable {
         self.html = html
         self.cookies = cookies
         self.framedBy = framedBy
+        self.media = media
         self.send = send
         self.fetch = fetch
     }
