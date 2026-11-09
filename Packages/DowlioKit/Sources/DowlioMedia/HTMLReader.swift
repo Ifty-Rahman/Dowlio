@@ -9,11 +9,14 @@ struct HTMLReader {
     private(set) var scriptMedia: [URL] = []
     private(set) var frames: [Frame] = []
     private(set) var hasVideoElement = false
+    private(set) var redirect: URL?
     private(set) var isDirectoryListing = false
     let html: String
+    let base: URL
 
     init(_ html: String, base: URL) {
         self.html = html
+        self.base = base
         var pageTitle: String?
         var openMedia = ScannedMedia.Kind.video
         var players = 0
@@ -81,6 +84,11 @@ struct HTMLReader {
     }
 
     private mutating func readMeta(_ attributes: [String: String], base: URL) {
+        if attributes["http-equiv"]?.lowercased() == "refresh", redirect == nil,
+           let content = attributes["content"], let range = content.range(of: "url=", options: .caseInsensitive) {
+            let target = content[range.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " '\""))
+            redirect = Self.resolve(target, against: base)
+        }
         guard let key = (attributes["property"] ?? attributes["name"] ?? attributes["itemprop"])?.lowercased(),
               let content = attributes["content"] else { return }
         switch key {

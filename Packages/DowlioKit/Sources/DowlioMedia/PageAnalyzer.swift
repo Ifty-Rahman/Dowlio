@@ -157,7 +157,7 @@ public struct PageAnalyzer: Sendable {
         return await withTaskCancellationHandler { await playing.value } onCancel: { playing.cancel() }
     }
 
-    private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+    private func run(_ page: SentPage, followedRedirect: Bool = false, report: (PageAnalysis) -> Void) async {
         if let link = YouTubeLink(page.url) {
             switch link.kind {
             case .video:
@@ -196,6 +196,15 @@ public struct PageAnalyzer: Sendable {
         }
 
         let reading = await read(page, refusals: refusals)
+        if !followedRedirect, let reading {
+            let stub = reading.media.isEmpty && reading.embeddedJSON.isEmpty ? reading.redirect : nil
+            let target = stub ?? reading.base
+            if target != page.url {
+                var next = page
+                next.url = target
+                return await run(next, followedRedirect: true, report: report)
+            }
+        }
         async let fromFrames = frameCandidates(on: page, reading: reading, within: longestLooking - (ContinuousClock.now - start))
         let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
         let framed = await fromFrames
