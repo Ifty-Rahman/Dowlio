@@ -47,7 +47,17 @@ public struct FacebookReader: SiteReader {
 
     public func read(_ page: SitePage) async throws -> [SiteVideo] {
         var found: [Item] = []
-        for object in page.embeddedObjects { collect(object, story: Story(), base: page.url, into: &found) }
+        let objects = page.embeddedObjects
+        var known: [String: Story] = [:]
+        for object in objects {
+            Self.walk(object, story: Story()) { object, story in
+                Self.remember(object, story: story, into: &known)
+                return true
+            }
+        }
+        for object in objects {
+            Self.walk(object, story: Story()) { object, story in collect(object, story: &story, known: known, base: page.url, into: &found) }
+        }
         switch permalink(in: page.url) {
         case nil: return found.map(\.video)
         case .video(let id): return found.filter { $0.id == id }.map(\.video)
@@ -61,8 +71,17 @@ public struct FacebookReader: SiteReader {
         var text: String?
         var author: String?
 
+        static let labelWords = 6
+
         var label: String? {
-            PostLabel.of(text: text, author: author)
+            PostLabel.of(text: text, author: author, words: Self.labelWords, separator: " - ")
+        }
+
+        func filled(from earlier: Story?) -> Story {
+            var story = self
+            story.text = text ?? earlier?.text
+            story.author = author ?? earlier?.author
+            return story
         }
     }
 
@@ -76,31 +95,53 @@ public struct FacebookReader: SiteReader {
         }
     }
 
-    private func collect(_ value: Any, story inherited: Story, base: URL, into found: inout [Item]) {
+    private static func walk(_ value: Any, story inherited: Story, visit: (_ object: [String: Any], _ story: inout Story) -> Bool) {
         if let list = value as? [Any] {
-            for child in list { collect(child, story: inherited, base: base, into: &found) }
+            for child in list { walk(child, story: inherited, visit: visit) }
             return
         }
         guard let object = value as? [String: Any] else { return }
         var story = inherited
-        if let text = object.object("message")?.text("text") { story.text = text }
-        if let author = Self.author(of: object) { story.author = author }
+        if let text = postText(of: object) { story.text = text }
+        if let author = author(of: object) { story.author = author }
+        guard visit(object, &story) else { return }
+        for child in object.values { walk(child, story: story, visit: visit) }
+    }
+
+    private static func remember(_ object: [String: Any], story: Story, into known: inout [String: Story]) {
+        for media in object.objects("attachments").compactMap({ $0.object("media") }) {
+            guard let id = media.text("id") else { continue }
+            var own = story
+            own.author = own.author ?? media.object("owner")?.text("name")
+            known[id] = own.filled(from: known[id])
+        }
+    }
+
+    private func collect(_ object: [String: Any], story: inout Story, known: [String: Story], base: URL, into found: inout [Item]) -> Bool {
         if object["attachments"] != nil || object["short_form_video_context"] != nil {
             let beside = object.filter { $0.key != "attachments" }
-            story.text = story.text ?? Self.first(in: beside, depth: 8) { $0.object("message")?.text("text") }
+            story.text = story.text ?? Self.first(in: beside, depth: 8, Self.postText(of:))
             story.author = story.author ?? Self.first(in: beside, depth: 8, Self.author(of:))
         }
-        guard isVideo(object) else {
-            for child in object.values { collect(child, story: story, base: base, into: &found) }
-            return
-        }
+        guard isVideo(object) else { return true }
+        var story = story
         story.author = story.author ?? object.object("owner")?.text("name")
-        guard let video = video(in: object, label: story.label, base: base) else { return }
-        let item = Item(id: object.text("id") ?? delivery(of: object)?.text("id"), video: video)
-        guard let id = item.id, let index = found.firstIndex(where: { $0.id == id }) else { return found.append(item) }
+        let id = object.text("id") ?? delivery(of: object)?.text("id")
+        story = story.filled(from: id.flatMap { known[$0] })
+        guard let video = video(in: object, label: story.label, base: base) else { return false }
+        let item = Item(id: id, video: video)
+        guard let id = item.id, let index = found.firstIndex(where: { $0.id == id }) else {
+            found.append(item)
+            return false
+        }
         let label = found[index].video.label ?? video.label
         if item.isKept(over: found[index].video) { found[index] = item }
         found[index].video.label = label
+        return false
+    }
+
+    private static func postText(of object: [String: Any]) -> String? {
+        object.object("message")?.text("text") ?? object.object("savable_description")?.text("text")
     }
 
     private static func author(of object: [String: Any]) -> String? {

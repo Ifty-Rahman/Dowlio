@@ -70,6 +70,10 @@ public struct Presence: Equatable, Sendable {
     /// Show in menu bar is greyed out while Dowlio starts there, since the icon is the only way in.
     public var canChangeMenuBar: Bool { !startsInMenuBar }
 
+    public func showsDockIcon(windowOpen: Bool) -> Bool {
+        dock || windowOpen
+    }
+
     public func opensWindowAtLaunch(launchedAtLogin: Bool) -> Bool {
         !startsInMenuBar && !launchedAtLogin
     }
@@ -94,6 +98,25 @@ public struct Presence: Equatable, Sendable {
         }
         next.menuBar = true
         return (next, "Dowlio stays in the menu bar, so you can always reach it.")
+    }
+}
+
+public enum QuickAddWait: Int, CaseIterable, Sendable {
+    case fiveMinutes = 5
+    case fifteenMinutes = 15
+    case thirtyMinutes = 30
+    case oneHour = 60
+    case twoHours = 120
+    case sixHours = 360
+    case twelveHours = 720
+    case oneDay = 1440
+
+    public static let standard = QuickAddWait.thirtyMinutes
+
+    public var duration: Duration { .seconds(rawValue * 60) }
+
+    public var title: String {
+        duration.formatted(.units(allowed: [.hours, .minutes], width: .wide))
     }
 }
 

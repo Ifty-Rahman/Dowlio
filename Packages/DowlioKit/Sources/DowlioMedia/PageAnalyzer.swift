@@ -157,7 +157,7 @@ public struct PageAnalyzer: Sendable {
         return await withTaskCancellationHandler { await playing.value } onCancel: { playing.cancel() }
     }
 
-    private func run(_ page: SentPage, report: (PageAnalysis) -> Void) async {
+    private func run(_ page: SentPage, hops: Int = 0, startedAt: ContinuousClock.Instant? = nil, report: (PageAnalysis) -> Void) async {
         if let link = YouTubeLink(page.url) {
             switch link.kind {
             case .video:
@@ -173,7 +173,7 @@ public struct PageAnalyzer: Sendable {
                 return report(.ytdlpFailed(.channel))
             }
         }
-        let start = ContinuousClock.now
+        let start = startedAt ?? ContinuousClock.now
         if DASHVersions.isStream(page.url) {
             return report(await linkedPlaylist(page, label: page.url.lastPathComponent))
         }
@@ -196,6 +196,20 @@ public struct PageAnalyzer: Sendable {
         }
 
         let reading = await read(page, refusals: refusals)
+        var landed = page
+        if let reading {
+            if hops < Self.mostRefreshes, let target = Self.refreshTarget(of: reading, leaving: page.url) {
+                landed.url = target
+                return await run(landed, hops: hops + 1, startedAt: start, report: report)
+            }
+            if opensAnotherPost(reading.base, insteadOf: page.url) { landed.url = reading.base }
+        }
+        await look(on: landed, reading: reading, refusals: refusals, startedAt: start, report: report)
+    }
+
+    private func look(
+        on page: SentPage, reading: HTMLReader?, refusals: Refusals, startedAt start: ContinuousClock.Instant, report: (PageAnalysis) -> Void
+    ) async {
         async let fromFrames = frameCandidates(on: page, reading: reading, within: longestLooking - (ContinuousClock.now - start))
         let steps = await quickSteps(on: page, reading: reading, refusals: refusals, report: report)
         let framed = await fromFrames
@@ -591,9 +605,16 @@ public struct PageAnalyzer: Sendable {
     }
 
     private struct SiteFinding: Sendable {
-        var candidates: [Candidate]
+        struct Found: Sendable {
+            var candidate: Candidate
+            var isLabelledByPost: Bool
+        }
+
+        var found: [Found]
         var isPost: Bool
         var fromPlayers = false
+
+        var candidates: [Candidate] { found.map(\.candidate) }
     }
 
     private func readSite(_ page: SentPage, reading: HTMLReader?, refusals: Refusals) async -> SiteFinding? {
@@ -609,12 +630,13 @@ public struct PageAnalyzer: Sendable {
         let site = page.url.host(percentEncoded: false) ?? page.url.absoluteString
         let sitePage = SitePage(
             url: page.url, embeddedJSON: page.embeddedJSON + (reading?.embeddedJSON ?? []), html: reading?.html, cookies: page.cookies,
-            framedBy: page.framedBy, send: { url, body, headers in try await self.readerData(at: url, for: page, sending: body, headers: headers) }
+            framedBy: page.framedBy, media: page.scan.map(\.url) + page.watched.map(\.url),
+            send: { url, body, headers in try await self.readerData(at: url, for: page, sending: body, headers: headers) }
         ) { url in
             try await self.readerData(at: url, for: page)
         }
         let fallback = Self.label(of: page, reading: reading)
-        var found: [Candidate] = []
+        var found: [SiteFinding.Found] = []
         for reader in chosen {
             let videos: [SiteVideo]
             do {
@@ -623,18 +645,21 @@ public struct PageAnalyzer: Sendable {
                 readerFailed(ReaderFailure(reader: reader.name, site: site, reason: String(describing: error)))
                 continue
             }
-            var fromReader: [Candidate] = []
+            var fromReader: [SiteFinding.Found] = []
             for video in videos {
                 let label = video.label ?? Self.player(lasting: video.duration, on: page)?.label ?? fallback
-                fromReader += await candidates(of: video, on: page, label: label, refusals: refusals)
+                fromReader += await candidates(of: video, on: page, label: label, refusals: refusals).map {
+                    SiteFinding.Found(candidate: $0, isLabelledByPost: video.label != nil)
+                }
             }
             if fromReader.isEmpty { readerFailed(ReaderFailure(reader: reader.name, site: site, reason: "found nothing")) }
             found += fromReader
         }
         guard !found.isEmpty else { return nil }
         let isPost = chosen.count == 1 && chosen[0].post(in: page.url) != nil
+        let sized = await sized(found.map(\.candidate), on: page).map { $0.withExtractedAudio(splittable: []) }
         return SiteFinding(
-            candidates: await sized(found, on: page).map { $0.withExtractedAudio(splittable: []) }, isPost: isPost,
+            found: zip(found, sized).map { SiteFinding.Found(candidate: $1, isLabelledByPost: $0.isLabelledByPost) }, isPost: isPost,
             fromPlayers: !chosen.contains { $0.recognises(page.url) }
         )
     }
@@ -696,16 +721,18 @@ public struct PageAnalyzer: Sendable {
         let players = PageLayout.ordered(page.players)
         var taken = Set<Int>()
         var placed: [(rank: Int, candidate: Candidate)] = []
-        for candidate in fromSite.candidates {
+        for found in fromSite.found {
+            let candidate = found.candidate
             let ids = candidate.addressIDs
             let shared = rows.firstIndex { !$0.addresses.isDisjoint(with: candidate.addresses) }
                 ?? (ids.isEmpty ? nil : rows.firstIndex { !$0.addressIDs.isDisjoint(with: ids) })
             if let index = shared ?? rows.firstIndex(where: { $0.restriction == nil && Self.sameLength($0.duration, candidate.duration) }) {
                 rows[index] = rows[index].joining(candidate)
+                if found.isLabelledByPost { rows[index].label = candidate.label }
             } else if let rank = players.indices.first(where: { !taken.contains($0) && Self.sameLength(players[$0].duration, candidate.duration) }) {
                 taken.insert(rank)
                 var labelled = candidate
-                labelled.label = players[rank].label ?? candidate.label
+                if !found.isLabelledByPost { labelled.label = players[rank].label ?? candidate.label }
                 placed.append((rank, labelled))
             } else {
                 placed.append((players.count, candidate))
@@ -939,7 +966,12 @@ public struct PageAnalyzer: Sendable {
         var seen = Set<String>()
         var rows: [Version] = []
         var rowOf: [String: Int] = [:]
-        for version in versions where seen.insert(sameFile(version)).inserted {
+        var codecsOf: [String: String] = [:]
+        for version in versions {
+            if let codecs = version.codecs { codecsOf[sameFile(version)] = codecs }
+        }
+        for var version in versions where seen.insert(sameFile(version)).inserted {
+            version.codecs = version.codecs ?? codecsOf[sameFile(version)]
             guard let key = sameRow(version) else {
                 rows.append(version)
                 continue
@@ -1096,6 +1128,29 @@ public struct PageAnalyzer: Sendable {
               LinkInspection.isWebPage(mimeType: http.value(forHTTPHeaderField: "Content-Type")) else { return nil }
         let html = String(decoding: data, as: UTF8.self)
         return HTMLReader(html, base: http.url ?? page.url)
+    }
+
+    private static let mostRefreshes = 3
+
+    private static func refreshTarget(of reading: HTMLReader, leaving url: URL) -> URL? {
+        guard reading.media.isEmpty, reading.embeddedJSON.isEmpty, let target = reading.redirect,
+              !samePage(target, url), !samePage(target, reading.base) else { return nil }
+        return target
+    }
+
+    private func opensAnotherPost(_ landed: URL, insteadOf sent: URL) -> Bool {
+        guard !Self.samePage(landed, sent), let reader = readers.first(where: { $0.recognises(landed) }),
+              let post = reader.post(in: landed) else { return false }
+        return post != reader.post(in: sent)
+    }
+
+    private static func samePage(_ one: URL, _ other: URL) -> Bool {
+        func withoutFragment(_ url: URL) -> String {
+            var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            parts?.fragment = nil
+            return parts?.string ?? url.absoluteString
+        }
+        return withoutFragment(one) == withoutFragment(other)
     }
 
     private func pageOptions(_ page: SentPage) -> RequestOptions {

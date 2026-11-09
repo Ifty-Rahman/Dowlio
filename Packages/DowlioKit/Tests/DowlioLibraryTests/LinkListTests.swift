@@ -73,6 +73,51 @@ struct LinkListTests {
         #expect(analyses.asked.map(\.url) == [pageA])
     }
 
+    @Test(arguments: [400, 405])
+    func aLinkTheServerRefusesTheFileCheckWithAStatusIsReadAsAPage(status: Int) async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+
+        list.checked(pageA, .failed(.network(Self.answered(status))))
+
+        #expect(describe(list) == ["page a.example looking"])
+    }
+
+    @Test func aLinkBlockedForLegalReasonsStaysAFailedFile() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+
+        list.checked(pageA, .failed(.network(Self.answered(451))))
+
+        #expect(analyses.asked.isEmpty)
+    }
+
+    @Test func aLinkTheServerIsTooBusyToCheckStaysAFailedFile() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+
+        list.checked(pageA, .failed(.network(NetworkFailure(code: .badServerResponse, message: "The server is busy or failing."))))
+
+        #expect(analyses.asked.isEmpty)
+    }
+
+    @Test func aLinkThatLostItsConnectionStaysAFailedFile() async throws {
+        let analyses = Analyses()
+        let list = list(analyses)
+        list.update(link: pageA)
+
+        list.checked(pageA, .failed(.network(NetworkFailure(code: .networkConnectionLost, message: "The network connection was lost."))))
+
+        #expect(analyses.asked.isEmpty)
+    }
+
+    private static func answered(_ status: Int) -> NetworkFailure {
+        NetworkFailure(code: .badServerResponse, message: "The server answered with status \(status).", status: status)
+    }
+
     @Test func aSentPageReplacesWhatTheListHeldAndStopsItsAnalysis() async throws {
         let analyses = Analyses()
         let list = list(analyses)

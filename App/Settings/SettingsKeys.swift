@@ -26,6 +26,7 @@ enum SettingsKey {
     static let catchesDownloads = "catchesDownloads"
     static let neverCatchSites = "neverCatchSites"
     static let usesBrowserSignIn = "usesBrowserSignIn"
+    static let quickAddWait = "quickAddWait"
     static let keepsYTDLPUpToDate = "keepsYTDLPUpToDate"
     static let downloadsSubtitles = "downloadsSubtitles"
     static let subtitleLanguages = "subtitleLanguages"
@@ -54,6 +55,10 @@ extension UserDefaults {
             dock: flag(SettingsKey.showsInDock) ?? true,
             startsInMenuBar: flag(SettingsKey.startsInMenuBar) ?? false
         )
+    }
+
+    var quickAddWait: QuickAddWait {
+        integer(SettingsKey.quickAddWait).flatMap(QuickAddWait.init(rawValue:)) ?? .standard
     }
 
     var catchPreferences: CatchPreferences {

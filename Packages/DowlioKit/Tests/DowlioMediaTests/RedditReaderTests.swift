@@ -50,6 +50,52 @@ struct RedditReaderTests {
         #expect(candidates.last?.versions.compactMap(\.height).max() == 1080)
     }
 
+    @Test func aHomeFeedVideoListsEveryResolutionOfItsPlaylistRatherThanTheOneFileItsPlayerPlays() async throws {
+        let site = try await reddit()
+        try site.serve(fixture: "reddit-home-feed.html", at: "/", replacing: ["{{video}}": "sample7video", "{{media}}": site.url("/media").absoluteString])
+        try serveRedditVideo(at: "/v/sample7video", on: site)
+        for height in [240, 360, 480, 720] {
+            site.site.serve(video: 10_000 * height, at: "/media/feedvideo/pb/m2-res_\(height)p.mp4")
+            site.site.serve(video: 10_000 * height, at: "/media/packaged/pb/m2-res_\(height)p.mp4")
+        }
+
+        let candidates = try await site.candidates("/")
+
+        #expect(candidates.map(\.label) == ["feedauthor: A video on the home feed", "packagedauthor: A packaged video"])
+        #expect(candidates.first?.versions.compactMap(\.height) == [220, 270, 360, 480, 720, 1080])
+        #expect(candidates.last?.versions.compactMap(\.height).sorted() == [240, 360, 720])
+    }
+
+    @Test func aFeedVideoTheBrowserPlaysThatThePageNeverHeldListsEveryResolutionOfItsPlaylist() async throws {
+        let site = try await reddit()
+        site.site.serve(html: "<title>Reddit</title>", at: "/")
+        try serveRedditVideo(at: "/v/sample6video", on: site)
+
+        let candidates = try await site.candidates("/") {
+            $0.scan = [ScannedMedia(url: URL(string: "https://packaged-media.redd.it/sample6video/pb/m2-res_1080p.mp4?m=DASHPlaylist.mpd")!, kind: .video, group: 1)]
+            $0.watched = [WatchedRequest(url: URL(string: "https://v.redd.it/sample6video/CMAF_96.mp4")!, kind: .file)]
+        }
+
+        #expect(candidates.count == 1)
+        #expect(candidates.first?.versions.compactMap(\.height).filter { $0 > 0 } == [220, 270, 360, 480, 720, 1080])
+        #expect(candidates.first?.versions.filter { $0.height == 1080 }.allSatisfy { $0.codecs?.contains("H.264") == true } == true)
+    }
+
+    @Test func aPackagedFeedVideoThatIsAlsoPlayingIsListedOnce() async throws {
+        let fixture = try #require(Bundle.module.url(forResource: "Fixtures/Readers/reddit-home-feed.html", withExtension: nil))
+        let html = try String(contentsOf: fixture, encoding: .utf8)
+            .replacingOccurrences(of: "{{video}}", with: "sample7video")
+            .replacingOccurrences(of: "{{media}}", with: "https://packaged-media.redd.it")
+        let page = SitePage(
+            url: URL(string: "https://www.reddit.com/")!, html: html,
+            media: [URL(string: "https://packaged-media.redd.it/packaged/pb/m2-res_720p.mp4?s=signature")!]
+        ) { _ in Data() }
+
+        let videos = try await RedditReader().read(page)
+
+        #expect(videos.map(\.label) == ["feedauthor: A video on the home feed", "packagedauthor: A packaged video"])
+    }
+
     @Test func aPermalinkListsOnlyThatPostsVideo() async throws {
         let site = try await reddit()
         try site.serve(fixture: "reddit-post-video.html", at: post, replacing: ["{{server}}": site.url("/v").absoluteString, "{{video}}": "sample9video"])
