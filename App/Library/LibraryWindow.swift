@@ -79,6 +79,7 @@ struct LibraryWindow: View {
 
     private func finishWelcome() {
         hasSeenWelcome = true
+        model.updater.startIfWelcomed()
         guard let window = model.libraryWindow else { return }
         DispatchQueue.main.async {
             window.setContentSize(Self.firstSize)

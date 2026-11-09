@@ -19,11 +19,12 @@ final class AppUpdater {
 
     @ObservationIgnored private let delegate = UpdaterDelegate()
     @ObservationIgnored private let controller: SPUStandardUpdaterController
+    @ObservationIgnored private var started = false
     @ObservationIgnored private var watching: NSKeyValueObservation?
 
     init() {
         controller = SPUStandardUpdaterController(
-            startingUpdater: DebugLaunch.checksForUpdates, updaterDelegate: delegate, userDriverDelegate: delegate
+            startingUpdater: false, updaterDelegate: delegate, userDriverDelegate: delegate
         )
         checksAutomatically = controller.updater.automaticallyChecksForUpdates
         canCheck = controller.updater.canCheckForUpdates
@@ -33,12 +34,19 @@ final class AppUpdater {
         }
         delegate.found = { [weak self] version, remindsUser in self?.found(version, remindsUser: remindsUser) }
         delegate.seen = { [weak self] in self?.seen() }
+        startIfWelcomed()
         if let version = DebugLaunch.updateReminder {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(5))
                 self?.found(version, remindsUser: true)
             }
         }
+    }
+
+    func startIfWelcomed() {
+        guard !started, UserDefaults.standard.bool(forKey: SettingsKey.hasSeenWelcome), DebugLaunch.checksForUpdates else { return }
+        started = true
+        controller.startUpdater()
     }
 
     func checkNow() {

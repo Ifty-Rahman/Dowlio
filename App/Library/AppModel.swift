@@ -125,12 +125,13 @@ final class AppModel {
         }
     }
 
-    nonisolated private static func removeSavedWebData() {
+    nonisolated static func removeSavedWebData() {
         let files = FileManager.default
         let library = files.urls(for: .libraryDirectory, in: .userDomainMask)[0]
         let caches = library.appending(path: "Caches/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)
         let saved = ["Cache.db", "Cache.db-shm", "Cache.db-wal", "fsCachedData", "WebKit"].map { caches.appending(path: $0) }
-            + [library.appending(path: "WebKit/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)]
+            + ["WebKit/\(AppIdentity.bundleIdentifier)", "HTTPStorages/\(AppIdentity.bundleIdentifier)", "HTTPStorages/\(AppIdentity.bundleIdentifier).binarycookies"]
+                .map { library.appending(path: $0) }
         for url in saved where files.fileExists(atPath: url.path) { try? files.removeItem(at: url) }
     }
 
