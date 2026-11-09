@@ -125,7 +125,13 @@ final class AppModel {
         }
     }
 
-    nonisolated static func removeSavedWebData() {
+    static func forgetWebDataBeforeQuitting() {
+        HTTPCookieStorage.shared.removeCookies(since: .distantPast)
+        URLCache.shared.removeAllCachedResponses()
+        removeSavedWebData()
+    }
+
+    nonisolated private static func removeSavedWebData() {
         let files = FileManager.default
         let library = files.urls(for: .libraryDirectory, in: .userDomainMask)[0]
         let caches = library.appending(path: "Caches/\(AppIdentity.bundleIdentifier)", directoryHint: .isDirectory)

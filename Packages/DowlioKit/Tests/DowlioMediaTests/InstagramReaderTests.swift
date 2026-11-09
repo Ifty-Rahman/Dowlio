@@ -115,7 +115,7 @@ struct InstagramReaderTests {
         #expect(candidates.map(\.label) == ["Sample Account: Sample caption for a reel"])
     }
 
-    @Test func onAFeedTheReelsKeepTheirCaptionsAndTakeTheOrderOfThePlayersShowingThem() async throws {
+    @Test func onAFeedTheReelsKeepTheirPostLabelsAndTakeTheOrderOfThePlayersShowingThem() async throws {
         let site = try await instagram()
         site.site.serve(html: "<title>Instagram</title>", at: "/reels/")
         let first = try reel(code: "Aa11Bb22Cc3", caption: "First reel", seconds: 45.9)

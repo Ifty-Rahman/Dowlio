@@ -94,10 +94,16 @@ public final class LinkList {
         }
     }
 
+    private static let unavailableForLegalReasons = 451
+
+    private static func refusesFileCheck(_ status: Int) -> Bool {
+        (400..<500).contains(status) && status != unavailableForLegalReasons
+    }
+
     private static func mayBeAPage(_ check: NewDownloadDraft.Check) -> Bool {
         switch check {
         case .inspected(let inspection): inspection.isWebPage
-        case .failed(.network(let failure)): failure.code == .badServerResponse
+        case .failed(.network(let failure)): failure.status.map(Self.refusesFileCheck) ?? false
         case .checking, .failed: false
         }
     }

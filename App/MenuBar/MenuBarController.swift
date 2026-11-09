@@ -141,14 +141,17 @@ final class MenuBarController: NSObject {
         }
     }
 
-    /// A link left waiting in the popover is dropped once it has sat untouched for as long as
-    /// Settings › Browsers says, so the popover opens on the usual summary again.
     private func forgetQuickAddLater() {
         forgetsQuickAdd?.cancel()
         guard panel.quickAdd != nil else { return }
+        let closed = ContinuousClock.now
         forgetsQuickAdd = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: UserDefaults.standard.sentLinkWait.duration)
-            guard let self, !Task.isCancelled, menuWindow?.isShown != true else { return }
+            func left() -> Duration { UserDefaults.standard.quickAddWait.duration - (ContinuousClock.now - closed) }
+            while left() > .zero {
+                try? await Task.sleep(for: min(left(), .seconds(30)))
+                if Task.isCancelled { return }
+            }
+            guard let self, menuWindow?.isShown != true else { return }
             panel.endQuickAdd()
         }
     }

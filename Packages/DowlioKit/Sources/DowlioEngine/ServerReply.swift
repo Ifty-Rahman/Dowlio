@@ -41,7 +41,7 @@ extension HTTPURLResponse {
             )
         default:
             DownloadError.network(NetworkFailure(
-                code: .badServerResponse, message: "The server answered with status \(statusCode)."
+                code: .badServerResponse, message: "The server answered with status \(statusCode).", status: statusCode
             ))
         }
     }

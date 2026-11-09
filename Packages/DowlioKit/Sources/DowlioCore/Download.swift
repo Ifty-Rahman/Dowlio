@@ -87,10 +87,12 @@ public struct NetworkFailure: Equatable, Sendable, CustomStringConvertible {
     public var code: URLError.Code
     /// The underlying error's description, for logs and developer tools.
     public var message: String
+    public var status: Int?
 
-    public init(code: URLError.Code, message: String) {
+    public init(code: URLError.Code, message: String, status: Int? = nil) {
         self.code = code
         self.message = message
+        self.status = status
     }
 
     /// The failure `error` stands for, keeping its `URLError` code when it has one.

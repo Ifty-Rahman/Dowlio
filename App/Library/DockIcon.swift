@@ -1,8 +1,6 @@
 import AppKit
 import DowlioLibrary
 
-/// Shows the Dock icon as Settings › General says, and while any Dowlio window is open even with
-/// Show in Dock off, so the icon leaves with the last window.
 @MainActor
 final class DockIcon {
     private var observers: [NSObjectProtocol] = []
@@ -17,22 +15,26 @@ final class DockIcon {
                 MainActor.assumeIsolated { self?.refresh() }
             })
         }
+        observers.append(center.addObserver(forName: NSApplication.didUnhideNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        })
         observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.async { self?.refresh() }
         })
     }
 
     func refresh() {
-        let showing = UserDefaults.standard.presence.showsDockIcon(windowOpen: Self.windowOpen)
+        guard !NSApp.isHidden else { return }
+        let showing = UserDefaults.standard.presence.showsDockIcon(windowOpen: NSApp.windows.contains(where: Self.isOpenDowlioWindow))
         let policy: NSApplication.ActivationPolicy = showing ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
+        if policy == .regular, NSApp.isActive { DispatchQueue.main.async { NSApp.activate() } }
     }
 
-    /// The menu bar popover, toasts, alerts and the hidden player don't count.
-    private static var windowOpen: Bool {
-        NSApp.windows.contains { window in
-            !(window is NSPanel) && window.styleMask.contains(.titled) && (window.isVisible || window.isMiniaturized)
-        }
+    private static func isOpenDowlioWindow(_ window: NSWindow) -> Bool {
+        let isPanel = window is NSPanel
+        let hasTitleBar = window.styleMask.contains(.titled)
+        return !isPanel && hasTitleBar && (window.isVisible || window.isMiniaturized)
     }
 }

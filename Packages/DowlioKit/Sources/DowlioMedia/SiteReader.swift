@@ -181,12 +181,12 @@ enum PostLabel {
     static let words = 8
     static let length = 60
 
-    static func of(text: String?, author: String?) -> String? {
+    static func of(text: String?, author: String?, words: Int = words, separator: String = ": ") -> String? {
         let squashed = squash(text)
         let name = squash(author)
         guard !squashed.isEmpty else { return name.isEmpty ? nil : shorten(name) }
         let start = squashed.split(separator: " ").prefix(words).joined(separator: " ")
-        return shorten(name.isEmpty || start.hasPrefix(name) ? start : "\(name): \(start)")
+        return shorten(name.isEmpty || start.hasPrefix(name) ? start : "\(name)\(separator)\(start)")
     }
 
     static func shorten(_ text: String) -> String {

@@ -34,22 +34,34 @@ public struct RedditReader: SiteReader {
     }
 
     private func playing(on page: SitePage, besides posts: [Post]) -> [SiteVideo] {
-        var seen = Set(posts.compactMap { $0.link.flatMap(Self.hostedID) })
+        var seen = Set(posts.flatMap(\.hostedIDs))
         return page.media.compactMap { url -> SiteVideo? in
             guard let id = Self.hostedID(url), seen.insert(id).inserted else { return nil }
             let packaged = page.media.filter { Self.hostedID($0) == id }.compactMap(Self.packagedFile)
-            return SiteVideo(versions: packaged, streams: [videos.appending(path: id).appending(path: "HLSPlaylist.m3u8")])
+            return SiteVideo(versions: packaged, streams: [hlsPlaylist(of: id)])
         }
+    }
+
+    private func hlsPlaylist(of id: String) -> URL {
+        videos.appending(path: id).appending(path: "HLSPlaylist.m3u8")
     }
 
     private static func packagedFile(_ url: URL) -> Version? {
         guard url.isOn(["packaged-media.redd.it"]), let height = url.lastPathComponent.firstMatch(of: /m2-res_(\d+)p\.mp4/).flatMap({ Int($0.1) }) else { return nil }
-        return Version(source: .file(url), contentType: "video/mp4", height: height, codecs: MediaCodecs.h264WithAAC)
+        return packagedVersion(url, height: height)
+    }
+
+    private static func packagedVersion(_ url: URL, height: Int?) -> Version {
+        Version(source: .file(url), contentType: "video/mp4", height: height, codecs: MediaCodecs.h264WithAAC)
     }
 
     private static func hostedID(_ url: URL) -> String? {
         guard url.isOn(["v.redd.it", "packaged-media.redd.it"]) else { return nil }
         return url.pathComponents.dropFirst().first
+    }
+
+    private static func playerID(_ url: URL) -> String? {
+        url.isOn(["v.redd.it"]) ? hostedID(url) : nil
     }
 
     private func listed(_ posts: [Post], on page: SitePage) async -> [SiteVideo] {
@@ -70,6 +82,10 @@ public struct RedditReader: SiteReader {
         var embedded: URL?
         var packaged: [Version] = []
         var isPageMain = false
+
+        var hostedIDs: [String] {
+            ([link, player].compactMap { $0 } + packaged.map(\.source.url)).compactMap(RedditReader.hostedID)
+        }
     }
 
     private static func posts(in html: String) -> [Post] {
@@ -102,15 +118,15 @@ public struct RedditReader: SiteReader {
         let streams: [URL]
         if let player = post.player, Self.isPlaylist(player) {
             streams = [player]
-        } else if let link = post.link, link.isOn(["v.redd.it"]), let id = link.pathComponents.dropFirst().first {
-            streams = [videos.appending(path: id).appending(path: "HLSPlaylist.m3u8")]
+        } else if let id = post.link.flatMap(Self.playerID) {
+            streams = [hlsPlaylist(of: id)]
         } else if !post.packaged.isEmpty {
             return SiteVideo(label: label, thumbnail: post.poster, versions: post.packaged)
         } else if let player = post.player {
             streams = [player]
         } else if let (id, source) = [post.link, post.embedded].compactMap(Self.clipLink).first {
             guard var gif = try? await TokenClipReader.video(id: id, on: source, api: clips, page: page) else { return nil }
-            gif.label = PostLabel.of(text: post.title, author: post.author) ?? gif.label
+            gif.label = label ?? gif.label
             gif.thumbnail = post.poster ?? gif.thumbnail
             return gif
         } else {
@@ -130,9 +146,7 @@ public struct RedditReader: SiteReader {
         return permutations.compactMap { permutation in
             guard let source = permutation["source"] as? [String: Any], let url = (source["url"] as? String).flatMap(URL.init(string:)) else { return nil }
             let dimensions = source["dimensions"] as? [String: Any]
-            return Version(
-                source: .file(url), contentType: "video/mp4", height: shorterSide(dimensions?["width"], dimensions?["height"]), codecs: MediaCodecs.h264WithAAC
-            )
+            return packagedVersion(url, height: shorterSide(dimensions?["width"], dimensions?["height"]))
         }
     }
 

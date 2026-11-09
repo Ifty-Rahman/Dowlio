@@ -70,8 +70,6 @@ public struct Presence: Equatable, Sendable {
     /// Show in menu bar is greyed out while Dowlio starts there, since the icon is the only way in.
     public var canChangeMenuBar: Bool { !startsInMenuBar }
 
-    /// With Show in Dock off, the Dock icon still shows while a window is open, as macOS does for
-    /// menu bar apps, and goes with the last window.
     public func showsDockIcon(windowOpen: Bool) -> Bool {
         dock || windowOpen
     }
@@ -103,9 +101,7 @@ public struct Presence: Equatable, Sendable {
     }
 }
 
-/// How long a link sent to the menu bar waits there, with what came with it, before Dowlio
-/// forgets it. Quitting Dowlio forgets it sooner, since it's never saved.
-public enum SentLinkWait: Int, CaseIterable, Sendable {
+public enum QuickAddWait: Int, CaseIterable, Sendable {
     case fiveMinutes = 5
     case fifteenMinutes = 15
     case thirtyMinutes = 30
@@ -115,12 +111,12 @@ public enum SentLinkWait: Int, CaseIterable, Sendable {
     case twelveHours = 720
     case oneDay = 1440
 
-    public static let standard = SentLinkWait.thirtyMinutes
+    public static let standard = QuickAddWait.thirtyMinutes
 
     public var duration: Duration { .seconds(rawValue * 60) }
 
     public var title: String {
-        rawValue < 60 ? "\(rawValue) minutes" : rawValue == 60 ? "1 hour" : "\(rawValue / 60) hours"
+        duration.formatted(.units(allowed: [.hours, .minutes], width: .wide))
     }
 }
 

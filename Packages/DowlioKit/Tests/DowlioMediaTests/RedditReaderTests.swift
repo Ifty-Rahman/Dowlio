@@ -81,6 +81,21 @@ struct RedditReaderTests {
         #expect(candidates.first?.versions.filter { $0.height == 1080 }.allSatisfy { $0.codecs?.contains("H.264") == true } == true)
     }
 
+    @Test func aPackagedFeedVideoThatIsAlsoPlayingIsListedOnce() async throws {
+        let fixture = try #require(Bundle.module.url(forResource: "Fixtures/Readers/reddit-home-feed.html", withExtension: nil))
+        let html = try String(contentsOf: fixture, encoding: .utf8)
+            .replacingOccurrences(of: "{{video}}", with: "sample7video")
+            .replacingOccurrences(of: "{{media}}", with: "https://packaged-media.redd.it")
+        let page = SitePage(
+            url: URL(string: "https://www.reddit.com/")!, html: html,
+            media: [URL(string: "https://packaged-media.redd.it/packaged/pb/m2-res_720p.mp4?s=signature")!]
+        ) { _ in Data() }
+
+        let videos = try await RedditReader().read(page)
+
+        #expect(videos.map(\.label) == ["feedauthor: A video on the home feed", "packagedauthor: A packaged video"])
+    }
+
     @Test func aPermalinkListsOnlyThatPostsVideo() async throws {
         let site = try await reddit()
         try site.serve(fixture: "reddit-post-video.html", at: post, replacing: ["{{server}}": site.url("/v").absoluteString, "{{video}}": "sample9video"])

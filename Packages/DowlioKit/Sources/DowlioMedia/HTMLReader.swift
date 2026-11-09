@@ -66,6 +66,7 @@ struct HTMLReader {
         isDirectoryListing = Self.listsDirectory(titled: pageTitle, html: html, anchors: anchors)
         for block in Self.jsonLD(in: html) { readJSONLD(block, base: base) }
         embeddedJSON = Self.scripts(ofType: "application/json", in: html)
+        redirect = Self.refresh(in: html, base: base)
         scriptMedia = ScriptMedia.addresses(in: html, base: base).filter { url in !media.contains { $0.url == url } }
         if title == nil, let pageTitle, !pageTitle.isEmpty { title = pageTitle }
     }
@@ -84,11 +85,6 @@ struct HTMLReader {
     }
 
     private mutating func readMeta(_ attributes: [String: String], base: URL) {
-        if attributes["http-equiv"]?.lowercased() == "refresh", redirect == nil,
-           let content = attributes["content"], let range = content.range(of: "url=", options: .caseInsensitive) {
-            let target = content[range.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " '\""))
-            redirect = Self.resolve(target, against: base)
-        }
         guard let key = (attributes["property"] ?? attributes["name"] ?? attributes["itemprop"])?.lowercased(),
               let content = attributes["content"] else { return }
         switch key {
@@ -208,6 +204,28 @@ struct HTMLReader {
         )
         let text = html as NSString
         return pattern.matches(in: html, range: NSRange(location: 0, length: text.length)).map { text.substring(with: $0.range(at: 1)) }
+    }
+
+    private static let longestRefreshWait = 5.0
+
+    private static func refresh(in html: String, base: URL) -> URL? {
+        let shown = html.replacingOccurrences(of: #"(?s)<noscript\b.*?</noscript\s*>"#, with: "", options: [.regularExpression, .caseInsensitive])
+        return tags(in: shown, named: ["meta"]).lazy
+            .filter { $0.attributes["http-equiv"]?.lowercased() == "refresh" }
+            .compactMap { $0.attributes["content"].flatMap(refreshTarget(in:)).flatMap { resolve($0, against: base) } }
+            .first
+    }
+
+    static func refreshTarget(in content: String) -> String? {
+        guard let separator = content.firstIndex(where: { $0 == ";" || $0 == "," }),
+              let wait = Double(content[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)), wait <= longestRefreshWait
+        else { return nil }
+        var target = content[content.index(after: separator)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        if let named = target.firstMatch(of: /^(?i)url\s*=\s*/) { target = String(target[named.range.upperBound...]) }
+        if let quote = target.first, quote == "'" || quote == "\"" {
+            target = String(target.dropFirst().prefix { $0 != quote })
+        }
+        return target.isEmpty ? nil : target
     }
 
     static func resolve(_ value: String, against base: URL) -> URL? {

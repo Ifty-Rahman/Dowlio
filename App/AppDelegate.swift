@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// alike, then pauses them so each keeps its bytes.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model = Self.model, let question = QuitGuard(rows: model.rows) else {
-            AppModel.removeSavedWebData()
+            AppModel.forgetWebDataBeforeQuitting()
             return .terminateNow
         }
         let alert = NSAlert()
@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await group.next()
                 group.cancelAll()
             }
-            AppModel.removeSavedWebData()
+            AppModel.forgetWebDataBeforeQuitting()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

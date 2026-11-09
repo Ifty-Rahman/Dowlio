@@ -35,6 +35,7 @@ final class AppUpdater {
         delegate.found = { [weak self] version, remindsUser in self?.found(version, remindsUser: remindsUser) }
         delegate.seen = { [weak self] in self?.seen() }
         startIfWelcomed()
+        if !started, DebugLaunch.checksForUpdates { canCheck = true }
         if let version = DebugLaunch.updateReminder {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(5))
@@ -44,13 +45,19 @@ final class AppUpdater {
     }
 
     func startIfWelcomed() {
-        guard !started, UserDefaults.standard.bool(forKey: SettingsKey.hasSeenWelcome), DebugLaunch.checksForUpdates else { return }
-        started = true
-        controller.startUpdater()
+        guard UserDefaults.standard.bool(forKey: SettingsKey.hasSeenWelcome) else { return }
+        start()
     }
 
     func checkNow() {
+        start()
         controller.checkForUpdates(nil)
+    }
+
+    private func start() {
+        guard !started, DebugLaunch.checksForUpdates else { return }
+        started = true
+        controller.startUpdater()
     }
 
     func showUpdate() {

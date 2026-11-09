@@ -321,7 +321,7 @@ private struct ConnectionsSettings: View {
 private struct BrowsersSettings: View {
     @Bindable var model: AppModel
     @AppStorage(SettingsKey.usesBrowserSignIn) private var usesBrowserSignIn = false
-    @AppStorage(SettingsKey.sentLinkWait) private var sentLinkWait = SentLinkWait.standard
+    @AppStorage(SettingsKey.quickAddWait) private var quickAddWait = QuickAddWait.standard
     @AppStorage(SettingsKey.showsInMenuBar) private var showsInMenuBar = true
 
     var body: some View {
@@ -333,12 +333,12 @@ private struct BrowsersSettings: View {
             }
             Section {
                 SendShortcutRecorder()
-                Picker(selection: $sentLinkWait) {
-                    ForEach(SentLinkWait.allCases, id: \.self) { Text($0.title).tag($0) }
+                Picker(selection: $quickAddWait) {
+                    ForEach(QuickAddWait.allCases, id: \.self) { Text($0.title).tag($0) }
                 } label: {
-                    Text("Keep a sent link in the menu bar for")
+                    Text("Keep a link waiting in the menu bar for")
                     Text(showsInMenuBar
-                        ? "A sent link waits there with its sign-in until you download or cancel it. Dowlio forgets both after this long untouched, or sooner if Dowlio quits or your Mac restarts."
+                        ? "A link waits there with its sign-in until you download or cancel it. Dowlio forgets both after this long untouched, or sooner if Dowlio quits or your Mac restarts."
                         : "Turn on Show in menu bar in General to send links there.")
                 }
                 .disabled(!showsInMenuBar)
