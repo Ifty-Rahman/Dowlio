@@ -18,6 +18,7 @@ final class MenuBarController: NSObject {
     private var drawnIcon: (fraction: Double?, needsAttention: Bool, hasUpdate: Bool)?
     private var returnTo: NSRunningApplication?
     private var openedAt = Date()
+    private var forgetsQuickAdd: Task<Void, Never>?
     private lazy var dismissal = PopoverDismissal(hooks: .init(
         popoverWindow: { [weak self] in self?.menuWindow?.window },
         isPointerOnIcon: { [weak self] in self?.isPointerOnIcon ?? false },
@@ -117,6 +118,7 @@ final class MenuBarController: NSObject {
     private func open(activating: Bool = true) {
         guard let button = item.button else { return }
         catchToast.hide()
+        forgetsQuickAdd?.cancel()
         panel.dropEmptyQuickAdd()
         let front = NSWorkspace.shared.frontmostApplication
         returnTo = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
@@ -128,6 +130,7 @@ final class MenuBarController: NSObject {
     private func didClose() {
         moreMenu.hide()
         panel.dropEmptyQuickAdd()
+        forgetQuickAddLater()
         dismissal.stop()
         let previous = returnTo
         let opened = openedAt
@@ -135,6 +138,18 @@ final class MenuBarController: NSObject {
         Task { @MainActor [weak self] in
             guard let self, let previous, !previous.isTerminated, !model.movedFocus(since: opened) else { return }
             previous.activate()
+        }
+    }
+
+    /// A link left waiting in the popover is dropped once it has sat untouched for as long as
+    /// Settings › Browsers says, so the popover opens on the usual summary again.
+    private func forgetQuickAddLater() {
+        forgetsQuickAdd?.cancel()
+        guard panel.quickAdd != nil else { return }
+        forgetsQuickAdd = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: UserDefaults.standard.sentLinkWait.duration)
+            guard let self, !Task.isCancelled, menuWindow?.isShown != true else { return }
+            panel.endQuickAdd()
         }
     }
 

@@ -107,6 +107,25 @@ struct SettingsTests {
     }
 
     @Test(arguments: [
+        (true, false, true),
+        (true, true, true),
+        (false, true, true),
+        (false, false, false),
+    ])
+    func theDockIconShowsWhileAWindowIsOpenEvenWithShowInDockOff(dock: Bool, windowOpen: Bool, shows: Bool) {
+        #expect(Presence(menuBar: true, dock: dock).showsDockIcon(windowOpen: windowOpen) == shows)
+    }
+
+    @Test func aSentLinkWaitsFromFiveMinutesToADayAndHalfAnHourUnlessChosen() {
+        #expect(SentLinkWait.allCases.map(\.title) == [
+            "5 minutes", "15 minutes", "30 minutes", "1 hour", "2 hours", "6 hours", "12 hours", "24 hours",
+        ])
+        #expect(SentLinkWait.allCases.first?.duration == .seconds(5 * 60))
+        #expect(SentLinkWait.allCases.last?.duration == .seconds(24 * 60 * 60))
+        #expect(SentLinkWait.standard.duration == .seconds(30 * 60))
+    }
+
+    @Test(arguments: [
         (2, "Stop 2 downloads and quit?"),
         (1, "Stop 1 download and quit?"),
     ])

@@ -38,6 +38,7 @@ final class AppModel {
     let updater = AppUpdater()
     private let notifier = FinishNotifier()
     private let catchNotifier = CatchNotifier()
+    private let dockIcon = DockIcon()
     private let hostCooldown = HostCooldown()
     private var windowChoices: [URL: Candidate] = [:]
     private var catchGrouper = CatchGrouper()
@@ -391,7 +392,7 @@ final class AppModel {
         let presence = UserDefaults.standard.presence
         menuBar?.isVisible = presence.menuBar
         let front = NSApp.keyWindow.map { $0.sheetParent ?? $0 }
-        NSApp.setActivationPolicy(presence.dock ? .regular : .accessory)
+        dockIcon.refresh()
         guard activating || front != nil else { return }
         NSApp.activate()
         DispatchQueue.main.async { front?.makeKeyAndOrderFront(nil) }
