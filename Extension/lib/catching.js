@@ -109,6 +109,7 @@ export function startCatching({ chrome, link, navigator, now = Date.now }) {
 
   function staysInBrowser(item, browserRequest) {
     const source = item.finalUrl || item.url;
+    if (item.state !== "in_progress") return true;
     if (item.byExtensionId === chrome.runtime.id || wasHandedBack(item.url)) return true;
     if (!isWebLink(item.url) || !isWebLink(source)) return true;
     if (isBrowserUpdate(item)) return true;

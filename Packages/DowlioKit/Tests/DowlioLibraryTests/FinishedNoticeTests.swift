@@ -159,3 +159,25 @@ struct FinishedNoticeTests {
         )
     }
 }
+
+struct ReopenAfterClickTests {
+    private let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test func aReopenWithNoNotificationClickNearItOpensTheWindow() {
+        var reopen = ReopenAfterClick()
+        reopen.clicked(at: start)
+
+        #expect(reopen.opensWindow(reopenedAt: start.addingTimeInterval(5)))
+        #expect(ReopenAfterClick().opensWindow(reopenedAt: start))
+    }
+
+    @Test func aNotificationClickJustBeforeOrJustAfterTheReopenKeepsTheWindowClosed() {
+        var before = ReopenAfterClick()
+        before.clicked(at: start)
+        var after = ReopenAfterClick()
+        after.clicked(at: start.addingTimeInterval(ReopenAfterClick.wait / 2))
+
+        #expect(!before.opensWindow(reopenedAt: start.addingTimeInterval(0.5)))
+        #expect(!after.opensWindow(reopenedAt: start))
+    }
+}

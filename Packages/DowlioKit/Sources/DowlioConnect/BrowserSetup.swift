@@ -31,6 +31,13 @@ public enum ChromiumBrowsers {
         return found.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    public static func app(named name: String, in folders: [URL] = applicationFolders) -> URL? {
+        guard !name.isEmpty, !name.contains("/") else { return nil }
+        return folders
+            .map { $0.appending(path: "\(name).app", directoryHint: .isDirectory) }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     private static func bundlesChromium(_ app: URL) -> Bool {
         let frameworks = app.appending(path: "Contents/Frameworks", directoryHint: .isDirectory)
         let name = app.deletingPathExtension().lastPathComponent
@@ -76,10 +83,12 @@ public struct BrowserRow: Equatable, Identifiable, Sendable {
 }
 
 public enum BrowserList {
-    public static func rows(installed: [InstalledBrowser], links: [BrowserLink]) -> [BrowserRow] {
+    public static func rows(
+        installed: [InstalledBrowser], links: [BrowserLink], appNamed: (String) -> URL? = { _ in nil }
+    ) -> [BrowserRow] {
         var rows = installed.map { BrowserRow(name: $0.name, appURL: $0.appURL, link: bestLink(named: $0.name, in: links)) }
         for link in links where !rows.contains(where: { $0.name.caseInsensitiveCompare(link.name) == .orderedSame }) {
-            rows.append(BrowserRow(name: link.name, appURL: nil, link: bestLink(named: link.name, in: links)))
+            rows.append(BrowserRow(name: link.name, appURL: appNamed(link.name), link: bestLink(named: link.name, in: links)))
         }
         return rows.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

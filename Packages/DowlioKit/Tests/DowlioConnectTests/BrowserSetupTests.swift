@@ -33,6 +33,19 @@ struct BrowserScanTests {
     @Test func aMissingApplicationsFolderFindsNothing() {
         #expect(ChromiumBrowsers.scan([URL(filePath: "/nonexistent-\(UUID())")]).isEmpty)
     }
+
+    @Test func anAppIsFoundByNameInTheFirstApplicationsFolderThatHasIt() throws {
+        let applications = try TestFiles.makeFolder()
+        let userApplications = try TestFiles.makeFolder()
+        try app("Search", framework: nil, in: userApplications)
+
+        let found = ChromiumBrowsers.app(named: "Search", in: [applications, userApplications])
+
+        #expect(found?.deletingLastPathComponent().standardizedFileURL == userApplications.standardizedFileURL)
+        #expect(found?.lastPathComponent == "Search.app")
+        #expect(ChromiumBrowsers.app(named: "Thorium", in: [applications, userApplications]) == nil)
+        #expect(ChromiumBrowsers.app(named: "../Search", in: [applications]) == nil)
+    }
 }
 
 struct BrowserListTests {
@@ -72,6 +85,19 @@ struct BrowserListTests {
         #expect(rows.map(\.state) == [.connected, .notInstalled, .notConnected, .notConnected])
         #expect(rows.first { $0.name == "Thorium" }?.appURL == nil)
         #expect(rows.first { $0.name == "Arc" }?.link?.name == "Arc")
+    }
+
+    @Test func aPairedBrowserTheScanMissedShowsTheAppOfTheSameName() {
+        let search = URL(filePath: "/Applications/Search.app")
+        let links = [
+            BrowserLink(id: UUID(), name: "Search", state: .connected),
+            BrowserLink(id: UUID(), name: "Thorium", state: .notConnected),
+        ]
+
+        let rows = BrowserList.rows(installed: [], links: links) { $0 == "Search" ? search : nil }
+
+        #expect(rows.first { $0.name == "Search" }?.appURL == search)
+        #expect(rows.first { $0.name == "Thorium" }?.appURL == nil)
     }
 }
 

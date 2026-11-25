@@ -74,7 +74,13 @@ final class BrowserSetup {
             installed = await Task.detached { ChromiumBrowsers.scan() }.value
             isScanning = false
         }
-        rows = BrowserList.rows(installed: installed ?? [], links: await server.browserLinks())
+        rows = BrowserList.rows(installed: installed ?? [], links: await server.browserLinks(), appNamed: Self.app(named:))
+    }
+
+    private static func app(named name: String) -> URL? {
+        ChromiumBrowsers.app(named: name) ?? NSWorkspace.shared.runningApplications
+            .compactMap(\.bundleURL)
+            .first { PeerProcess.appName(forExecutable: $0.path) == name }
     }
 
     static let otherBrowser = BrowserRow(name: "your browser", appURL: nil, link: nil)

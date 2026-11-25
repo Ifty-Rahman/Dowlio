@@ -21,9 +21,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    @MainActor static var reopenAfterClick = ReopenAfterClick()
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if !hasVisibleWindows { Self.model?.showLibraryWindow() }
-        return true
+        guard !hasVisibleWindows else { return true }
+        let reopenedAt = Date()
+        DispatchQueue.main.asyncAfter(deadline: .now() + ReopenAfterClick.wait) {
+            guard Self.reopenAfterClick.opensWindow(reopenedAt: reopenedAt) else { return }
+            Self.model?.showLibraryWindow()
+        }
+        return false
     }
 
     /// Asks before quitting stops running or queued downloads, from the menu, ⌘Q and the popover
