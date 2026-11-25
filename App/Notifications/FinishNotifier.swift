@@ -110,6 +110,7 @@ final class FinishNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        await MainActor.run { AppDelegate.reopenAfterClick.clicked(at: Date()) }
         if CatchNotifier.isCatch(response.notification.request.content.categoryIdentifier) {
             let identifier = response.notification.request.identifier
             let action = CatchNotifier.Action(rawValue: response.actionIdentifier) ?? .show

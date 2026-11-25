@@ -428,3 +428,14 @@ test("a download stays in the browser untouched when Dowlio doesn't connect with
   assert.deepEqual(chrome.downloads.calls, []);
   assert.equal(offers(net.last()).length, 0);
 });
+
+test("downloads the browser reloads from its history at startup stay in the browser untouched", async () => {
+  const { chrome, socket } = await connected();
+
+  await chrome.downloads.create(download({ id: 107, state: "interrupted", byExtensionId: undefined }));
+  await chrome.downloads.create(download({ id: 98, state: "complete" }));
+  for (let turn = 0; turn < 5; turn += 1) await flush();
+
+  assert.deepEqual(chrome.downloads.calls, []);
+  assert.equal(offers(socket).length, 0);
+});

@@ -159,6 +159,27 @@ public enum NotificationClick: String, CaseIterable, Sendable {
     }
 }
 
+/// Clicking a notification also reopens Dowlio, like a Dock click, with the click itself arriving
+/// a moment before or after. A reopen that close to a click leaves the window to the click.
+public struct ReopenAfterClick: Sendable {
+    public static let wait: TimeInterval = 0.35
+    private static let clickBefore: TimeInterval = 1
+
+    private var clickedAt: Date?
+
+    public init() {}
+
+    public mutating func clicked(at date: Date) {
+        clickedAt = date
+    }
+
+    public func opensWindow(reopenedAt reopen: Date) -> Bool {
+        guard let clickedAt else { return true }
+        let sinceReopen = clickedAt.timeIntervalSince(reopen)
+        return sinceReopen < -Self.clickBefore || sinceReopen > Self.wait
+    }
+}
+
 public struct UpdateNotice: Equatable, Sendable {
     public var version: String
 
